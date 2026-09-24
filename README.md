@@ -1,4 +1,63 @@
-# Jev The Spire
+# Jev The Spire 2
+
+[![Watch the video](media/thumbnail-play.png)](https://youtube.com/@shoemoney)
+
+**A robot plays Slay the Spire 2, and decides every move in about 315 milliseconds for half a
+thousandth of a dollar.**
+
+A fork of **[alexmeckes/jev-the-spire](https://github.com/alexmeckes/jev-the-spire)** (MIT), which
+is where the Slay the Spire 2 integration, the planner, the fixtures and the benchmark suite come
+from. All of that is his work. This fork adds a single-call factored decision layer, tail-latency
+hedging, and a multi-model benchmark harness, then measures the result.
+
+## What this fork adds
+
+| File | What it does |
+|---|---|
+| `spire-demo/factored.mjs` | One request carrying the broad choice plus three nouls per candidate, recombined in code with weights you own |
+| `spire-demo/hedge.mjs` | Staggered request hedging for a bimodally-slow endpoint, idempotent reads only |
+| `spire-demo/benchmark/sweep.mjs` | Parameter sweep scoring latency against decision quality on fixed fixtures |
+| `spire-demo/benchmark/vs-llm.mjs` | Head-to-head against any OpenRouter model on byte-identical state |
+
+Results and method: **[SWEEP-FINDINGS.md](SWEEP-FINDINGS.md)**.
+
+### Measured
+
+Against the upstream multi-call policy, on the same graded fixtures:
+
+| policy | quality | p50 | calls per decision |
+|---|---|---|---|
+| upstream `deliberate` | 24/30 | 758ms | 2.40 |
+| **this fork** | **90/100** | **325ms** | **1.00** |
+
+And against frontier models on identical state, 30 decisions each:
+
+| model | score | p50 | $/decision |
+|---|---|---|---|
+| `moonshotai/kimi-k3` | 29/30 | 2,312ms | $0.01111 |
+| `anthropic/claude-opus-5.5` | 29/30 | 3,590ms | $0.04704 |
+| `anthropic/claude-fable-5.1` | 29/30 | 5,534ms | $0.11952 |
+| `x-ai/grok-4.7` | 29/30 | 12,022ms | $0.01303 |
+| **`typesafe/jev-1.13`** | 27/30 | **315ms** | **$0.00046** |
+| `openai/gpt-6-astra` | 24/30 | 1,672ms | $0.03210 |
+| `deepseek/deepseek-v4.1-flash` | 24/30 | 23,366ms | $0.00446 |
+
+The quality gate is a narrow first-action error check on ten fixtures, not a win-rate. The noise
+floor on that corpus is about +/- 3, so 27 and 29 are not separable. What is separable is 6x to 63x
+on speed and 24x to 260x on cost.
+
+### Running against OpenRouter instead of TypeSafe direct
+
+This fork calls `https://openrouter.ai/api/alpha/decisions` with the model pinned to
+`typesafe/jev-1.13`. Put an OpenRouter key in `.private/typesafe.cfg` as `api_key = "sk-or-..."`,
+then:
+
+```bash
+SPIRE_SINGLE_CALL=1 node spire-demo/server.mjs    # dashboard on :4317
+SPIRE_HEDGE=0 ...                                  # to disable hedging
+```
+
+---
 
 Watch **TypeSafe Jev play Slay the Spire 2** on your computer.
 

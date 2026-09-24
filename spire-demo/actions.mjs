@@ -132,7 +132,7 @@ export function factsFor(s) {
 export function makeQuestion(state, actions) {
   if (!actions.length || actions.length > 255) throw new Error('Unsupported action count');
   return {
-    model: 'jev-latest',
+    model: 'typesafe/jev-1.13',
     state: { game: 'Slay the Spire 2', objective: 'Win this complete run without human gameplay decisions.', state, facts: factsFor(state) },
     questions: { move: {
       type: 'choice',

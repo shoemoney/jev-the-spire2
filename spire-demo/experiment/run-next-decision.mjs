@@ -20,7 +20,7 @@ for(let repeat=0;repeat<2;repeat++)for(const s of samples)for(const policy of re
  try{
  const options={state:s.state,candidates:s.candidates,recent:[],ask:async payload=>{
  if(tokens>600000)throw Error('Local replay token budget reached');
- const r=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
+ const r=await fetch('https://openrouter.ai/api/alpha/decisions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
  if(!r.ok)throw Error('HTTP '+r.status);const response=await r.json();tokens+=response.usage?.input_tokens??0;calls.push({request:payload,response});return response;
  }};
  const r=policy==='baseline'?await deliberate(options):await horizonDeliberate(options,{setup:s.id==='opening'});

@@ -17,7 +17,7 @@ for(let repeat=0;repeat<2;repeat++)for(const [i,s] of samples.entries())for(cons
  try{
   const opts={state:s.state,candidates:s.candidates,recent:s.recent,ask:async payload=>{
    if(tokens>2000000)throw Error('Local benchmark budget reached');
-   const r=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});if(!r.ok)throw Error('HTTP '+r.status);
+   const r=await fetch('https://openrouter.ai/api/alpha/decisions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});if(!r.ok)throw Error('HTTP '+r.status);
    const response=await r.json();tokens+=response.usage?.input_tokens??0;calls.push({request:payload,response});return response;
   }};
   const result=policy==='current'?await deliberate(opts):await rageDeliberate(opts);

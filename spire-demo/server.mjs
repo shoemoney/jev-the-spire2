@@ -8,6 +8,10 @@ import {planBenefitDeliberate,persistentPlan} from './plan-benefit.mjs';
 const planBenefitEnabled=process.env.SPIRE_PLAN_BENEFIT==='1';
 import {assistedDeliberate} from './experiment/assisted.mjs';
 const lunaEnabled=process.env.SPIRE_ADVISER==='luna';
+import {factoredDeliberate} from './factored.mjs';
+const factoredEnabled=process.env.SPIRE_SINGLE_CALL==='1';
+import {hedged} from './hedge.mjs';
+const hedgeEnabled=process.env.SPIRE_HEDGE!=='0';
 if(lunaEnabled&&planBenefitEnabled)throw Error('Choose one experiment at a time: Luna or plan-benefit.');
 import { readFile, mkdir, appendFile, writeFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -134,18 +138,25 @@ async function step(token, preview = false) {
     const start = performance.now();
     const memory=encounterMemory(s,view.events);
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
-    const result = await (lunaEnabled?assistedDeliberate:planBenefitEnabled?planBenefitDeliberate:deliberate)({state:planningState,candidates:actions,
+    const result = await (factoredEnabled?factoredDeliberate:lunaEnabled?assistedDeliberate:planBenefitEnabled?planBenefitDeliberate:deliberate)({state:planningState,candidates:actions,
       recent:memory,
       onStage:stage=>{view.message=stage;view.pending.stage=stage;},
       ask:async payload=>{
         if(token!==generation)throw Error('Decision cancelled.');
         if(view.inputTokens>=MAX_INPUT_TOKENS||view.decisions>=MAX_DECISIONS)throw Error('Session budget reached.');
-        const response=await fetch('https://api.typesafe.ai/v1/systemone',{
-          method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiKey}`},
-          body:JSON.stringify(payload),signal:AbortSignal.timeout(30000),
-        });
-        if(!response.ok)throw Error(`TypeSafe HTTP ${response.status}; paused. Retry with Resume.`);
-        const result=await response.json();
+        // Decision calls compute an answer and change nothing, so a duplicate
+        // in flight is safe. Game commands below are NOT hedged.
+        const body=JSON.stringify(payload);
+        const attempt=async signal=>{
+          view.hedgeAttempts=(view.hedgeAttempts??0)+1;
+          const r=await fetch('https://openrouter.ai/api/alpha/decisions',{
+            method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiKey}`},
+            body,signal:AbortSignal.any([signal,AbortSignal.timeout(30000)]),
+          });
+          if(!r.ok)throw Error(`TypeSafe HTTP ${r.status}; paused. Retry with Resume.`);
+          return await r.json();
+        };
+        const result=hedgeEnabled?await hedged(attempt):await attempt(new AbortController().signal);
         view.decisions++;view.inputTokens+=result.usage?.input_tokens??0;
         return result;
       }});

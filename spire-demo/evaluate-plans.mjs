@@ -10,7 +10,7 @@ const key=process.env.TYPESAFE_API_KEY??config.match(/^api_key\s*=\s*"?([^"\r\n]
 if(!key)throw Error('TypeSafe API key not configured');
 async function ask(payload){
   const start=performance.now();
-  const r=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});
+  const r=await fetch('https://openrouter.ai/api/alpha/decisions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});
   if(!r.ok)throw Error(`TypeSafe HTTP ${r.status}`);
   return {result:await r.json(),latencyMs:Math.round(performance.now()-start)};
 }

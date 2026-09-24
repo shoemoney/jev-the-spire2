@@ -1,8 +1,8 @@
 {
-  "name": "jev-the-spire",
+  "name": "jev-the-spire2",
   "private": true,
   "type": "module",
-  "description": "Watch TypeSafe Jev play Slay the Spire 2",
+  "description": "Watch TypeSafe Jev play Slay the Spire 2. Fork of alexmeckes/jev-the-spire (MIT) with a single-call factored decision layer and latency hedging.",
   "scripts": {
     "start": "node spire-demo/server.mjs",
     "test": "node --test spire-demo/*.test.mjs spire-demo/experiment/*.test.mjs",

@@ -25,7 +25,7 @@ for(let repeat=0;repeat<repeats;repeat++)for(let i=0;i<sequenceCases.length;i++)
     const candidates=decisionCandidates(state),recent=encounterMemory(state,events);
     const answer=await (policy==='current'?deliberate:policy==='comparison'?comparisonDeliberate:simpleDeliberate)({state,candidates,recent,ask:async request=>{
      if(totalTokens>=2500000)throw Error('Lab input-token budget reached');
-     const res=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(request),signal:AbortSignal.timeout(45000)});
+     const res=await fetch('https://openrouter.ai/api/alpha/decisions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(request),signal:AbortSignal.timeout(45000)});
      if(!res.ok)throw Error('TypeSafe HTTP '+res.status);
      const response=await res.json();totalTokens+=response.usage?.input_tokens??0;calls.push({request,response});return response;
     }});
