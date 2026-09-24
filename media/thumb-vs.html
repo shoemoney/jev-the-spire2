@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1280px;height:720px;overflow:hidden;background:#04060d}
+  .stage{position:relative;width:1280px;height:720px;overflow:hidden;
+    background:linear-gradient(105deg,#071130 0%,#050a1c 46%,#1a0d06 54%,#2b1408 100%)}
+  .glowL{position:absolute;left:-140px;top:90px;width:760px;height:620px;
+    background:radial-gradient(circle,rgba(40,140,255,.42),transparent 66%);filter:blur(12px)}
+  .glowR{position:absolute;right:-160px;top:90px;width:760px;height:620px;
+    background:radial-gradient(circle,rgba(217,119,87,.40),transparent 66%);filter:blur(12px)}
+  .split{position:absolute;left:50%;top:0;width:5px;height:720px;transform:translateX(-50%) skewX(-7deg);
+    background:linear-gradient(180deg,transparent,rgba(255,255,255,.92),transparent);opacity:.65}
+  .title{position:absolute;top:18px;left:0;right:0;text-align:center;z-index:9}
+  .title .k{font-family:Inter,sans-serif;font-weight:900;font-size:23px;letter-spacing:.24em;
+    color:#8fd4ff;text-transform:uppercase;text-shadow:0 0 18px rgba(60,180,255,.9)}
+  .title h1{font-family:'Archivo Black',sans-serif;font-size:56px;line-height:.94;color:#fff;
+    text-transform:uppercase;letter-spacing:-.02em;margin-top:5px;
+    text-shadow:0 0 34px rgba(40,130,255,.55),0 6px 20px rgba(0,0,0,.95)}
+  .title h1 em{font-style:normal;color:#ffd23f}
+  .robot{position:absolute;left:-52px;bottom:-60px;height:520px;z-index:4;
+    filter:drop-shadow(0 0 44px rgba(60,150,255,.85)) drop-shadow(0 20px 34px rgba(0,0,0,.9))}
+  .claude{position:absolute;right:34px;top:250px;width:196px;height:196px;z-index:4;
+    filter:drop-shadow(0 0 52px rgba(217,119,87,.9))}
+  .cname{position:absolute;right:10px;top:452px;width:244px;text-align:center;z-index:5;
+    font-family:'Archivo Black',sans-serif;font-size:38px;color:#e08b68;letter-spacing:.04em;
+    text-shadow:0 0 30px rgba(217,119,87,.8),0 5px 16px rgba(0,0,0,.9)}
+  .vs{position:absolute;left:50%;top:126px;transform:translate(-50%,0);z-index:12;
+    font-family:'Archivo Black',sans-serif;font-size:52px;color:#fff;
+    -webkit-text-stroke:5px #04060d;
+    text-shadow:0 0 38px rgba(255,255,255,.65),0 6px 18px rgba(0,0,0,.95)}
+  /* hero numbers */
+  .num{position:absolute;z-index:11;font-family:'Archivo Black',sans-serif;line-height:.86}
+  .num .big{font-size:62px;display:block}
+  .num .lab{font-family:Inter,sans-serif;font-weight:900;font-size:16px;letter-spacing:.15em;
+    text-transform:uppercase;display:block;margin-top:7px}
+  .mine{left:318px;color:#5bff9e;text-shadow:0 0 30px rgba(50,255,150,.75),0 5px 14px rgba(0,0,0,.95)}
+  .mine .lab{color:#9ff2c4}
+  .theirs{left:706px;color:#ff6b6b;text-shadow:0 0 30px rgba(255,90,90,.6),0 5px 14px rgba(0,0,0,.95)}
+  .theirs .lab{color:#ffb3b3}
+  .s1{top:236px}.s2{top:392px}
+  .strike{position:relative}
+  .strike::after{content:'';position:absolute;left:-8px;right:-8px;top:46%;height:7px;
+    background:#ff3b3b;transform:rotate(-7deg);box-shadow:0 0 18px rgba(255,60,60,.95)}
+  .banner{position:absolute;left:0;right:0;bottom:0;height:98px;z-index:14;
+    background:linear-gradient(90deg,#ffd23f,#ff9b2f);
+    display:flex;align-items:center;justify-content:center;gap:46px;
+    box-shadow:0 -12px 40px rgba(0,0,0,.8)}
+  .banner b{font-family:'Archivo Black',sans-serif;font-size:47px;color:#10131f;letter-spacing:-.01em}
+  .banner i{font-style:normal;font-family:'Archivo Black',sans-serif;font-size:28px;color:#6b4a06}
+  .logo{position:absolute;left:24px;bottom:116px;height:56px;z-index:13;
+    filter:drop-shadow(0 0 16px rgba(40,140,255,.9))}
+  .play{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);z-index:30;
+    width:178px;height:178px;border-radius:50%;background:rgba(6,10,24,.76);border:6px solid #fff;
+    box-shadow:0 0 70px rgba(0,0,0,.9);display:none;align-items:center;justify-content:center}
+  .play::after{content:'';margin-left:14px;border-style:solid;border-width:42px 0 42px 68px;
+    border-color:transparent transparent transparent #fff}
+  body.withplay .play{display:flex}
+  body.withplay .stage::before{content:'';position:absolute;inset:0;z-index:25;background:rgba(2,5,14,.36)}
+</style></head>
+<body>
+<div class="stage">
+  <div class="glowL"></div><div class="glowR"></div><div class="split"></div>
+
+  <div class="title">
+    <div class="k">I built an agent to play</div>
+    <h1>Slay The Spire <em>2</em></h1>
+  </div>
+
+  <img class="robot" src="robot.png" alt="">
+
+  <!-- Claude-style sunburst, drawn here for a side-by-side comparison -->
+  <svg class="claude" viewBox="-50 -50 100 100">
+    <g fill="#D97757">
+      <g id="sp"><path d="M0,-46 L5.2,-13 L0,-8 L-5.2,-13 Z"/></g>
+      <use href="#sp" transform="rotate(32.7)"/><use href="#sp" transform="rotate(65.4)"/>
+      <use href="#sp" transform="rotate(98.1)"/><use href="#sp" transform="rotate(130.9)"/>
+      <use href="#sp" transform="rotate(163.6)"/><use href="#sp" transform="rotate(196.3)"/>
+      <use href="#sp" transform="rotate(229.0)"/><use href="#sp" transform="rotate(261.8)"/>
+      <use href="#sp" transform="rotate(294.5)"/><use href="#sp" transform="rotate(327.2)"/>
+    </g>
+  </svg>
+  <div class="cname">CLAUDE</div>
+
+  <div class="vs">VS</div>
+
+  <div class="num mine s1"><span class="big">315<span style="font-size:34px">ms</span></span><span class="lab">per move</span></div>
+  <div class="num mine s2"><span class="big">$0.0005</span><span class="lab">per move</span></div>
+
+  <div class="num theirs s1"><span class="big strike">5,534<span style="font-size:34px">ms</span></span><span class="lab">per move</span></div>
+  <div class="num theirs s2"><span class="big strike">$0.1195</span><span class="lab">per move</span></div>
+
+  <div class="banner"><b>15&times; FASTER</b><i>&bull;</i><b>259&times; CHEAPER</b></div>
+  <div class="play"></div>
+</div>
+</body></html>

@@ -1,154 +1,199 @@
 # Jev The Spire 2
 
-[![Watch the video](media/thumbnail-play.png)](https://youtube.com/@shoemoney)
+### ▶ Watch it play
 
-**A robot plays Slay the Spire 2, and decides every move in about 315 milliseconds for half a
-thousandth of a dollar.**
+[![An agent plays Slay the Spire 2 — 15x faster and 259x cheaper than Claude](media/thumbnail-vs-play.png)](https://youtube.com/@shoemoney)
 
-A fork of **[alexmeckes/jev-the-spire](https://github.com/alexmeckes/jev-the-spire)** (MIT), which
-is where the Slay the Spire 2 integration, the planner, the fixtures and the benchmark suite come
-from. All of that is his work. This fork adds a single-call factored decision layer, tail-latency
-hedging, and a multi-model benchmark harness, then measures the result.
+*Click to watch on YouTube.*
+
+---
+
+**An agent plays Slay the Spire 2 and decides every move in about 315 milliseconds for
+$0.00046, which is 15x faster and 259x cheaper than Claude scoring the same decisions.**
+
+Everything below is measured, the harness is in this repo, and the raw results are in
+[`SWEEP-FINDINGS.md`](SWEEP-FINDINGS.md). Run it yourself and disagree with me.
+
+---
+
+## Credit where it belongs
+
+This is a fork of **[alexmeckes/jev-the-spire](https://github.com/alexmeckes/jev-the-spire)**
+(MIT). The Slay the Spire 2 integration, the planner, the decision fixtures and the grading
+suite are all his work, and this repo keeps his full commit history rather than a squashed
+snapshot. What this fork adds is a different decision layer on top, plus the measurement to
+show whether it was worth doing.
+
+The game bridge is **[STS2MCP](https://github.com/Gennadiyev/STS2MCP)** by Yikun Ji.
+
+---
+
+## What the thing actually is
+
+**[TypeSafe Jev](https://docs.typesafe.ai)** is a decision model, not a chat model. You hand it
+a state and a set of typed questions, and it returns calibrated probabilities. It never
+generates text, so there is no prompt begging for JSON and no fence-stripping regex on the way
+back. Anthropic's Kahneman framing fits: it is a System One model, fast intuitive judgment, and
+it is explicitly not built for extended reasoning.
+
+That constraint is the whole design problem. "Which card should I play?" is a System Two
+question. So this fork decomposes it into System One questions and recombines them in code:
+
+```
+ONE request  ->  move       : choice over every legal action or short plan
+                 safe_<id>  : does this survive the displayed incoming attack?
+                 prog_<id>  : does this make real progress toward winning?
+                 waste_<id> : does this pay a cost whose payoff cannot be collected?
+
+code         ->  normalise each signal, apply weights we own, argmax
+```
+
+Every question in that request is evaluated **in parallel and in isolation**, which is the part
+that makes it work.
+
+---
+
+## The measurements
+
+### Questions are free. Round trips are not.
+
+Same board, same candidates, four samples each:
+
+| questions | input tokens | cost | median latency |
+|---|---|---|---|
+| 31 | 18,236 | $0.000766 | 487ms |
+| 85 | 23,096 | $0.000970 | 457ms |
+| **160** | 29,846 | $0.001254 | **491ms** |
+
+160 questions answer as fast as 31. Tokens scale, latency does not. So a decision needing N
+judgments costs **one request, not N** — and the upstream policy's 2.4 sequential calls per
+decision were the entire latency problem.
+
+### This fork vs upstream, same graded fixtures
+
+| policy | quality | p50 | calls per decision |
+|---|---|---|---|
+| upstream `deliberate` | 24/30 (80%) | 758ms | 2.40 |
+| **this fork** | **90/100 (90%)** | **325ms** | **1.00** |
+
+### vs frontier models, byte-identical state, 30 decisions each
+
+| model | score | p50 | p90 | $/decision |
+|---|---|---|---|---|
+| `moonshotai/kimi-k3` | 29/30 | 2,312ms | 69,963ms | $0.01111 |
+| `anthropic/claude-opus-5.5` | 29/30 | 3,590ms | 9,025ms | $0.04704 |
+| `anthropic/claude-fable-5.1` | 29/30 | 5,534ms | 12,964ms | $0.11952 |
+| `x-ai/grok-4.7` | 29/30 | 12,022ms | 31,624ms | $0.01303 |
+| **`typesafe/jev-1.13`** | 27/30 | **315ms** | **585ms** | **$0.00046** |
+| `openai/gpt-6-astra` | 24/30 | 1,672ms | 3,284ms | $0.03210 |
+| `deepseek/deepseek-v4.1-flash` | 24/30 | 23,366ms | 82,839ms | $0.00446 |
+
+**Read this honestly.** The quality gate is a narrow first-action error check on ten fixtures.
+The grader says so itself: *"not optimality or win probability."* The noise floor on that corpus
+is about ±3, so **27 and 29 are not separable** and Jev is not "smarter" than Claude here. What
+is separable, and by a lot, is 6x-63x on speed and 24x-260x on cost.
+
+Also worth saying: Opus 5.5 is the best LLM on this board and it is not close. Same score as
+Fable at 35% lower latency, 60% lower cost, and a far tighter tail.
+
+---
+
+## Three things that cost real time to learn
+
+**A factor that did not separate the candidates still voted at full strength.** Min-max
+normalising each signal fixed the scale mismatch between a choice probability and a noul, but
+when every candidate scored within 0.01 of the others it stretched that gap to a full 0-to-1
+swing. Three factors shouting about nothing. A `DEADBAND` of 0.15 raw spread, below which a
+factor returns neutral, was worth **+16 points** on its own.
+
+**Capping the fan-out to save money silently disabled the factoring.** At a cap of 28
+candidates, 6% of decisions exceeded it and 7% of all candidates got no factor questions at all
+— always on the busiest boards. It cost a run: at 7 HP against three enemies telegraphing 17
+damage, the top three candidates came back `safe=None prog=None waste=None` with confidence 0,
+and the agent died two decisions later. The cap is now 64.
+
+**The endpoint's latency is bimodal and it comes and goes.** Measured on identical payloads:
+a fast cluster at 0.34-0.79s and a slow cluster at 7-16s, with nothing in between. Waiting
+longer never helps; issuing a second identical request does, because it draws again. Hence
+[`hedge.mjs`](spire-demo/hedge.mjs). Four hours later the slow mode was gone entirely and the
+hedge never fired across 480 decisions. **Never tune a timeout from one sitting.**
+
+---
+
+## Setup
+
+You need **Slay the Spire 2**, **Node.js 22+**, and an **[OpenRouter](https://openrouter.ai/keys)
+key**.
+
+```bash
+git clone https://github.com/shoemoney/jev-the-spire2.git
+cd jev-the-spire2
+cp .env.example .env          # then put your OpenRouter key in it
+```
+
+The app also reads `.private/typesafe.cfg`:
+
+```
+api_key = "sk-or-v1-..."
+```
+
+### The game mod
+
+Install [STS2MCP](https://github.com/Gennadiyev/STS2MCP). **On Slay the Spire 2 v0.111+ the
+prebuilt DLL does not load** — it dies with
+`ReflectionTypeLoadException: Could not load type ...Multiplayer.LobbyPlayer`. Build from the
+`fix/v0.111-compat` branch ([upstream PR #132](https://github.com/Gennadiyev/STS2MCP/pull/132))
+against your installed game:
+
+```bash
+dotnet build -c Release -p:STS2GameDir="/path/to/Slay the Spire 2"
+```
+
+On macOS the mods folder lives inside the app bundle at
+`SlayTheSpire2.app/Contents/MacOS/mods/`, and the game **must be launched through Steam** or
+Steamworks init fails with "No appID found".
+
+### Run it
+
+```bash
+SPIRE_SINGLE_CALL=1 node spire-demo/server.mjs     # dashboard at http://127.0.0.1:4317
+```
+
+Start a normal singleplayer run in the game, then press Autoplay. `SPIRE_HEDGE=0` disables
+hedging; omitting `SPIRE_SINGLE_CALL` falls back to the upstream multi-call policy.
+
+---
 
 ## What this fork adds
 
 | File | What it does |
 |---|---|
-| `spire-demo/factored.mjs` | One request carrying the broad choice plus three nouls per candidate, recombined in code with weights you own |
-| `spire-demo/hedge.mjs` | Staggered request hedging for a bimodally-slow endpoint, idempotent reads only |
-| `spire-demo/benchmark/sweep.mjs` | Parameter sweep scoring latency against decision quality on fixed fixtures |
-| `spire-demo/benchmark/vs-llm.mjs` | Head-to-head against any OpenRouter model on byte-identical state |
+| [`spire-demo/factored.mjs`](spire-demo/factored.mjs) | One request carrying the broad choice plus three nouls per candidate, recombined in code with weights you own. Includes the deadband. |
+| [`spire-demo/hedge.mjs`](spire-demo/hedge.mjs) | Staggered request hedging for a bimodally-slow endpoint. **Idempotent reads only** — game commands are never hedged. |
+| [`spire-demo/benchmark/sweep.mjs`](spire-demo/benchmark/sweep.mjs) | Parameter sweep scoring latency against decision quality on fixed fixtures. |
+| [`spire-demo/benchmark/vs-llm.mjs`](spire-demo/benchmark/vs-llm.mjs) | Head-to-head against any OpenRouter model on byte-identical state. |
 
-Results and method: **[SWEEP-FINDINGS.md](SWEEP-FINDINGS.md)**.
-
-### Measured
-
-Against the upstream multi-call policy, on the same graded fixtures:
-
-| policy | quality | p50 | calls per decision |
-|---|---|---|---|
-| upstream `deliberate` | 24/30 | 758ms | 2.40 |
-| **this fork** | **90/100** | **325ms** | **1.00** |
-
-And against frontier models on identical state, 30 decisions each:
-
-| model | score | p50 | $/decision |
-|---|---|---|---|
-| `moonshotai/kimi-k3` | 29/30 | 2,312ms | $0.01111 |
-| `anthropic/claude-opus-5.5` | 29/30 | 3,590ms | $0.04704 |
-| `anthropic/claude-fable-5.1` | 29/30 | 5,534ms | $0.11952 |
-| `x-ai/grok-4.7` | 29/30 | 12,022ms | $0.01303 |
-| **`typesafe/jev-1.13`** | 27/30 | **315ms** | **$0.00046** |
-| `openai/gpt-6-astra` | 24/30 | 1,672ms | $0.03210 |
-| `deepseek/deepseek-v4.1-flash` | 24/30 | 23,366ms | $0.00446 |
-
-The quality gate is a narrow first-action error check on ten fixtures, not a win-rate. The noise
-floor on that corpus is about +/- 3, so 27 and 29 are not separable. What is separable is 6x to 63x
-on speed and 24x to 260x on cost.
-
-### Running against OpenRouter instead of TypeSafe direct
-
-This fork calls `https://openrouter.ai/api/alpha/decisions` with the model pinned to
-`typesafe/jev-1.13`. Put an OpenRouter key in `.private/typesafe.cfg` as `api_key = "sk-or-..."`,
-then:
+## Reproduce
 
 ```bash
-SPIRE_SINGLE_CALL=1 node spire-demo/server.mjs    # dashboard on :4317
-SPIRE_HEDGE=0 ...                                  # to disable hedging
+node --test spire-demo/*.test.mjs spire-demo/experiment/*.test.mjs   # 214 tests
+node spire-demo/benchmark/sweep.mjs --repeats=10 --only=default,waste-veto
+node spire-demo/benchmark/run.mjs --scored-only --repeats=3          # upstream control
+node spire-demo/benchmark/vs-llm.mjs --repeats=3 --models=anthropic/claude-opus-5.5,x-ai/grok-4.7
 ```
+
+**A warning that cost me a false headline.** Benchmarking a reasoning model with too small a
+`max_tokens` returns **empty content, not an error** — the budget goes to reasoning tokens and
+none is left for the answer. My first run scored Fable 2/10 and I nearly published "the
+frontier model fails to emit valid JSON 80% of the time." With an adequate budget it scored
+46/50 with zero parse failures. Check
+`usage.completion_tokens_details.reasoning_tokens` before believing any parse-failure rate.
 
 ---
 
-Watch **TypeSafe Jev play Slay the Spire 2** on your computer.
+## License
 
-Jev chooses cards, targets, rewards, routes, and purchases. A local dashboard shows its choices, competing options, and estimated outcomes. You can preview a decision, play one move, or turn on autoplay.
+MIT, same as upstream. See [LICENSE](LICENSE).
 
-This is an experiment, not a solved-game bot. Its first verified Ironclad Ascension 0 victory came on archived run #182; that history spans multiple policy versions and is not a current-policy win-rate estimate.
-
-## What you need
-
-- **Slay the Spire 2**, installed locally.
-- **[STS2MCP](https://github.com/Gennadiyev/STS2MCP)**, a compatible game mod that lets the app read game state and perform actions.
-- **Node.js 22 or newer.**
-- A **[TypeSafe](https://docs.typesafe.ai/api) API key** with credits. Playing and model-based benchmarks make paid API calls.
-
-## Get started
-
-1. Install and enable STS2MCP using its [installation instructions](https://github.com/Gennadiyev/STS2MCP#for-players). Launch the game. Its local API should respond at `http://127.0.0.1:15526/api/v1/singleplayer`.
-2. Clone this repository:
-
-   ```sh
-   git clone https://github.com/alexmeckes/jev-the-spire.git
-   cd jev-the-spire
-   ```
-
-3. Set your key and start the app (macOS/Linux):
-
-   ```sh
-   export TYPESAFE_API_KEY="your-key-here"
-   npm start
-   ```
-
-   On Windows PowerShell, use `$env:TYPESAFE_API_KEY="your-key-here"` followed by `npm start`.
-
-   There are no npm dependencies to install.
-
-4. Open **http://127.0.0.1:4317**, start a normal singleplayer run in the game, and press **Autoplay**.
-
-Use **Preview** to see a choice without playing it, **One move** to execute one decision, and **Pause** to take over. Pause prevents the next action; it cannot undo one already sent to the game.
-
-**Mod compatibility:** game updates can break the bridge. Development used game v0.107.1 with STS2MCP source commit `55e064850a68f3b4cde7e5fd525bf9b2dec4e885`, built against the installed game. The 0.4.0 release binary did not work with that game version. See [bridge notes](docs/bridge.md) if the dashboard cannot connect.
-
-## Watch the decisions
-
-Open **http://127.0.0.1:4317/sidecar** for a compact companion panel. On macOS, `spire-demo/Open Jev Companion.command` builds and opens a floating window (requires Xcode command-line tools). The browser dashboard works without it.
-
-The panel shows choices and probabilities, not a generated reasoning transcript. Confidence is not the probability of winning.
-
-## How it works
-
-1. Read the visible game state through the local bridge.
-2. Build legal actions and short combat plans, with estimates for supported effects.
-3. Ask Jev to choose.
-4. Check that the state is still current and execute **only the first action**.
-5. Observe again and repeat.
-
-Jev is the only AI model making gameplay choices. Forecasts are incomplete: they do not know future draws or hidden enemy behavior. The app does not require screenshots or mouse control.
-
-## Local data and limits
-
-Your key stays on the local server. Game observations, candidate plans, and recent decision context are sent to TypeSafe. Gameplay logs and checkpoints stay in the ignored `.private/` folder. Never commit that folder or your key.
-
-The server binds to localhost. Keep the game bridge local too. Default session limits are 2,000 decisions and 10 million input tokens; override `MAX_DECISIONS` or `MAX_INPUT_TOKENS` if needed. Displayed costs are estimates, not a billing meter.
-
-Restarting restores the previous session **paused**. After a finished run, stop the server and rename `.private/spire-runs/session.json` to archive it before starting a separate session. Autoplay does not automatically start a new match after defeat.
-
-## Progress visualizer
-
-[**Jev the Spire**](https://jev-the-spire.alex900731.chatgpt.site) is the public hosted dashboard. The complete static visualizer and sanitized 182-run snapshot are included in [spire-demo/progress-site](spire-demo/progress-site). You can view them locally without a Sites account:
-
-```sh
-npm run progress
-```
-
-Open http://127.0.0.1:4390. Explore floors, strategy changes, individual run details, and recorded input/output token usage. Download the per-run CSV from the page. See [progress and accounting notes](docs/progress.md) for how the data is produced and what the totals exclude.
-
-## Current baseline
-
-The synced player uses `jev-visible-v23-retaliation` and `jev-visible-review-v24-card-order`: visible facing and deadline checks, deck evidence, retaliation forecasts, card-order review, and request compaction. Sword in Stone remains excluded. Leave `SPIRE_ADVISER` and `SPIRE_PLAN_BENEFIT` unset for baseline Jev. Optional experiment code is included for reproducibility and disabled by default; it is not part of the winning run's configuration.
-
-## Tests
-
-```sh
-npm test
-```
-
-Tests run locally without an API key or a running game. The repo includes gameplay fixtures and controlled sequence tests for potion timing and card ordering.
-
-`npm run benchmark:dry` checks the recorded-state benchmark inputs without API calls. [Benchmark notes](docs/benchmarks.md) explain the optional paid evaluations and their limits.
-
-## Credits
-
-Built with [TypeSafe Jev](https://docs.typesafe.ai/api) and [STS2MCP](https://github.com/Gennadiyev/STS2MCP). This is an unofficial project, not affiliated with Mega Crit. Slay the Spire 2 and its game content belong to their respective owners; no game binaries or assets are included.
-
-Project code is MIT licensed. The vendored STS2MCP documentation retains its [upstream license](spire-demo/vendor/LICENSE).
+Slay the Spire 2 is a trademark of Mega Crit. This project is unaffiliated with Mega Crit,
+Anthropic, or TypeSafe. Model names appear only to identify what was benchmarked.

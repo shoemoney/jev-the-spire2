@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:#04060d}
+  .stage{position:relative;width:1920px;height:1080px;overflow:hidden;
+    background:
+      radial-gradient(1200px 820px at 50% 44%, rgba(37,130,255,.34), transparent 66%),
+      radial-gradient(900px 700px at 16% 86%, rgba(120,40,220,.30), transparent 66%),
+      linear-gradient(175deg,#0a1024 0%,#070a16 46%,#04060d 100%)}
+  .grid{position:absolute;inset:0;opacity:.13;
+    background-image:linear-gradient(rgba(120,180,255,.5) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(120,180,255,.5) 1px,transparent 1px);
+    background-size:84px 84px;
+    -webkit-mask-image:radial-gradient(980px 620px at 50% 50%,#000,transparent 76%)}
+  .ring{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);
+    width:980px;height:980px;border-radius:50%;border:2px solid rgba(90,170,255,.16)}
+  .wrap{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:0 130px;text-align:center;z-index:5}
+  .q{font-family:'Archivo Black',sans-serif;font-size:82px;line-height:1.1;color:#fff;
+    text-transform:uppercase;letter-spacing:-.015em;
+    text-shadow:0 0 44px rgba(40,130,255,.5),0 8px 26px rgba(0,0,0,.95)}
+  .q .dim{color:#7f8ea8}
+  .q .hl{color:#ffd23f;text-shadow:0 0 46px rgba(255,190,50,.8),0 8px 24px rgba(0,0,0,.9)}
+  .q .grn{color:#5bff9e;text-shadow:0 0 46px rgba(50,255,150,.7),0 8px 24px rgba(0,0,0,.9)}
+  .or{font-family:'Archivo Black',sans-serif;font-size:56px;color:#57c8ff;margin:34px 0;
+    letter-spacing:.3em;text-shadow:0 0 38px rgba(60,180,255,.9)}
+  .cta{margin-top:58px;font-family:Inter,sans-serif;font-weight:900;font-size:52px;
+    color:#fff;letter-spacing:.02em;text-shadow:0 6px 22px rgba(0,0,0,.9)}
+  .cta b{color:#ffd23f}
+  .repo{margin-top:40px;font-family:Inter,sans-serif;font-weight:900;font-size:36px;
+    color:#9fc2e8;letter-spacing:.04em;
+    background:rgba(6,12,28,.85);border:2px solid rgba(90,180,255,.5);border-radius:16px;
+    padding:18px 38px;box-shadow:0 0 34px rgba(40,130,255,.3)}
+  .robot{position:absolute;right:-70px;bottom:-90px;height:640px;opacity:.20;z-index:1;
+    filter:drop-shadow(0 0 40px rgba(60,150,255,.5))}
+  body.card2 .c1{display:none}
+  body.card1 .c2{display:none}
+</style></head>
+<body class="card1">
+<div class="stage">
+  <div class="grid"></div><div class="ring"></div>
+  <img class="robot" src="robot.png" alt="">
+  <div class="wrap c1">
+    <div class="q">Do you like <span class="dim">infographics</span><br>from <span class="hl">newbs acting like experts</span>?</div>
+  </div>
+  <div class="wrap c2">
+    <div class="q">Or do you like <span class="grn">real world examples</span><br>with links to the <span class="grn">GitHub code</span>?</div>
+    <div class="cta">Like, share and <b>subscribe</b> if so!</div>
+    <div class="repo">github.com/shoemoney/jev-the-spire2</div>
+  </div>
+</div>
+</body></html>
