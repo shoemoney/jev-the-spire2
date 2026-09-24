@@ -10,3 +10,6 @@ node_modules/
 *.app/
 __pycache__/
 *.pyc
+
+# the full upload cut, too big for git
+media/shoemoney-agent-plays-*.mp4
