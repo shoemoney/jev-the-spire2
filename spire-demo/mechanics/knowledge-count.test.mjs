@@ -11,11 +11,22 @@ import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
 import {countDecisions, readLogLines, SAMPLE_LOG} from './extract.mjs';
 import {META} from './knowledge.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '../..');
+
+// Is a repo-relative path tracked by git? Answerable identically on any machine and in any clone, unlike
+// existsSync - which reports the AMBIENT filesystem and is the trap this file walked into once already.
+const trackedByGit = rel => {
+  try {
+    return execFileSync('git', ['ls-files', '--error-unmatch', '--', rel], {cwd: REPO, stdio: ['ignore', 'pipe', 'ignore']}).toString().trim() !== '';
+  } catch {
+    return false;
+  }
+};
 const GENERATOR = readFileSync(join(HERE, 'extract.mjs'), 'utf8');
 const line = o => JSON.stringify(o);
 const decision = extra => line({kind: 'decision', outcome: 'executed', ...extra});
@@ -72,8 +83,14 @@ test('the committed corpus META.decisions is a FROZEN CAPTURE, and it is labelle
   // The two options were: re-derive the count from the file META.source names, or declare it a capture. This
   // is a CAPTURE, because META.source is a .jsonl: gitignored, private, and absent from every clone, so no
   // test here can read it and a re-deriving assertion could only ever pass on the machine that wrote it.
-  assert.equal(existsSync(join(REPO, META.source)), false, 'the named source is genuinely absent, so this cannot be re-derived offline');
-  assert.ok(META.source.endsWith('.jsonl'), 'and it names a jsonl, which is why');
+  //
+  // That used to be asserted as `existsSync(META.source) === false`, which is the ambient filesystem, not
+  // the repository: true in a fresh clone, false on the very machine that holds a real run log. It failed
+  // here and would have passed in CI — the same environment-dependence this file's neighbour had. The
+  // property is really about VERSION CONTROL, and that is answerable identically everywhere: the file is
+  // named by a path git does not track, so no clone can re-derive the count from it.
+  assert.ok(META.source.endsWith('.jsonl'), 'the named source is a jsonl, which is why it is a capture');
+  assert.ok(!trackedByGit(META.source), 'and git does not track it, so no clone can re-derive the count from it');
   // 770 is what the real corpus holds: 779 records, of which 5 are run_end and 4 are error. It was verified
   // by regenerating from that log, and the regenerated corpus is byte-identical to the committed one apart
   // from this field - so this literal is a capture of a real derivation, not an aspiration.
