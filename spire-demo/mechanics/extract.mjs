@@ -539,11 +539,33 @@ every kind but is a 2-decision fixture, not the corpus.`;
 // JSONL (one decision per line) is the real format. A top-level JSON array is also accepted so a fixture
 // can ship: .jsonl is gitignored, so no sample of the corpus can ever be committed. Lines are handed back
 // as text so readObservations stays the single parser.
-function readLogLines(text, label) {
+export function readLogLines(text, label) {
   const trimmed = text.trim();
   if (!trimmed.startsWith('[')) return text.split('\n').filter(Boolean);
-  try { return JSON.parse(trimmed).map(r => JSON.stringify(r)); }
-  catch (e) { throw new Error(`${label} starts with '[' but is not a valid JSON array of decisions: ${e.message}`); }
+  try {
+    // This function is the one place that already normalises format, so it is where the array form's
+    // documented meaning - "a list of decisions" - gets applied. The committed fixture is hand-trimmed and
+    // its records arrive WITHOUT the kind tag JSONL carries, so an untagged record is tagged here. Without
+    // this, that fixture reports zero decisions while producing eleven entities, and countDecisions would
+    // disagree with every other reader of a log. A record that already carries a kind is left untouched: a
+    // run_end or error inside an array fixture stays one, and an untagged line in real JSONL - which is not
+    // a documented list of decisions - is still not counted as one.
+    return JSON.parse(trimmed).map(r => r && typeof r === 'object' && !('kind' in r) ? {kind: 'decision', ...r} : r)
+      .map(r => JSON.stringify(r));
+  } catch (e) { throw new Error(`${label} starts with '[' but is not a valid JSON array of decisions: ${e.message}`); }
+}
+
+// The number of decisions the corpus was mined from. Strictly the records tagged kind:"decision" - the same
+// predicate report.mjs, server.mjs and encounters.mjs use, so the number this prints is the number every
+// other tool prints for the same log. It is NOT lines.length: a log interleaves run_end and error records
+// with decisions, so counting lines overstates the decisions by exactly those two kinds.
+export function countDecisions(lines) {
+  let n = 0;
+  for (const line of lines) {
+    let o; try { o = JSON.parse(line); } catch { continue; }
+    if (o?.kind === 'decision') n++;
+  }
+  return n;
 }
 
 function main() {
@@ -557,7 +579,7 @@ function main() {
   const built = buildKnowledge(obs);
   const kinds = Object.fromEntries(Object.entries(built.counts).sort());
   const meta = {
-    source: sourceLabel(logPath), decisions: lines.length,
+    source: sourceLabel(logPath), decisions: countDecisions(lines),
     counts: kinds, names: Object.keys(built.KNOWLEDGE).length, glossary: Object.keys(built.GLOSSARY).length,
     note: 'Effects are regex-derived from verbatim descriptions. Numbers that varied across the corpus are reported as <field>Observed with mutable:true instead of a single value.',
   };
