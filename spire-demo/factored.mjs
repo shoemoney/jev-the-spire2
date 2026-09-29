@@ -24,6 +24,7 @@
 
 import { decisionQuestion } from './planner.mjs';
 import { decisionFocus } from './decision-focus.mjs';
+import { deckAssessment, deckUnavailableInstruction } from './deck-assessment.mjs';
 import { compactRequest } from './compact-request.mjs';
 import { refuseLethalChoice, completeFactors } from './learning/lethal-gate.mjs';
 
@@ -137,11 +138,31 @@ const COMBAT_NOULS = {
 // what entering costs, judged from the node type and the visible `leads_to` chain. It
 // must not say "incoming attack this turn" - there is no turn - because a question the
 // board cannot answer is answered from priors, and priors are not evidence.
-const ROOM_NOULS = {
+//
+// THE VOCABULARY MUST MATCH THE BOARD. This text is about a MAP: `leads_to`, node
+// `type`, the visible path. Spraying it over every non-combat screen is the same defect
+// one level down - a shop or a card reward has no nodes and no leads_to, so the model
+// is asked to reason from a structure that is not in the payload and answers from
+// priors. `isCombat()` is false for EVERYTHING non-combat, so routing all of it here
+// leaked map vocabulary onto 94 of the 119 non-combat decisions in the recorded run
+// (card_reward 25, rewards 34, event 13, rest_site 9, shop 6, card_select 4,
+// hand_select 3). A board that is not a map gets the neutral screen phrasing, which
+// names nothing the board does not have.
+const MAP_NOULS = {
   safe: 'Given `state`, does taking the candidate identified by `candidate` leave the player able to survive the room being entered and the rooms it visibly leads to? Judge it from current HP against `max_hp`, held potions, and the `type` and `leads_to` of the nodes on the visible path; count a forced fight after a rest site as a fight before the rest site, not after it. Answer no if it walks into a room this player cannot currently survive. Answer no if the candidate is not a legal action here.',
   progress: 'Given `state`, does taking the candidate identified by `candidate` make real progress toward winning the run, such as advancing toward the boss, reaching a reward or upgrade, or spending gold on something the deck needs? Answer no if it merely leaves the run where it already was. Judge only from visible rooms, visible connections and current resources; unknown rooms stay unknown.',
   waste: 'Given `state`, does the candidate identified by `candidate` pay a lasting cost whose payoff cannot actually be collected here? Costs include spending gold, using a potion, discarding or declining a permanent improvement, and taking a room that forces a harder fight later. Answer yes if the payoff needs gold, a potion slot, a reward or a room that the visible state does not supply, or if it forgoes an available decisive option. Answer no when the payoff is collectable now.',
 };
+
+// For every non-combat screen that is not the map. Says what the candidate DOES, in
+// terms the screen actually supplies, and never names a node, a path or a deck.
+const SCREEN_NOULS = {
+  safe: 'Given `state`, does taking the candidate identified by `candidate` leave the player able to afford it, with current HP against `max_hp`, the resources the screen spends, and the risk the visible state states? Judge only from what `state` supplies about this screen. Answer no if the candidate is not a legal action here, or if the visible state states a cost this player cannot currently pay. If the screen states nothing about risk, answer from what it does state rather than from a general prior.',
+  progress: 'Given `state`, does taking the candidate identified by `candidate` make real progress toward winning the run on THIS screen - taking a lasting improvement, resolving something that is actually resolved, or moving the run forward - rather than leaving the run exactly as it was? Judge only from what `state` supplies on this screen. Answer no if it merely declines an available improvement for no stated reason.',
+  waste: 'Given `state`, does the candidate identified by `candidate` pay a lasting cost whose payoff cannot actually be collected here? Costs include spending gold or a potion, discarding something, or declining a lasting improvement. Answer yes if the payoff needs a card, a target, a gold amount or a number of remaining turns that the visible state does not supply, or if it forgoes an available decisive option. Answer no when the payoff is collectable now.',
+};
+
+const isMapBoard = state => state?.state_type === 'map';
 
 export const isCombat = state => ['monster', 'elite', 'boss'].includes(state?.state_type);
 
@@ -166,9 +187,22 @@ export function factoredQuestion(state, candidates, { maxFactored = MAX_FACTORED
   // board's `move` question: it would bias one distribution on shop, campfire and
   // card-reward screens too, and a screen-specific criterion is only an improvement
   // on the screen it was written for.
+  // The card-reward focus is written entirely in terms of the permanent deck: "Compare every
+  // offered card and Skip against the actual permanent deck... A small starter deck is not
+  // automatically a strong deck." The bridge does not send one - `player.deck` is present in 0
+  // of 775 logged records, so `deckAssessment` reports `available:false` on every card reward.
+  // So the focus is SUPPRESSED on that board rather than supplemented: appending the correction
+  // alongside it leaves a request that says both "judge against the actual deck" and "the deck is
+  // not included", which is worse than either alone, because the model is asked to reconcile a
+  // contradiction instead of reading a fact. `deckUnavailableInstruction` carries the same
+  // take-or-skip judgement the focus was reaching for, grounded in what the board does supply.
+  const deckAvailable = deckAssessment(state)?.available !== false;
   const focus = decisionFocus(state);
-  if (focus.instructions.move) questions.move.instructions += ' ' + focus.instructions.move;
-  const phrased = isCombat(state) ? COMBAT_NOULS : ROOM_NOULS;
+  if (focus.instructions.move) {
+    if (state?.state_type === 'card_reward' && !deckAvailable) questions.move.instructions += ' ' + deckUnavailableInstruction;
+    else questions.move.instructions += ' ' + focus.instructions.move;
+  }
+  const phrased = isCombat(state) ? COMBAT_NOULS : isMapBoard(state) ? MAP_NOULS : SCREEN_NOULS;
   for (const c of factored) {
     questions['safe_' + c.id] = { type: 'noul', instructions: { candidate: c.id, question: phrased.safe } };
     questions['prog_' + c.id] = { type: 'noul', instructions: { candidate: c.id, question: phrased.progress } };
@@ -294,17 +328,24 @@ export async function factoredDeliberate({ state, candidates, ask, onStage = () 
     return { ...result, safetyGate: refuseLethalChoice(candidates[0]?.id ?? null, candidates, candidates), deliberation: null };
   }
   onStage('Jev is scoring every option in one pass');
-  const result = await ask(compactRequest(factoredQuestion(state, candidates, { maxFactored, waste: (weights.waste ?? 0) > 0 })));
+  const wasteAsked = (weights.waste ?? 0) > 0;
+  const result = await ask(compactRequest(factoredQuestion(state, candidates, { maxFactored, waste: wasteAsked })));
   const answers = result.answers ?? {};
   const jevMove = answers.move;
   if (jevMove?.type !== 'choice') throw new Error('Missing Jev move choice');
+
+  // Only the factors that were actually ASKED can be complete. `waste_*` is not asked when
+  // `weights.waste` is 0 - and `benchmark/sweep.mjs` ships exactly such an arm - so demanding
+  // it unconditionally would report an incomplete board for every decision and quietly reduce
+  // the policy to the broad answer forever, while still printing a score that looks fine.
+  const askedPrefixes = wasteAsked ? ['safe_', 'prog_', 'waste_'] : ['safe_', 'prog_'];
 
   // Refuse to recombine a board the model only half-answered. Falling back to the broad
   // `move` answer is not a downgrade in confidence - it is the only reading on this
   // board that is not assembled from missing factors - and `factorFallback` says so in
   // the log rather than leaving a clean ranking and a confident margin to be read as
   // evidence. See learning/lethal-gate.mjs for the measurement behind this.
-  const factorsComplete = completeFactors(candidates, answers);
+  const factorsComplete = completeFactors(candidates, answers, askedPrefixes);
   const combined = factorsComplete ? combine(candidates, answers, weights) : null;
   const probabilities = combined ? combined.probabilities : (jevMove.probabilities ?? null);
   const confidence = combined ? combined.margin : (jevMove.confidence ?? null);

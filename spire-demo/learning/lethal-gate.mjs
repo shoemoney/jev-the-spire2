@@ -1,11 +1,20 @@
 // The safety gate, and the refuse-to-recombine check, in a module neither of its
 // callers owns.
 //
-// Both used to live only in wire.mjs. factored.mjs is the DEFAULT policy - 512 of the
-// 560 decisions in the 2026-09-23 run log carry version `jev-single-call-factored-v1` -
-// and it had neither guard, so that run walked into five fatal elites. Giving the
-// default the same two guards the recall policy has means there must be ONE
-// implementation, not a second copy that can drift.
+// Both used to live only in wire.mjs, and factored.mjs had neither - which is how 512 of
+// the 560 decisions in the 2026-09-23 run log (version `jev-single-call-factored-v1`)
+// reached five fatal elites unguarded. Giving both policies the same two guards means
+// there is ONE implementation, not a second copy that can drift.
+//
+// That 512/560 figure is what RAN on 2026-09-23. It is not what is configured. The chain in
+// server.mjs:176 is a first match, and its order is
+//   SPIRE_RECALL -> SPIRE_BETTER_POLICY -> SPIRE_SINGLE_CALL -> SPIRE_ADVISER=luna ->
+//   SPIRE_PLAN_BENEFIT -> deliberate
+// so `factoredDeliberate` is OPT-IN via SPIRE_SINGLE_CALL=1, the companion launcher selects
+// `recallingDeliberate` ahead of it, and a bare `node spire-demo/server.mjs` with no
+// environment at all lands on `deliberate` - which calls neither this gate nor
+// `completeFactors` and never calls `combine()`. Do not read the historical share as a
+// statement about the default; it is evidence about one recorded run.
 //
 // Importing them back out of wire.mjs would make factored.mjs <-> wire.mjs circular:
 // wire.mjs already imports factoredQuestion, combine and WEIGHTS from here. ESM would
@@ -27,7 +36,7 @@
 //
 // `partial` is deliberately included. Its warnings are about the turn's damage being a
 // bound rather than a total, not about survival being undecidable: the verdict is still
-// the planner's arithmetic on a visible board. Across the 769-decision run log every
+// the planner's arithmetic on a visible board. Across the 770 decisions in the run log every
 // scored candidate was `partial` (4091) or `unknown` (2085) and not one was
 // `calculated`, and the recorded death was a `partial` `end_turn` with survives:false,
 // hpAfter 0. A gate that only fired on `calculated` would have been a gate that never
@@ -113,13 +122,20 @@ export function refuseLethalChoice(choice, candidates = [], ranking = candidates
 // candidates unasked, so it always falls back. That is the honest reading rather than a
 // regression - the tail genuinely has no factors - and it is why MAX_FACTORED_CANDIDATES
 // is set above the largest board ever observed.
-const FACTOR_PREFIXES = ['safe_', 'prog_', 'waste_'];
+export const FACTOR_PREFIXES = ['safe_', 'prog_', 'waste_'];
 
-export function completeFactors(candidates, answers = {}) {
-  return candidates.every(candidate => FACTOR_PREFIXES.every(prefix => {
+// `required` is the list of factor prefixes the question ACTUALLY asked. It is not hardcoded,
+// because `factoredQuestion` only asks `waste_*` when `weights.waste > 0`, and
+// `benchmark/sweep.mjs:23` ships a `NO_WASTE` arm with `waste: 0`. A guard that demanded
+// `waste_*` regardless would report `factorsComplete:false` on EVERY board for that arm —
+// the policy would silently fall back to the broad choice forever while still printing a
+// score, and nothing would notice. Demand only what was asked.
+export function completeFactors(candidates, answers = {}, required = ['safe_', 'prog_', 'waste_']) {
+  if (!required.length) return true;
+  return candidates.every(candidate => required.every(prefix => {
     const value = answers[prefix + candidate.id]?.noul;
     return Number.isFinite(value) && value >= 0 && value <= 1;
   }));
 }
 
-export default {refuseLethalChoice, statedSurvival, completeFactors};
+export default {refuseLethalChoice, statedSurvival, completeFactors, FACTOR_PREFIXES};

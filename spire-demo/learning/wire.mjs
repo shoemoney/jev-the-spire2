@@ -26,7 +26,7 @@ import {buildRecallContext, RECALL_LESSON_LIMIT} from './recall.mjs';
 // factored.mjs - the default policy - needs the same two, and importing them back from
 // here would close a cycle. Re-exported so this module's callers and its tests are
 // unaffected by where the implementation now sits.
-import {refuseLethalChoice, statedSurvival, completeFactors} from './lethal-gate.mjs';
+import {refuseLethalChoice, statedSurvival, completeFactors, FACTOR_PREFIXES} from './lethal-gate.mjs';
 export {refuseLethalChoice, statedSurvival, completeFactors};
 
 export const RECALL_POLICY_VERSION = 'jev-recall-v1';
@@ -128,7 +128,7 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
   // not a downgrade in confidence - it is the only reading on the board that is not assembled from
   // missing factors - and `factorFallback` says so in the log rather than leaving a clean ranking and a
   // confident margin to be read as evidence.
-  const factorsComplete = completeFactors(candidates, answers);
+  const factorsComplete = completeFactors(candidates, answers, FACTOR_PREFIXES);
   const {scored, probabilities, margin, unmeasured} = factorsComplete
     ? combine(candidates, answers, WEIGHTS)
     : {scored: null, probabilities: jevMove.probabilities ?? null, margin: jevMove.confidence ?? null, unmeasured: null};

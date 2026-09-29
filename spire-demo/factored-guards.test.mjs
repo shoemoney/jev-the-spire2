@@ -132,3 +132,74 @@ test('a real map board (act1 floor12, asc3, 67/75 hp, two Elites) produces elite
   assert.match(move, /elite/i, 'the screen names the room type that killed the run');
   assert.match(move, /Compare current HP/);
 });
+
+// ---- Round-2 review findings. Each of these was a real defect that shipped in the same cycle. ----
+
+// BUG 1. The card-reward focus tells the model to judge the offer "against the actual permanent
+// deck". The bridge does not send one: `player.deck` is present in 0 of 775 logged records. The
+// deck correction removed that directive from deliberation.mjs, and the decisionFocus wiring
+// reintroduced it here - on the path that carried 512 of 560 decisions in the run that died five
+// times. This is the project's signature failure: instructing a judgment from data that is absent.
+test('a card reward with no deck is never told to judge against the deck', () => {
+  const s = {
+    state_type: 'card_reward', run: {act: 1, floor: 5, ascension: 1},
+    player: {hp: 70, max_hp: 75, block: 0, energy: 3, gold: 99, status: [], relics: [], potions: []},
+    card_reward: {cards: [{name: 'Bash', cost: 2, description: 'Deal 8 damage.'},
+                          {name: 'Heavy Blade', cost: 2, description: 'Deal 14 damage.'}]},
+  };
+  assert.ok(!('deck' in s.player), 'the bridge does not send a deck - this is the real shape');
+  const c = [{id: 'a0', label: 'Bash', command: {action: 'take_card', index: 0}, details: {}},
+             {id: 'a1', label: 'Skip', command: {action: 'skip'}, details: {}}];
+  const move = factoredQuestion(s, c).questions.move.instructions;
+  assert.doesNotMatch(move, /actual permanent deck/i,
+    'the request must not direct a judgment at a deck the bridge never sends');
+  assert.match(move, /not included|not visible|missing observation/i,
+    'and it must say the deck is absent rather than quietly dropping the subject');
+});
+
+// BUG 2. `isCombat()` is false for EVERYTHING non-combat, so one "room" phrasing was sprayed over
+// every non-map screen. A shop or a card reward has no nodes and no `leads_to`, so the model was
+// asked to reason from a structure that is not in the payload. Measured: 94 of 119 non-combat
+// decisions in the recorded run got map vocabulary.
+test('map vocabulary never reaches a board that has no map', () => {
+  const board = type => ({
+    state_type: type, run: {act: 1, floor: 5, ascension: 1},
+    player: {hp: 70, max_hp: 75, status: [], relics: [], potions: []},
+  });
+  const cands = [{id: 'a0', label: 'A', command: {action: 'x'}, details: {}},
+                 {id: 'a1', label: 'B', command: {action: 'y'}, details: {}}];
+  for (const type of ['shop', 'card_reward', 'hand_select', 'event', 'rest_site', 'rewards']) {
+    const q = factoredQuestion(board(type), cands).questions;
+    const text = Object.entries(q).filter(([k]) => /^safe_/.test(k))
+      .map(([, v]) => v.instructions.question).join(' ');
+    assert.doesNotMatch(text, /leads_to|node path|node type|rooms it visibly leads/i,
+      `${type} has no map; the noul must not describe one`);
+  }
+  // ...and the map itself still gets the room phrasing it was written for.
+  const mapQ = factoredQuestion({...board('map'), map: {next_options: [], nodes: []}}, cands).questions;
+  const mapText = Object.entries(mapQ).filter(([k]) => /^safe_/.test(k))
+    .map(([, v]) => v.instructions.question).join(' ');
+  assert.match(mapText, /leads_to/, 'the map board keeps its own vocabulary');
+});
+
+// BUG 3 (latent, but reachable). `factoredQuestion` only asks `waste_*` when `weights.waste > 0`,
+// and `benchmark/sweep.mjs:23` ships a `NO_WASTE` arm with `waste: 0`. A guard that demanded
+// `waste_*` regardless would report an incomplete board on EVERY decision for that arm: the
+// policy would fall back to the broad answer forever while still printing a score that looks fine.
+test('the completeness guard demands only the factors that were actually asked', () => {
+  const cands = [{id: 'a', label: 'A', command: {action: 'end_turn'}, plan: [], details: {}, forecast: {}},
+                 {id: 'b', label: 'B', command: {action: 'end_turn'}, plan: [], details: {}, forecast: {}}];
+  const noWaste = {move: {type: 'choice', choice: 'a', probabilities: {a: 0.6, b: 0.4}, confidence: 0.5},
+                   safe_a: {noul: 0.9}, prog_a: {noul: 0.9}, safe_b: {noul: 0.1}, prog_b: {noul: 0.1}};
+  return factoredDeliberate({
+    state: {state_type: 'monster', player: {hp: 30, max_hp: 80, energy: 3, hand: []}, battle: {enemies: []}},
+    candidates: cands,
+    weights: {move: 1 / 3, safe: 1 / 3, progress: 1 / 3, waste: 0},
+    ask: async () => ({model: 'stub', usage: {input_tokens: 1}, answers: noWaste}),
+  }).then(r => {
+    assert.equal(r.deliberation.factorsComplete, true,
+      'a waste-free arm is not an incomplete board; it asked only safe and prog');
+    assert.equal(r.deliberation.factorFallback, false);
+    assert.ok(r.deliberation.ranking, 'and it must publish a real ranking rather than falling back forever');
+  });
+});
