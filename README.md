@@ -409,7 +409,7 @@ native companion app on first run, starts the server if port 4317 is quiet, and 
 | `spire-demo/` | The agent, the server, the dashboard, and the offline test suite |
 | `spire-demo/benchmark/` | Every measurement harness in this README |
 | `spire-demo/fixtures/` | The 10 graded decision fixtures |
-| `spire-demo/progress-site/` | Static 182-run progress dashboard + the winning-fight replay |
+| `spire-demo/progress-site/` | Static progress dashboard (frozen **2026-09-23** capture — 182 runs) + the winning-fight replay |
 | `spire-demo/experiment/` | Opt-in Jev + Luna advisory experiment (off by default) |
 | `spire-demo/vendor/` | Vendored bridge API reference + `deck-state.patch` |
 | `docs/` | [bridge](docs/bridge.md) · [benchmarks](docs/benchmarks.md) · [progress & token accounting](docs/progress.md) |
@@ -476,7 +476,7 @@ And the npm scripts:
 | `npm test` | the full offline suite |
 | `npm run benchmark:dry` | build benchmark inputs, contact nobody |
 | `npm run report` | decision report |
-| `npm run progress` | serve the 182-run progress site on `:4390` |
+| `npm run progress` | serve the progress site on `:4390` (frozen **2026-09-23** capture; serving only, it does not regenerate) |
 
 </details>
 
@@ -497,7 +497,7 @@ And the npm scripts:
 | 📈 [`SWEEP-FINDINGS.md`](SWEEP-FINDINGS.md) | 680 graded decisions, 11 configs, the two changes that mattered, and the known remaining failure |
 | 🌉 [`docs/bridge.md`](docs/bridge.md) | Bridge contract, mod build, verified-build provenance |
 | 🧪 [`docs/benchmarks.md`](docs/benchmarks.md) | What each offline and paid evaluation actually tests |
-| 📊 [`docs/progress.md`](docs/progress.md) | 182 runs, token accounting, and how to rebuild the snapshot |
+| 📊 [`docs/progress.md`](docs/progress.md) | 182 runs as captured 2026-09-23, token accounting, and how to rebuild the snapshot |
 | 🌙 [`spire-demo/experiment/README.md`](spire-demo/experiment/README.md) | The opt-in Luna advisory experiment |
 
 ---
