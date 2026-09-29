@@ -1,0 +1,169 @@
+[
+  {
+    "outcome": "executed",
+    "state": {
+      "player": {
+        "hp": 72,
+        "max_hp": 80,
+        "gold": 99,
+        "relics": [
+          {
+            "name": "Akabeko",
+            "id": "AKABEKO",
+            "description": "At the start of each combat, gain 8 Vigor.",
+            "keywords": []
+          },
+          {
+            "name": "Burning Blood",
+            "id": "BURNING_BLOOD",
+            "description": "At the end of combat, heal 6 HP.",
+            "keywords": []
+          }
+        ],
+        "potions": [
+          {
+            "name": "Explosive Ampoule",
+            "id": "EXPLOSIVE_AMP0ULE",
+            "target_type": "AllEnemies",
+            "description": "Deal 10 damage to ALL enemies."
+          }
+        ],
+        "hand": [
+          {
+            "name": "Anger",
+            "id": "ANGER",
+            "type": "Attack",
+            "cost": "0",
+            "target_type": "AnyEnemy",
+            "rarity": "Common",
+            "is_upgraded": false,
+            "description": "Deal 6 damage. Add a copy of this card into your Discard Pile.",
+            "keywords": []
+          },
+          {
+            "name": "Alignment",
+            "id": "ALIGNMENT",
+            "type": "Skill",
+            "cost": "0",
+            "target_type": "Self",
+            "rarity": "Uncommon",
+            "is_upgraded": false,
+            "description": "Gain [regent_energy_icon.png][regent_energy_icon.png].",
+            "keywords": [
+              { "name": "Energy", "description": "Energy is used to play cards from your Hand." }
+            ]
+          },
+          {
+            "name": "Anointed",
+            "id": "ANOINTED",
+            "type": "Skill",
+            "cost": "1",
+            "target_type": "None",
+            "rarity": "Rare",
+            "is_upgraded": false,
+            "description": "Put every Rare card from your Draw Pile into your Hand. Exhaust.",
+            "keywords": [
+              { "name": "Exhaust", "description": "Removed until the end of combat." }
+            ]
+          }
+        ],
+        "draw_pile": [],
+        "discard_pile": [],
+        "status": [
+          {
+            "name": "Dexterity",
+            "id": "DEXTERITY_POWER",
+            "type": "Buff",
+            "amount": 2,
+            "description": "Increases Block gained from cards by 2."
+          }
+        ]
+      },
+      "battle": {
+        "enemies": [
+          {
+            "name": "Bygone Effigy",
+            "max_hp": 127,
+            "intents": [{ "type": "Attack", "label": "23" }],
+            "status": [
+              {
+                "name": "Vulnerable",
+                "id": "VULNERABLE_POWER",
+                "type": "Debuff",
+                "amount": 2,
+                "description": "Vulnerable creatures take 50% more damage from Attacks."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "outcome": "executed",
+    "state": {
+      "player": {
+        "hp": 49,
+        "max_hp": 80,
+        "relics": [
+          {
+            "name": "Akabeko",
+            "id": "AKABEKO",
+            "description": "At the start of each combat, gain 8 Vigor.",
+            "keywords": []
+          }
+        ],
+        "potions": [],
+        "hand": [
+          {
+            "name": "Anger",
+            "id": "ANGER",
+            "type": "Attack",
+            "cost": "0",
+            "target_type": "AnyEnemy",
+            "rarity": "Common",
+            "is_upgraded": true,
+            "description": "Deal 9 damage. Add a copy of this card into your Discard Pile.",
+            "keywords": []
+          }
+        ],
+        "draw_pile": [],
+        "discard_pile": [],
+        "status": [
+          {
+            "name": "Dexterity",
+            "id": "DEXTERITY_POWER",
+            "type": "Buff",
+            "amount": 3,
+            "description": "Increases Block gained from cards by 3."
+          },
+          {
+            "name": "Buffer",
+            "id": "BUFFER_POWER",
+            "type": "Buff",
+            "amount": 1,
+            "description": "Prevent the next time you would lose HP."
+          }
+        ]
+      },
+      "battle": {
+        "enemies": [
+          {
+            "name": "Corpse Slug",
+            "max_hp": 29,
+            "intents": [{ "type": "Attack", "label": "14" }],
+            "status": [
+              {
+                "name": "Vulnerable",
+                "id": "VULNERABLE_POWER",
+                "type": "Debuff",
+                "amount": 3,
+                "description": "Vulnerable creatures take 50% more damage from Attacks."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+]
