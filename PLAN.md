@@ -1,6 +1,6 @@
 # 🎯 Get Better: closing the loop on Jev the Spire 2
 
-*Written 2026-09-28 from a forensic pass over the 769-decision run log in `.private/spire-runs/`.*
+*Written 2026-09-28 from a forensic pass over the 770-decision run log in `.private/spire-runs/`.*
 
 ## 🔬 The diagnosis (measured, not guessed)
 
@@ -13,7 +13,7 @@ That matters far less than the second finding:
 ### ☠️ It dies while completely blind
 
 ```
-Combat decisions with forecast quality "unknown":  159/518  =  30.7%
+Combat decisions with forecast quality "unknown":  160/519  =  30.8%
   of which: 94  "Some incoming attacks could not be parsed"
 ```
 
@@ -41,12 +41,31 @@ per side exist; the code knows about a third.
 
 ### 🧠 And the answer to "how does it get better"
 
-Nothing. `factored.mjs` says it outright:
+Almost nothing, and the reason is on record. `factored.mjs:51` justifies its split like this:
 
 > *"Equal thirds because there is no labelled data yet to justify anything else."*
 
-Those weights were hand-guessed and never fitted, because no outcome data is ever joined back
-to the decisions that caused it. The 17MB run log is written and never read.
+`move`, `safe` and `progress` are all `0.25`, so **"equal thirds" is arithmetically true** of
+those three; `waste: 1` is a separate **negative** axis, subtracted at `factored.mjs:283`, not a
+fourth share of the same pot.
+
+> [!NOTE]
+> **The arithmetic in that comment is fine. Its justification is stale, and quietly so.**
+>
+> `spire-demo/learning/` now exists and is exactly the labelled data the comment is waiting for:
+> `attribute.mjs` attributes outcomes, `factor-log.mjs` records factors, and
+> `learning/fit-weights.mjs` is the fitter. It **refuses** to emit weights from the real corpus —
+> the target is **471 survived turns against 5 deaths**, and a 1%-minority target has nothing to
+> separate. Every guard returns `fitted:false, weights:null`. There is no fallback and no
+> shrinkage toward equal thirds.
+>
+> So the honest current statement is **stronger** than "no labelled data yet": the labelled data
+> exists, and it has already adjudicated that these weights are not yet fittable. They are still
+> hand-set — and they now carry a documented reason for staying that way.
+
+Those weights are still hand-guessed in the sense that no fit has replaced them, but the refusal
+above is a real result, not an absence of one. **The gap is that nothing joins outcome data back
+to the decisions that caused it** — the 17MB run log is written and, until M0, never read.
 
 ---
 
@@ -54,17 +73,64 @@ to the decisions that caused it. The 17MB run log is written and never read.
 
 | change | before | after |
 |---|---|---|
-| Blind combat decisions | **18.3%** | **0.0%** |
-| Incoming damage `null` | every unparsed case | 0 |
+| Combat decisions stating a survival verdict | **69.2%** (359/519) | *not yet re-measured* — see below |
 | Plans that close the turn | 0 | 3,883 |
 | Plans labelled as prefixes | 0 (silently assumed end-of-turn) | 2,332, each named |
 | Tests actually run by `npm test` | 224 | **333** |
 | Cross-run memory | none | 6 lessons, 5/5 confirmations on the core death |
 | Fresh clone boots | ❌ ERR_MODULE_NOT_FOUND | ✅ |
 
+> [!NOTE]
+> The test row is the **figure at the time those changes landed** and is deliberately left as a
+> historical record; `npm test` now runs **424** (2026-09-29, 424 pass / 0 fail). The other rows
+> are measurements against the 519 logged combat states, which do not move as the suite grows.
+
 Safety gate verified against six cases: it fires only when a plan's own forecast *states* it dies
 and another *states* it survives, it stays silent on `unknown`, and it does not refuse a lone lethal
 candidate because that would be a guess.
+
+> [!IMPORTANT]
+> **Metric correction (2026-09-29) — the blindness row measured two different things.**
+>
+> This table used to carry a `Blind combat decisions` row with a percentage on the left and a zero
+> on the right. Neither side survives contact with the artifact, and the two sides were not the
+> same measurement:
+>
+> - **The "before" was miscounted and misnamed.** That figure is the *unparsed-intent* subset,
+>   which the report counts as **94 of 519** decisions carrying the `unparsedIncoming` flag.
+>   `94/519` is **18.1%** — the old figure implied a count of 95, and the count is 94. (Do not
+>   confuse this with the **97** label *occurrences* quoted further down: 97 occurrences sit
+>   inside those 94 decisions, so some decisions carry the flag twice. Occurrences are not
+>   decisions, and dividing occurrences by 519 is a third, different number.) It was also not
+>   "blind decisions": it is one *cause* of blindness, and the report lists four others.
+> - **The "after" was a claim about a number this repo does not publish.** `0.0%` needs a
+>   post-fix tier to divide by, and there is no such tier. `node spire-demo/replay/report.mjs`
+>   prints, on that same log:
+>
+>   ```text
+>   combat decisions            519
+>   unknown forecast            160  (30.8%)
+>   partial forecast            359
+>   calculated forecast         0
+>     unparsedIncoming     94
+>   note: this run never emitted an uncaveated combat forecast, so there is no "confident" tier to judge.
+>   ```
+>
+>   `calculated forecast` is **0**. The report says so in as many words. A 0.0% that divides by an
+>   empty tier is not a measurement.
+>
+> **Why there is no "after" column at all for this metric.** The blindness figures are read out of
+> the *declared* `forecast.quality` and the warning strings the log already recorded — they
+> describe what the **pre-fix** planner emitted. Re-running the report against the same 17MB log
+> re-reads those same recorded verdicts; it cannot observe what the fixed planner *would* have
+> said. Any honest "after" number here requires a **new recorded run**, which does not exist yet.
+>
+> So the row above is now a **single metric, measured one way**: the share of combat decisions
+> carrying a **stated** survival verdict — 359 of 519, **69.2%** — with the 160 (30.8%) that carry
+> none, and 0 carrying an uncaveated one. That is the real current figure and it is **not 100%**.
+>
+> The old `| Incoming damage null | every unparsed case | 0 |` row was removed for the same reason:
+> its `0` was equally unmeasurable on a frozen log.
 
 ## 🔎 What the measurement then revealed
 
@@ -152,7 +218,7 @@ can.** Every phase below attacks one of the three walls.
 
 - **No live validation until the game is running.** The bridge is down and the game is not
   launched, so win-rate claims stay unproven until M5. Everything up to M4 is verifiable
-  offline against 769 real logged decisions — which is a genuinely useful corpus, but it is
+  offline against 770 real logged decisions — which is a genuinely useful corpus, but it is
   one run and one character, not a benchmark.
 - **The logged run is not a win-rate sample.** It is a single Ascension 10 run that died.
   Fitting weights to it risks overfitting to one player's mistakes. M0 therefore fits on
