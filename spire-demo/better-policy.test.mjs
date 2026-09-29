@@ -51,20 +51,33 @@ test('an unassessed candidate cannot escape the waste check', async () => {
   assert.deepEqual(result.answers.move.probabilities, answer.probabilities);
 });
 
-test('only a calculated lethal end turn yields to a calculated surviving option', () => {
-  const end = { id: 'end', command: { action: 'end_turn' }, forecast: { quality: 'calculated', survives: false } };
-  const safe = { id: 'safe', command: { action: 'play_card' }, forecast: { quality: 'calculated', survives: true } };
-  assert.deepEqual(avoidCertainFatalEndTurn('end', [end, safe], [end, safe]).choice, 'safe');
-  assert.equal(avoidCertainFatalEndTurn('end', [{ ...end, forecast: { quality: 'partial', survives: false } }, safe], [end, safe]).choice, 'end');
-  assert.equal(avoidCertainFatalEndTurn('end', [end, { ...safe, forecast: { quality: 'unknown', survives: null } }], [end, safe]).choice, 'end');
+test('a stated lethal verdict yields to a stated survivor, at whatever quality states it', () => {
+  // The old rule required `quality === 'calculated'` on both sides. Across the 770 decisions in the
+  // recorded run the qualities were 359 `partial` and 160 `unknown` and not one `calculated`, so
+  // that guard could never fire on any board in any run. It read as a safety net and was not one.
+  const end = { id: 'end', command: { action: 'end_turn' }, forecast: { quality: 'partial', survives: false } };
+  const safe = { id: 'safe', command: { action: 'play_card' }, forecast: { quality: 'partial', survives: true } };
+  // The live shape: a partial lethal end turn yields to a partial survivor.
+  assert.equal(avoidCertainFatalEndTurn('end', [end, safe], [end, safe]).choice, 'safe',
+    'partial states a survival verdict, and partial is what the planner actually produces');
+  // Still silent when nothing is known - refusing on an unknown would be a guess, not a guard.
+  assert.equal(avoidCertainFatalEndTurn('end', [{ ...end, forecast: { quality: 'unknown', survives: null } }, safe], [end, safe]).choice, 'end',
+    'an unknown is not a lethal verdict');
+  assert.equal(avoidCertainFatalEndTurn('end', [end, { ...safe, forecast: { quality: 'unknown', survives: null } }], [end, safe]).choice, 'end',
+    'and an unknown is not a survivable one either');
+  // It covers every action, not only end_turn - which is how the recorded death happened.
+  const lethalCard = { id: 'lethal', command: { action: 'play_card' }, forecast: { quality: 'partial', survives: false } };
+  assert.equal(avoidCertainFatalEndTurn('lethal', [lethalCard, safe], [lethalCard, safe]).choice, 'safe',
+    'the gate is not limited to end_turn');
+  // A non-lethal choice is left completely alone.
   assert.equal(avoidCertainFatalEndTurn('safe', [end, safe], [end, safe]).choice, 'safe');
 });
 
-test('new policy uses one request and records a calculated safety override', async () => {
+test('new policy uses one request and records the safety override with its evidence', async () => {
   const state = fixture('fresh-block');
   const candidates = [
-    { id: 'end', label: 'End turn', command: { action: 'end_turn' }, details: {}, plan: [], forecast: { quality: 'calculated', survives: false } },
-    { id: 'block', label: 'Block', command: { action: 'play_card', card_index: 0 }, details: {}, plan: [], forecast: { quality: 'calculated', survives: true } },
+    { id: 'end', label: 'End turn', command: { action: 'end_turn' }, details: {}, plan: [], forecast: { quality: 'partial', survives: false, hpAfter: 0 } },
+    { id: 'block', label: 'Block', command: { action: 'play_card', card_index: 0 }, details: {}, plan: [], forecast: { quality: 'partial', survives: true, hpAfter: 12 } },
   ];
   let calls = 0;
   const result = await betterDeliberate({ state, candidates, ask: async () => {
@@ -78,5 +91,7 @@ test('new policy uses one request and records a calculated safety override', asy
   assert.equal(calls, 1);
   assert.equal(result.answers.move.choice, 'block');
   assert.equal(result.deliberation.factorsComplete, true);
-  assert.match(result.deliberation.safetyOverride, /Calculated end turn is fatal/);
+  // The override must NAME the evidence it acted on, not assert a fact it did not check.
+  assert.match(result.deliberation.safetyOverride, /survives:false/);
+  assert.match(result.deliberation.safetyOverride, /hpAfter 0/);
 });

@@ -5,6 +5,7 @@ import { factoredQuestion, combine, WEIGHTS } from './factored.mjs';
 import { decisionFocus } from './decision-focus.mjs';
 import { deckAssessment } from './deck-assessment.mjs';
 import { compactRequest } from './compact-request.mjs';
+import { refuseLethalChoice } from './learning/lethal-gate.mjs';
 
 export const BETTER_POLICY_VERSION = 'jev-contextual-fast-v1';
 const isCombat = state => ['monster', 'elite', 'boss'].includes(state.state_type);
@@ -36,20 +37,20 @@ function completeFactors(candidates, answers) {
   }));
 }
 
-// A short plan's forecast assumes ending immediately after that plan. Override
-// only an actual end-turn action and only when both comparisons are calculated.
-export function avoidCertainFatalEndTurn(choice, candidates, ranking = candidates) {
-  const selected = candidates.find(candidate => candidate.id === choice);
-  if (selected?.command?.action !== 'end_turn' || selected.forecast?.quality !== 'calculated' || selected.forecast.survives !== false) {
-    return { choice, overridden: false };
-  }
-  const byId = new Map(candidates.map(candidate => [candidate.id, candidate]));
-  const alternative = ranking.map(item => byId.get(item.id)).find(candidate =>
-    candidate && candidate.id !== choice && candidate.forecast?.quality === 'calculated' && candidate.forecast.survives === true);
-  return alternative
-    ? { choice: alternative.id, overridden: true, reason: 'Calculated end turn is fatal; a calculated surviving continuation is available.' }
-    : { choice, overridden: false };
-}
+// DEAD CODE, REMOVED. This function required `forecast.quality === 'calculated'` on BOTH the
+// chosen and the alternative candidate. Across the 770 decisions in the recorded run the forecast
+// qualities were 359 `partial` and 160 `unknown` and not ONE `calculated`, so the guard could
+// never fire - on any board, in any run, ever. It read as a safety net and was not one.
+//
+// It also disagreed with the gate that replaced it: `lethal-gate.mjs` deliberately accepts
+// `partial`, because a `partial` forecast's warnings are about the turn's damage being a BOUND
+// rather than a total, not about survival being undecidable. Two guards, two rules, and the
+// stricter one is the one that never runs.
+//
+// `refuseLethalChoice` in `./learning/lethal-gate.mjs` is the single implementation now, and it
+// additionally covers every action rather than only `end_turn`. Kept as a named re-export so any
+// caller or test that imported the old name still resolves, and so the removal is visible.
+export {refuseLethalChoice as avoidCertainFatalEndTurn} from './learning/lethal-gate.mjs';
 
 export async function betterDeliberate({ state, candidates, recent = [], ask, onStage = () => {} }) {
   if (!candidates.length) throw new Error('No decision candidates');
@@ -69,7 +70,7 @@ export async function betterDeliberate({ state, candidates, recent = [], ask, on
   const ranking = combined?.scored ?? [...candidates].sort((a, b) =>
     (modelMove.probabilities?.[b.id] ?? 0) - (modelMove.probabilities?.[a.id] ?? 0));
   const proposed = combined?.scored[0].id ?? modelMove.choice;
-  const safety = avoidCertainFatalEndTurn(proposed, candidates, ranking);
+  const safety = refuseLethalChoice(proposed, candidates, ranking);
   const finalMove = {
     ...modelMove,
     choice: safety.choice,

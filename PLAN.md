@@ -74,12 +74,26 @@ possible once a plan covers the whole turn, and 20 of the 30 sit on complete tur
 search never evaluated.
 
 The gate then rescued 1 of those 30, because in **29 of 30 every known plan dies.** Those are not
-mispicked winnable boards — they are unwinnable rooms, and **100% of them were entered below 30%
-max HP** (7/85 at floor 14; 16/91 at floor 9).
+mispicked winnable boards — they are unwinnable rooms.
 
-> **So the blindness fix closed the mid-fight hole, and what is left is a run-level hole: the agent
-> walks into rooms it cannot win.** It arrives at the elite already broken. The next milestone is
-> not a better turn — it is refusing the fight, healing, and routing on HP and ascension.
+> ⚠️ **CORRECTION (2026-09-29).** An earlier version of this document said those 29 states were
+> *"100% entered below 30% max HP"*, and concluded the fix was "refuse the fight, heal, route on
+> HP and ascension." **That was wrong, and it was wrong because it measured the wrong moment.**
+> It read HP at the *late-fight* state — after the damage had already landed — not at the
+> *choice*. An adversarial review caught it and built the table from the map trace: of the ten
+> times an Elite was offered across the five runs, HP at the moment of choosing was
+> **60–100% nine times**, and below 30% only once (10/75).
+>
+> So the real pattern is worse than "it walked in broken": **it walks into Elites at healthy HP
+> and loses them.** 9 of 5 runs' worth of elite entries were made above 60% HP, and the recorded
+> outcomes are 4 deaths and 2 near-deaths with no clean elite win. The fix is therefore not
+> "heal before the fight" — it is **the elite decision itself**, and it is made 2–4 nodes earlier
+> than the fight, when the options are three identically-labelled Monsters and nothing in the
+> request says an elite is two rooms out.
+>
+> Also corrected: `summarizeRun().hpLost` was `hpStart - endHp`, which is not a loss. Every run
+> began at 64 HP and ended at 0, so it printed `64` five times. The real cumulative figures are
+> 149 / 126 / 100 / 100 / 144 HP — the agent was losing roughly twice what the report claimed.
 
 ## 🏗️ The plan
 

@@ -82,7 +82,14 @@ function summarizeSlice(events) {
     combatDecisions: combat.length,
     hpStart,
     hpEnd: endHp,
-    hpLost: hpStart == null || endHp == null ? null : hpStart - endHp,
+    // CUMULATIVE HP actually lost, summed across every observed drop. This used to be
+    // `hpStart - endHp`, which is not a loss: every run in the corpus started at 64 and ended
+    // at 0, so the column printed the same 64 five times and read like a measurement. The two
+    // numbers differ wherever a run healed at a rest site, which is exactly where the old one
+    // was most misleading. `hpNetChange` keeps the old arithmetic, named for what it is.
+    hpLost: cumulativeHpLost(events, hpStart),
+    hpNetChange: hpStart == null || endHp == null ? null : hpStart - endHp,
+    hpHealed: cumulativeHpHealed(events),
     deathsByFloor: endHp === 0 ? [{ floor: known(terminal?.run?.floor), state_type: terminal?.state_type ?? null, hp: endHp }] : [],
     closedByRunEnd: end != null,
   };
@@ -90,6 +97,38 @@ function summarizeSlice(events) {
 
 // Describes the final run; `runs` carries every run when the file held more than
 // one, so a five-death file is never summarised as a single attempt.
+/**
+ * Total HP actually lost across the run: every observed drop between consecutive decisions,
+ * within one run, and only downward. Restoring and card-loss effects that push HP back up are
+ * counted separately rather than netted off, because a run that bleeds 90 and heals 30 has not
+ * "lost 60" - it has lost 90 and recovered 30, and those are different facts about play.
+ *
+ * Consecutive observations can belong to different rooms, and a room transition does not heal
+ * anyone, so the sum is taken across the whole run rather than per room.
+ */
+function cumulativeHpLost(events, hpStart) {
+  if (hpStart == null) return null;
+  let lost = 0, previous = null;
+  for (const event of events) {
+    const hp = event?.state?.player?.hp;
+    if (typeof hp !== 'number') continue;
+    if (previous !== null && hp < previous) lost += previous - hp;
+    previous = hp;
+  }
+  return lost;
+}
+
+function cumulativeHpHealed(events) {
+  let healed = 0, previous = null;
+  for (const event of events) {
+    const hp = event?.state?.player?.hp;
+    if (typeof hp !== 'number') continue;
+    if (previous !== null && hp > previous) healed += hp - previous;
+    previous = hp;
+  }
+  return healed;
+}
+
 export function summarizeRun(events) {
   const slices = splitRuns(events);
   const runs = slices.map(summarizeSlice);
