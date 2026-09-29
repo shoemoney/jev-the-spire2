@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parseIntentLabel, readIntentDamage } from './planner.mjs';
-import { deckUnavailableInstruction } from './deck-assessment.mjs';
+import { deckAssessment, deckUnavailableInstruction } from './deck-assessment.mjs';
 
 export function fingerprint(state) {
   return createHash('sha256').update(JSON.stringify(state)).digest('hex');
@@ -230,13 +230,22 @@ export function makeQuestion(state, actions) {
   const unreadNotice = facts.displayed_incoming_attack_total === null
     ? ' This board\'s incoming attack damage could not be read, so displayed_incoming_attack_total and displayed_block_gap are null: that is unknown, not zero. Compare protection by what each card actually blocks, and do not treat the missing total as licence to ignore the turn.'
     : '';
+  // This note is a CLAIM about what the request contains, so it may only be made when it is true.
+  // The bridge does not send a permanent deck - `player.deck` is absent in every logged record - but
+  // `makeQuestion` is also the base every policy builds on, and a state that DOES carry one (a replay
+  // fixture, a future bridge build, the documented `deck-state.patch`) must not be told its deck is
+  // missing. Asserting an absence that does not hold is the same defect as asserting a value that
+  // does not, only quieter.
+  const deckNote = state?.state_type === 'card_reward' && deckAssessment(state)?.available === false
+    ? deckUnavailableInstruction
+    : '';
   return {
     model: 'typesafe/jev-1.13',
     state: { game: 'Slay the Spire 2', objective: 'Win this complete run without human gameplay decisions.', state, facts },
     questions: { move: {
       type: 'choice',
       instructions: 'Choose the next legal action that best advances winning the run. Infer how cards and relics interact from their visible rules. Compare each choice, including skip when offered, using current capabilities, costs, consistency and needs. Follow the actual selection prompt. No fixed archetype or encounter strategy is prescribed. Choose only a supplied ID. '
-        + deckUnavailableInstruction
+        + deckNote
         + unreadNotice,
       criteria: Object.fromEntries(actions.map(a => [a.id, JSON.stringify({ action: a.command, label: a.label, details: a.details })])),
     } },

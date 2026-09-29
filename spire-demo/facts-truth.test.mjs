@@ -78,9 +78,22 @@ test('the count is the authority when more unread labels exist than are listed',
 test('the generic move instruction never asserts a deck the bridge does not send',()=>{
   const q=makeQuestion({state_type:'map',map:{next_options:[{index:0,type:'combat'}]}},[{id:'a0',command:{action:'choose_map_node',index:0},label:'Combat'}]);
   const t=q.questions.move.instructions;
+  // The invariant is the one in this test's name: the instruction must not claim a deck it was
+  // not given. It is NOT "the unavailability note is always present" - that form asserts an
+  // absence even on a state that HAS a deck, which is the same defect as asserting a value that
+  // does not hold, only quieter. A replay fixture or a future bridge build can carry one.
   assert.ok(!/current deck|the deck\b|permanent deck is|current cards/i.test(t.replace(deckUnavailableInstruction,'')),t);
-  assert.ok(t.includes(deckUnavailableInstruction));
-  assert.match(t,/not included in this request/);
+  // A non-card-reward board says nothing about a deck either way.
+  assert.ok(!/not included in this request/.test(t),'a map board has no deck to comment on');
+  // On a card reward with no deck, the absence is stated rather than dropped.
+  const blind=makeQuestion({state_type:'card_reward',player:{hp:50,max_hp:75,gold:0},card_reward:{cards:[]}},
+    [{id:'a0',command:{action:'take_card',index:0},label:'Take'}]);
+  assert.match(blind.questions.move.instructions,/not included in this request/);
+  // ...and on a card reward that DOES carry one, the absence must NOT be claimed.
+  const sighted=makeQuestion({state_type:'card_reward',player:{hp:50,max_hp:75,gold:0,deck:[{name:'Bash'}]},card_reward:{cards:[]}},
+    [{id:'a0',command:{action:'take_card',index:0},label:'Take'}]);
+  assert.doesNotMatch(sighted.questions.move.instructions,/not included in this request/,
+    'a board that has a deck must not be told it has none');
 });
 
 test('a null total is explained in the request text, so it is not read as zero',()=>{
