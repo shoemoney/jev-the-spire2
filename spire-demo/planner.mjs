@@ -6,7 +6,7 @@ import {mechanicsReview} from './mechanics.mjs';
 import {setupLinks} from './setup-links.mjs';
 import {encounterBrief,deckSnapshot,visibleState} from './encounters.mjs';
 import { actionsFor, factsFor, makeQuestion } from './actions.mjs';
-import {retrieveMechanics} from './mechanics/retrieve.mjs';
+import {retrieveMechanics, lookup} from './mechanics/retrieve.mjs';
 
 export const POLICY_VERSION = 'jev-visible-v23-retaliation';
 const amount = (powers, name) => (powers ?? []).filter(p => p.name?.toLowerCase() === name.toLowerCase()).reduce((n,p) => n + Number(p.amount ?? 0), 0);
@@ -14,16 +14,51 @@ const number = (text, regex, fallback = 0) => Number(text.match(regex)?.[1] ?? f
 const nameOf = c => (c.name ?? '').replace(/\+$/, '').toLowerCase();
 const supportedCards = new Set(['beckon','strike','defend','bash','uppercut','setup strike','inflame','shrug it off','rage','bludgeon','whirlwind','stomp','dismantle','rampage','anger','breakthrough','offering','slimed','twin strike','conflagration','bully','unrelenting','mind blast','perfected strike','thunderclap','impervious','dominate','vicious','molten fist','stone armor','armaments','feel no pain','giant rock','toxic','iron wave','pommel strike','taunt','battle trance','toric toughness','pyre','drum of battle','relax','flame barrier','hemokinesis','restlessness','bloodletting','colossus','expect a fight',"pact's end"]);
 const supportedPotions = new Set(['fysh oil','strength potion','flex potion','weak potion','fortifier','block potion','energy potion','fire potion','swift potion','dexterity potion','speed potion']);
+
+// A knowledge-base reading may stand in for the allowlist ONLY when it was derived from the text the game is
+// showing right now, which retrieve() reports as 'description' (an exact match on the live string) or
+// 'stack-template' (a template re-derived from the live string). A name is not an effect: the corpus recorded
+// Strike at 4/6/7/8/9 damage under one id, so a 'name' or 'name-ambiguous' hit would replay a remembered number
+// onto a board that never printed it - the confidently wrong forecast this planner exists to prevent. Those
+// return null here and the card falls through to the unsupported boundary with its Re-observe warning intact.
+//
+// Only a DAMAGE magnitude qualifies. Block, debuff, energy and exhaust parsing below is already generic over
+// the same text, so promoting a KB card with no readable damage would add nothing while letting a card whose
+// whole effect is unmodelled enter the forecast as a silent no-op that still spends its energy.
+//
+// The ambiguity check is structural, not a flag: retrieve() returns `{variants:[...]}` with no `variant` for
+// an ambiguous name, so `!hit.variant` is the whole guard. The magnitude is type-checked rather than coerced,
+// because Number(null) is a finite 0 and a coerced absent field is an invented zero.
+const KB_LIVE_SOURCES = new Set(['description', 'stack-template']);
+function kbMagnitude(name, text) {
+  if (!text) return null;
+  const hit = lookup(name, 'card', null, text);
+  if (!hit?.variant || !KB_LIVE_SOURCES.has(hit.source)) return null;
+  const {damage, hits} = hit.variant;
+  if (typeof damage !== 'number' || !Number.isFinite(damage)) return null;
+  return {damage, hits: typeof hits === 'number' && hits > 1 ? hits : 1, source: hit.source};
+}
 const knownPlayerPowers = new Set(['strength','dexterity','weak','frail','vulnerable','rage','plating','metallicize','free attack','vicious','feel no pain']);
 const knownEnemyPowers = new Set(['strength','weak','vulnerable','slippery','plow','artifact']);
 const knownRelics = new Set(['BURNING_BLOOD','VAJRA','GORGET','ORNAMENTAL_FAN','ANCHOR','STRAWBERRY','PEAR','MANGO','BAG_OF_PREPARATION','POTION_BELT','ARCANE_SCROLL','TUNING_FORK']);
 
-// An attack states its damage twice: in the intent label and in the intent
-// description. Reading both turns "the label did not parse" from a dead end into
-// an interval, so a plan that blocks 12 stops looking identical to one that
-// blocks 5 whenever a label form is unrecognised. `alt` is the label's own
-// second number: when it contradicts perHit*hits the truth is one of the two the
-// game printed, so the reading is a two-point range rather than a discard.
+// ONE source per intent, in priority order - the label first, the description only when the label does not
+// parse. This comment used to claim the two were combined and that their disagreement became a two-point
+// interval. The code never did either, and it still does not: the label branch returns before the description
+// is read, and a label number is never compared against a description number.
+//
+// `alt` is the label's OWN second number - the parenthesised total in a `4x3 (12)` label - and it is set only
+// when that total contradicts perHit*hits. Both numbers came from the same label, so a mismatch means one of
+// the two the game printed is wrong and the truth is between them; forecast() then runs incomingMin/incomingMax
+// across the two ends. The description branch always reports exact:true with alt:null, so a fallback reading is
+// a point estimate, never a range.
+//
+// The merge was considered and deliberately left unimplemented. Across every attack intent in the 52 fixtures
+// and the winning replay - 60 where both a label and a description parse - there are zero label-vs-description
+// disagreements, so the branch could not be exercised, let alone validated, on any board in this repo. The two
+// forms are also produced by different regexes, so a disagreement could mean a parsing artefact rather than a
+// real conflict, and wiring one in would turn a wording difference into a widened damage interval. A board
+// that has never been observed is not evidence that a reading is safe.
 export function readIntentDamage(intent) {
   const label = parseIntentLabel(intent.label);
   if (label) return {perHit:label.perHit, hits:label.hits, alt:label.mismatch?label.total:null, exact:!label.mismatch, source:'intent label'};
@@ -124,12 +159,22 @@ function apply(m0, a) {
   const item = potion ? m.potions.find(p => p.slot === a.command.slot) : m.hand[a.command.card_index];
   if (!item) return null;
   const name = nameOf(item), text = item.description ?? '';
-  if (!(potion ? supportedPotions : supportedCards).has(name)) {
+  // The allowlist is 49 hand-maintained names; the knowledge base had already resolved 159 entities and was
+  // attached to every request while never consulted for a SIMULATION, so a card the agent was handed a verified
+  // number for was refused right here, and every such forecast went unknown on a card we can actually read.
+  // kbMagnitude() gates that read to the live text and returns null rather than a remembered number, so the
+  // branch below still owns every card the board does not pin down.
+  const listed = (potion ? supportedPotions : supportedCards).has(name);
+  const kb = listed || potion ? null : kbMagnitude(item.name, text);
+  if (!listed && !kb) {
     m.boundary = 'unsupported'; m.unsupported = true;
     m.unsupportedEnergy += potion ? 0 : cost(item,m);
     m.warnings.push(`Re-observe after ${item.name}; full consequences are not modeled.`);
     return m;
   }
+  // A simulated KB card is still a recorded reading, not a modelled effect, and the planner parses only some
+  // clauses of any card's text. Say so, so quality stays 'partial' instead of claiming 'calculated'.
+  if (kb) m.warnings.push(`${item.name} is simulated from a recorded reading of this exact description; a clause it states that the planner does not model is omitted.`);
   const replayCount = !potion ? number(text,/\bReplay (\d+)\b/i) : 0;
   // Only the fully understood plain Strike replay is modeled. Other replayed
   // effects may draw, change costs, exhaust, or alter targets between plays.
@@ -161,9 +206,14 @@ function apply(m0, a) {
   for(let replay=0;replay<=replayCount;replay++){
   if(replay && (m.hp<=0 || targets.every(e=>e.hp<=0)))break;
   let retaliationHits=0;
+  // A KB card takes both numbers from its reading rather than the generic regex, so a hit count the allowlist
+  // names no rule for ("twice") is not read as one hit. On every card reading the corpus holds, `damage` equals
+  // the live text's own "Deal (\d+) damage" number (measured: 0 disagreements across 119 card readings), so this
+  // changes the number of hits and never the damage per hit - which is what keeps the Strength/Weak adjustment
+  // below correct, since a hand description already carries the player's current Strength.
   const damageMatch = name==='flame barrier' ? null : name==='mind blast' ? [null,String(m.drawCount)] : text.match(/Deal (\d+) damage/i);
-  if (damageMatch) {
-    let dmg = Number(damageMatch[1]);
+  if (kb || damageMatch) {
+    let dmg = kb ? kb.damage : Number(damageMatch[1]);
     if (isAttack) {
       // Hand descriptions already include the player's current Strength/Weak.
       // Add only the change from simulated setup actions, never Strength twice.
@@ -173,7 +223,7 @@ function apply(m0, a) {
       }
     }
     for (const e of targets) {
-      const hits = name === 'whirlwind' ? spent : name==='twin strike' ? 2 : name==='conflagration' ? number(text,/damage to ALL enemies (\d+) times/i,4) : name === 'dismantle' && amount(e.status,'Vulnerable') > 0 ? 2 : 1;
+      const hits = kb ? kb.hits : name === 'whirlwind' ? spent : name==='twin strike' ? 2 : name==='conflagration' ? number(text,/damage to ALL enemies (\d+) times/i,4) : name === 'dismantle' && amount(e.status,'Vulnerable') > 0 ? 2 : 1;
       retaliationHits=hits;
       const bonus=name==='bully' ? number(text,/Deals (\d+) additional damage/i)*(amount(e.status,'Vulnerable')-(m.originalVulnerable[e.entity_id]??0)) : 0;
       for (let i=0; i<hits && e.hp>0; i++) hit(m,e,dmg+bonus,isAttack);
