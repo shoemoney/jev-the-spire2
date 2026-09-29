@@ -32,13 +32,25 @@ test('a fatal option cannot win on move probability alone', () => {
   assert.ok(scored[0].score > 0);
 });
 
-test('missing nouls fall back to neutral rather than zero, so a capped candidate stays pickable', () => {
+test('a candidate nobody measured stays pickable, and is not handed a mid vote to do it', () => {
+  // The reason this test exists is PICKABILITY: when the fan-out cap leaves a
+  // candidate unasked, it must not fall out of the menu entirely. The mechanism
+  // for that used to be a neutral 0.5 on every missing factor, which meant an
+  // unmeasured candidate carried a full mid-confidence vote - indistinguishable
+  // from one genuinely measured at 0.5, and worth up to a third of the score.
+  // Pickability is now carried by the score spread instead, and silence is
+  // silence. Both halves of the original intent are asserted below.
   const { scored, probabilities } = combine(candidates, {
     move: { type: 'choice', choice: 'c', probabilities: { a: 0.1, b: 0.1, c: 0.8 }, confidence: 0.7 },
   });
   assert.equal(scored[0].id, 'c');
   for (const c of candidates) assert.ok(probabilities[c.id] > 0, `${c.id} must stay pickable`);
-  assert.equal(scored[0].parts.safe, WEIGHTS.safe * 0.5);
+  const top = scored[0];
+  assert.equal(top.parts.safe, 0, 'an unmeasured safety factor contributes nothing, not half a vote');
+  assert.equal(top.parts.progress, 0, 'an unmeasured progress factor contributes nothing either');
+  assert.deepEqual([...top.unknown].sort(), ['progress', 'safe', 'waste'],
+    'the axes nobody answered are reported as unknown, so silence is not readable as a measurement');
+  assert.equal(top.n.safe, null, 'the model vote is kept as null, never coerced to a number');
 });
 
 test('probabilities are a distribution and margin separates first from second', () => {

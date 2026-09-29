@@ -119,6 +119,46 @@ export function factoredQuestion(state, candidates, { maxFactored = MAX_FACTORED
 
 // Combines the three signals into one ranking. Returns the full working so the
 // decision log shows why a candidate won, not just that it did.
+//
+// A factor nobody measured contributes NOTHING, and says so in the returned
+// working. `normalise` hands back null for a candidate that has no answer, and
+// the old `?? 0.5` swallowed that null and turned it into a full mid-confidence
+// vote - indistinguishable from a candidate genuinely measured at 0.5. On the
+// board in the DONE command that promoted a candidate nobody had asked about to
+// the TOP of the ranking, on 0.125 of invented evidence.
+//
+// This is the rule learning/attribute.mjs was written to keep ("a fabricated
+// neutral 0 is worse than a null, because a fitter cannot tell the two apart")
+// and the one learning/wire.mjs applies to an `unknown` forecast: it counts in
+// neither direction rather than inventing a claim. The scoring layer was doing
+// the thing the labelling layer exists to prevent.
+//
+// THE THREE AXES DO NOT SHARE A RATIONALE, so they do not share a line:
+//   safe / progress  -> 0. Silence, not a mid vote. These are ADDED, so the
+//     fabricated 0.5 was pure upside for whoever went unmeasured - up to a
+//     third of the whole score, on the two axes that decide whether the agent
+//     survives and whether the run advances. Zero also keeps every weight
+//     meaning its share of a fixed total. Reallocating a silent factor's weight
+//     to the axes that did answer would invent a second, larger fabrication.
+//   waste            -> 0 penalty, UNCHANGED. This one is SUBTRACTED, so 0 is
+//     the fail-safe direction: an unmeasured cost blocks nothing. Charging a
+//     cost we cannot substantiate would itself be an invented safety claim, and
+//     at the shipped veto weight 1.0 a fabricated full penalty would let one
+//     unanswered noul outrank a plan whose cost WAS measured and clean - the
+//     exact inverse of preferring a plan the policy cannot evaluate.
+//     The free pass is real and is why better-policy.mjs goes further and
+//     refuses to score at all when factors are incomplete. That guard is left
+//     where it is; this is the scoring layer, not the policy layer.
+//
+// Known interaction, kept rather than papered over: a factor that is BOTH
+// deadbanded and partly unmeasured charges its uniform 0.5 to the candidates
+// that were measured and 0 to the one that was not, so the unknown candidate
+// sits 0.5*weight below a board the factor had no opinion on. Zeroing the
+// deadband too would fix that and break the thing the deadband is for - every
+// board's score and margin staying on one absolute scale no matter how many
+// factors had an opinion.
+const vote = (normalised, weight) => typeof normalised === 'number' ? normalised * weight : 0;
+
 export function combine(candidates, answers, weights = WEIGHTS) {
   const move = answers.move;
   if (move?.type !== 'choice') throw new Error('Missing Jev move choice');
@@ -131,28 +171,55 @@ export function combine(candidates, answers, weights = WEIGHTS) {
   }
   const nMove = normalise(raw), nSafe = normalise(safe), nProg = normalise(prog), nWaste = normalise(waste);
   const scored = candidates.map(c => {
+    // `n` is the vote as the model gave it, null where there was no answer, so a
+    // reader can see the zero-vote rather than infer it from a number that looks
+    // measured. The check is one-directional and must stay so: `n[f] === null`
+    // implies `parts[f] === 0`, but not the reverse, because a candidate that
+    // measured LOWEST is a real vote that also lands on zero. `n`, `raw` and
+    // `unknown` are what keep "measured zero" and "never asked" tellable apart.
+    const n = { move: nMove.get(c.id) ?? null, safe: nSafe.get(c.id) ?? null,
+      progress: nProg.get(c.id) ?? null, waste: nWaste.get(c.id) ?? null };
     const parts = {
-      move: (nMove.get(c.id) ?? 0) * weights.move,
-      safe: (nSafe.get(c.id) ?? 0.5) * weights.safe,
-      progress: (nProg.get(c.id) ?? 0.5) * weights.progress,
-      waste: -(nWaste.get(c.id) ?? 0) * (weights.waste ?? 0),
+      move: vote(n.move, weights.move),
+      safe: vote(n.safe, weights.safe),
+      progress: vote(n.progress, weights.progress),
+      // `|| 0` folds the -0 that negating a zero vote produces, so an
+      // unmeasured cost reads as 0 in the log rather than -0. No other value
+      // changes: a real penalty stays negative and a real vote stays positive.
+      waste: -vote(n.waste, weights.waste ?? 0) || 0,
     };
-    return { id: c.id, label: c.label, parts,
+    return { id: c.id, label: c.label, parts, n,
+      unknown: Object.keys(n).filter(f => n[f] === null),
       raw: { move: raw.get(c.id), safe: safe.get(c.id), progress: prog.get(c.id), waste: waste.get(c.id) },
       score: parts.move + parts.safe + parts.progress + parts.waste };
   }).sort((a, b) => b.score - a.score);
 
+  // Tally for the decision log, because `ranking` only carries the top five and
+  // an unmeasured candidate that landed sixth is otherwise invisible. The
+  // 2026-09-23 live run had 7% of candidates with no factor answers at all.
+  const unmeasured = {};
+  for (const s of scored) for (const f of s.unknown) (unmeasured[f] ??= []).push(s.id);
+
   // The waste penalty can push a score below zero, so shift to non-negative
   // before normalising or the distribution stops being one.
+  //
+  // The shift is RELATIVE to the board's spread, not a flat 1e-6. Silencing an
+  // unmeasured factor leaves bottom candidates sitting exactly ON the floor, and
+  // a flat epsilon then gets rounded away by the 4dp below - a candidate at the
+  // floor shares 1e-6 of ~0.25, i.e. 0.0000, and becomes unpickable. That is the
+  // regression factored.test.mjs guards ("a capped candidate stays pickable"):
+  // dropping the fabricated vote must not cost a candidate its reachability.
   const floor = Math.min(0, ...scored.map(s => s.score));
-  const shifted = scored.map(s => s.score - floor + 1e-6);
+  const spread = Math.max(...scored.map(s => s.score)) - floor;
+  const eps = Math.max(1e-6, spread * 1e-3);
+  const shifted = scored.map(s => s.score - floor + eps);
   const total = shifted.reduce((sum, v) => sum + v, 0);
   const probabilities = Object.fromEntries(scored.map((s, i) =>
     [s.id, total > 0 ? Number((shifted[i] / total).toFixed(4)) : 1 / scored.length]));
   // Margin between first and second, not Jev's own confidence, which stays
   // under deliberation.jevMove so the two are never confused.
   const margin = scored.length > 1 ? scored[0].score - scored[1].score : 1;
-  return { scored, probabilities, margin: Number(margin.toFixed(4)) };
+  return { scored, probabilities, margin: Number(margin.toFixed(4)), unmeasured };
 }
 
 export async function factoredDeliberate({ state, candidates, ask, onStage = () => {}, weights = WEIGHTS, maxFactored = MAX_FACTORED_CANDIDATES }) {
