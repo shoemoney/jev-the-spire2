@@ -8,12 +8,25 @@ through the **first verified victory on September 23, 2026**. 🏆
 Native game-history outcomes are reconciled chronologically with private Jev session logs. The
 untouched Ascension 1 run and offline experiments are excluded.
 
+> [!WARNING]
+> **Every figure on this page is a frozen capture, not a live count.** 🧊
+>
+> `data.json` is a committed, generated artifact captured on **2026-09-23** — its own `snapshot`
+> field says so. It covers runs ending `2026-09-17T23:40:04Z` → `2026-09-23T06:10:31Z`.
+> **Nothing in this repository refreshes it.** There is no CI job, no test, and no npm script that
+> re-runs the generator, because the generator needs a native save history this repo does not
+> carry (see *Rebuild the snapshot locally* below).
+>
+> These are a real measurement of a real set of runs, and they are kept deliberately — but runs
+> after **2026-09-23** are not in them. Read every total on this page as *as of 2026-09-23*, never
+> as *now*.
+
 ```mermaid
 flowchart LR
     R["🎮 native run history<br/><i>game saves</i>"] --> M["🔗 chronological<br/>reconciliation"]
     L["📝 .private/spire-runs/*.jsonl<br/><i>Jev session logs</i>"] --> M
     M --> V["✅ start-time validation<br/><i>±1800s</i>"]
-    V --> A{{"🔒 assert 182 runs"}}
+    V --> A{{"🔒 assert 182 runs<br/><i>author's machine only</i>"}}
     A --> D["data.json"]
     A --> C["run-tokens.csv"]
     D & C --> S["🌐 static dashboard"]
@@ -22,6 +35,9 @@ flowchart LR
 ---
 
 ## 🔢 Recorded usage
+
+Every value below is **as captured on 2026-09-23** — the newest run in the snapshot ended
+`2026-09-23T06:10:31Z`. 🧊
 
 | metric | value |
 |---|---|
@@ -32,7 +48,7 @@ flowchart LR
 | 📊 Median input per run | 5,413,858.5 |
 | 📏 Input range per run | 777,710 – 19,367,328 |
 | 🗳️ Decision entries | 58,588 |
-| 🏆 **Winning run #182** | **19,367,328 in + 565,987 out = 19,933,315 total** |
+| 🏆 **Winning run #182** *(last run in the capture)* | **19,367,328 in + 565,987 out = 19,933,315 total** |
 
 📄 [Every run in CSV](../spire-demo/progress-site/dist/run-tokens.csv).
 
@@ -43,7 +59,7 @@ free** ([source](https://docs.typesafe.ai/models)):
 
 | | estimate |
 |---|---|
-| All 182 runs | **$45.64** |
+| All 182 runs *(captured 2026-09-23)* | **$45.64** |
 | Average per run | **$0.25** |
 | The winning run | **$0.81** |
 
@@ -52,7 +68,7 @@ The page and CSV include these estimates.
 > [!NOTE]
 > **How the counting works, and what it misses.**
 >
-> - ✅ All 58,588 decision entries contain input usage.
+> - ✅ All 58,588 decision entries in the 2026-09-23 capture contain input usage.
 > - ✅ Each decision's `usage` **already aggregates** its assessment, review, and any extra
 >   review passes, so those are counted **once**, not twice.
 > - ✅ Logged previews, cancellations and stale decisions still used tokens and **are included**.
@@ -78,10 +94,31 @@ npm run progress        # serves dist/ on http://127.0.0.1:4390
 The generator reads `.private/spire-runs/*.jsonl`, matches them against native history in
 chronological order, validates session start times, and writes `data.json` and `run-tokens.csv`.
 
+> [!NOTE]
+> **`npm run progress` only serves the folder — it never regenerates anything.** It is
+> `python3 -m http.server` pointed at `spire-demo/progress-site/dist`, so running it after a fresh
+> batch of runs will cheerfully serve the same 2026-09-23 numbers it always serves.
+>
+> There is deliberately **no `npm run progress:build`**. The only command that regenerates is
+> `build-progress-data.py`, and its `--history-dir` argument is **`required=True`** and points at
+> native modded `.run` save files this repository does not carry. An npm wrapper would exist solely
+> to fail for every contributor. Run the Python command directly against your own history
+> directory. 🔒
+
 > [!IMPORTANT]
-> It **intentionally asserts the 182-run snapshot size** (`assert len(rows)==len(native)==182`).
-> Adding new runs requires reviewing the pairing and updating the chart's fixed snapshot labels —
-> the assertion is there so the snapshot cannot drift silently.
+> **The 182-run assertion blocks regeneration; it does not guard the clone against drift.**
+>
+> `assert len(rows)==len(native)==182` lives at `spire-demo/build-progress-data.py:40`, behind that
+> required `--history-dir`. **Nothing in this repository invokes it** —
+> `grep -rn 'build-progress-data' package.json spire-demo/*.test.mjs` returns **nothing** — so it
+> fires only for whoever still holds the original history directory, and is silent for every other
+> reader, CI included.
+>
+> Its real, narrower value: if you *do* regenerate against a history directory that now holds extra
+> runs, it **fails loudly** instead of quietly publishing a differently-shaped snapshot. What it
+> cannot do is notice the committed `data.json` ageing, because the file is rebuilt by hand and
+> nothing checks it. So the guard covers the one place drift is already under control, and not the
+> one place it isn't. ⚠️
 
 It exports **no** credentials, account IDs, seeds or raw prompts.
 
