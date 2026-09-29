@@ -1,18 +1,67 @@
 // Offline replay metrics over a parsed JSONL run log. Pure functions: no I/O, no
 // network, no globals. Unknown is never rendered as a number.
 export const COMBAT_STATES = new Set(['monster', 'elite', 'boss']);
-export const CAUSES = ['unparsedIncoming', 'unmodeledRelic', 'unmodeledPower', 'unsupportedCard', 'other'];
+
+// TWO TAXONOMIES, and conflating them is the bug this split exists to prevent.
+//
+// planner.mjs sets `quality: uncertain ? 'unknown' : warnings.length ? 'partial' : 'calculated'`.
+// A warning therefore moves a forecast to `partial` and can NEVER move it to `unknown`.
+// Only the six branches of `uncertain` can. So:
+//
+//   CAUSES         - the branches that actually set `uncertain`. A hit here is a CAUSE of an
+//                    unknown forecast, because without it the forecast would have been numeric.
+//   CONTEXT_KINDS  - everything else a warning can mention. Present on a `partial` row and on
+//                    an `unknown` row alike, so it is CONTEXT, not cause. Printing it under a
+//                    total of unknowns reads as an explanation it cannot support: in the recorded
+//                    corpus "Unmodeled relic" appears on 519 of 519 combat decisions, so its
+//                    count equals the unknown count by arithmetic alone and explains nothing.
 
 // Order is significant: the first matching pattern claims the warning.
+// Order is significant: the first matching pattern claims the warning.
+// 'other' is deliberately NOT a cause bucket. A warning naming no branch says nothing about why
+// the forecast was unknown, and counting one per warning made `other` land on every unknown in
+// the corpus — a second constant-true bucket wearing a cause's name. A decision with no branch
+// named at all is reported once, as `unexplained`.
+export const CAUSES = ['unparsedIncoming', 'unsupportedCard', 'unresolvedDeathEffect', 'positioningUnknown', 'lethalTurnRule'];
+
+// Mirrors `planner.mjs`'s `uncertain` expression term by term.
 const CAUSE_PATTERNS = [
-  ['unparsedIncoming', /incoming attacks could not be parsed/i],
+  ['unparsedIncoming', /incoming attacks could not be (?:read|parsed)/i],
+  ['unsupportedCard', /full consequences are not modeled|this card or play-limit interaction is not modeled|Energy gain amount could not be parsed|Retaliation timing or modifiers are unsupported/i],
+  ['unresolvedDeathEffect', /death triggers remain unresolved|may not end combat|death effect/i],
+  ['positioningUnknown', /Position-dependent incoming damage is not modeled/i],
+  ['lethalTurnRule', /visible rule says the enemy taking its turn kills you/i],
+];
+
+export const CONTEXT_KINDS = ['unmodeledRelic', 'unmodeledPower', 'incomingIsBound', 'intentMismatch', 'other'];
+const CONTEXT_PATTERNS = [
   ['unmodeledRelic', /^Unmodeled relic:/i],
   ['unmodeledPower', /^Unmodeled (?:player|enemy) power:/i],
-  ['unsupportedCard', /^Re-observe after .+; full consequences are not modeled\.|^Retaliation timing or modifiers are unsupported/i],
+  ['incomingIsBound', /^Incoming damage is a bound, not a total:/i],
+  ['intentMismatch', /intent label disagrees with its own per-hit value and hit count/i],
 ];
+
+/**
+ * Which branch of `uncertain` a warning belongs to, or 'other' when it names none.
+ * Returning 'other' means the planner went uncertain for a reason this log does not state —
+ * an honest gap in the attribution, reported as `unexplained` rather than guessed at.
+ */
+export function classifyBlindnessCause(warning) {
+  if (typeof warning !== 'string') return 'other';
+  const t = warning.trim();
+  for (const [cause, pattern] of CAUSE_PATTERNS) if (pattern.test(t)) return cause;
+  return 'other';
+}
+
+/**
+ * Every warning family present on a forecast, cause or not. Used for ATTACHED CONTEXT: what
+ * conditions were true alongside the unknown. It is not an explanation and is never printed
+ * as one.
+ */
 export function classifyWarning(warning) {
   if (typeof warning !== 'string') return 'other';
-  for (const [cause, pattern] of CAUSE_PATTERNS) if (pattern.test(warning.trim())) return cause;
+  const t = warning.trim();
+  for (const [kind, pattern] of CONTEXT_PATTERNS) if (pattern.test(t)) return kind;
   return 'other';
 }
 const isCombat = e => COMBAT_STATES.has(e?.state?.state_type);
@@ -147,12 +196,17 @@ export function summarizeRun(events) {
 export function blindness(events) {
   const combat = decisionsOf(events).filter(isCombat);
   const byCause = Object.fromEntries(CAUSES.map(c => [c, 0]));
+  const attachedContext = Object.fromEntries(CONTEXT_KINDS.map(c => [c, 0]));
+  // How many combat decisions carried each context family, across the WHOLE corpus. A context
+  // family present on every combat decision cannot separate unknown from partial, so its share
+  // of the unknowns is an artefact of the corpus and not an explanation of them.
+  const contextOnCombat = Object.fromEntries(CONTEXT_KINDS.map(c => [c, 0]));
   const byQuality = { calculated: 0, partial: 0, unknown: 0, unreported: 0 };
   // Blind and bounded are different failures, and a fix moves decisions from the
   // first into the second, so the two must be counted apart. `unbounded` is a
   // forecast that stayed unreadable and therefore keeps the flat ranking penalty.
   const byBound = { exact: 0, bounded: 0, unbounded: 0, unreported: 0 };
-  let unknown = 0, unexplained = 0, unmatchedWarnings = 0;
+  let unknown = 0, unexplained = 0, unmatchedWarnings = 0, unmatchedCauseWarnings = 0;
   for (const d of combat) {
     const f = forecastOf(d);
     const q = f?.quality;
@@ -165,16 +219,31 @@ export function blindness(events) {
     else if (f.incomingExact === true) byBound.exact += 1;
     else if (isNum(f.incomingMin) && isNum(f.incomingMax)) byBound.bounded += 1;
     else byBound.unbounded += 1;
+    const warnings = Array.isArray(f?.warnings) ? f.warnings : [];
+    const context = new Set(warnings.map(classifyWarning));
+    // Context is tallied over every combat decision, unknown or not, and once per DECISION
+    // rather than once per warning: a board with four unmodelled relics emits four warnings, and
+    // counting them would let the share exceed the number of decisions it is a share of.
+    for (const kind of context) contextOnCombat[kind] += 1;
     if (q !== 'unknown') continue;
     unknown += 1;
-    const warnings = Array.isArray(f?.warnings) ? f.warnings : [];
-    const hits = new Set(warnings.map(classifyWarning));
+    const causes = new Set(warnings.map(classifyBlindnessCause).filter(c => c !== 'other'));
     // Inclusive attribution: causes overlap, so the total can exceed `unknown`.
-    for (const cause of hits) byCause[cause] += 1;
-    if (hits.size === 0 || (hits.size === 1 && hits.has('other'))) unexplained += 1;
+    for (const cause of causes) byCause[cause] += 1;
+    for (const kind of context) attachedContext[kind] += 1;
+    // No branch named: the log does not say why, and that is reported rather than guessed at.
+    if (causes.size === 0) unexplained += 1;
     unmatchedWarnings += warnings.filter(w => classifyWarning(w) === 'other').length;
+    unmatchedCauseWarnings += warnings.filter(w => classifyBlindnessCause(w) === 'other').length;
   }
   const causeTotal = CAUSES.reduce((sum, c) => sum + byCause[c], 0);
+  // Constant-true: the family is on every single combat decision, so it is true exactly when the
+  // agent plays. Reported so a reader can dismiss it, rather than printed as a count that sits
+  // under the unknown total and reads like an explanation. 'other' is excluded because it means
+  // "no family matched" rather than naming a condition, so it is ubiquitous by construction.
+  const constantTrueContext = combat.length
+    ? CONTEXT_KINDS.filter(k => k !== 'other' && contextOnCombat[k] === combat.length)
+    : [];
   return {
     combatDecisions: combat.length,
     unknown,
@@ -193,6 +262,10 @@ export function blindness(events) {
     byCauseOverlaps: causeTotal > unknown,
     unexplained,
     unmatchedWarnings,
+    attachedContext,
+    contextOnCombat,
+    constantTrueContext,
+    unmatchedCauseWarnings,
   };
 }
 
@@ -207,7 +280,33 @@ const BUCKETS = [
   { label: '10-19', test: p => p >= 10 && p <= 19 },
   { label: '20+', test: p => p >= 20 },
 ];
-function emptyBucket(label) { return { label, predicted: 0, actual: 0, count: 0, exact: 0, wrong: 0, absError: 0 }; }
+function emptyBucket(label) { return { label, predicted: 0, actual: 0, count: 0, exact: 0, wrong: 0, trivialExact: 0, absError: 0 }; }
+
+// How far short a prediction may fall and still be harmless. Under-predicting is the direction
+// that kills: believing the turn costs 3 when it costs 8 is a different decision than the
+// reverse. The exact cliff is a judgement, so it is named and reported rather than folded into
+// a single error average that cannot tell the two directions apart.
+export const LETHAL_UNDERSHOOT = 5;
+
+// Walks forward to the boundary this scope measures against: the first decision of the next
+// turn, or the very next decision for the 'step' scope. -1 when the room ended or the turn
+// never closed, which means there is no actual to compare against — unknown, never zero.
+function boundaryIndex(list, i, starts, scope) {
+  if (scope !== 'turn') return i + 1 < list.length ? i + 1 : -1;
+  let j = i + 1;
+  while (j < list.length && !starts.has(j)) j += 1;
+  return j < list.length ? j : -1;
+}
+
+// The realised hp loss for one decision under this scope, or null when the log does not
+// support one. Runs for unknown forecasts too: no prediction was made, but the loss happened.
+function realisedLoss(list, i, starts, scope, d) {
+  const key = roomKey(d);
+  const from = hpOf(d);
+  const j = boundaryIndex(list, i, starts, scope);
+  if (j < 0 || roomKey(list[j]) !== key || from == null || hpOf(list[j]) == null) return null;
+  return from - hpOf(list[j]);
+}
 
 function calibrate({ events, scope }) {
   const list = executed(events);
@@ -215,50 +314,121 @@ function calibrate({ events, scope }) {
   const buckets = BUCKETS.map(b => ({ ...emptyBucket(b.label), test: b.test }));
   const byQuality = {};
   let numeric = 0, unknownPredictions = 0, unresolvable = 0, scored = 0, exact = 0, absError = 0;
+  // A predicted 0 met by an actual 0 is a forecast that was never asked a hard question: it
+  // agrees with the outcome whether or not the planner understood anything. In the recorded
+  // corpus these are the majority of scored rows, so a headline that includes them is mostly
+  // reporting that nothing happened. They stay in the raw figures and leave the non-trivial one.
+  let nonTrivialScored = 0, nonTrivialExact = 0, nonTrivialAbsError = 0;
+  let underPredictions = 0, overPredictions = 0, lethalUndershoots = 0;
+  // The cost of going blind, measured on the rows that went blind.
+  let unknownResolved = 0, unknownUnresolved = 0, unknownAbs = 0, unknownLethal = 0;
+  const unknownBuckets = BUCKETS.map(b => ({ label: b.label, count: 0, test: b.test }));
+  const unknownWorst = { realised: null, act: null, floor: null };
   const errors = [];
   for (let i = 0; i < list.length; i++) {
     const d = list[i];
     if (!isCombat(d)) continue;
     const f = forecastOf(d);
     const predicted = f?.hpLoss ?? null;
-    if (predicted == null) { unknownPredictions += 1; continue; }
+    if (predicted == null) {
+      // Admitted ignorance, not a wrong answer: a null forecast made no claim to miss. It stays
+      // out of every accuracy denominator below. But the log DOES carry the HP either side of the
+      // turn boundary, so what blindness cost is measurable, and skipping the measurement is how
+      // the report ends up describing only the regime where the agent could see.
+      unknownPredictions += 1;
+      const realised = realisedLoss(list, i, starts, scope, d);
+      if (realised === null) unknownUnresolved += 1;
+      else {
+        unknownResolved += 1; unknownAbs += Math.abs(realised);
+        if (realised >= LETHAL_UNDERSHOOT) unknownLethal += 1;
+        const slot = unknownBuckets.find(b => b.test(realised));
+        if (slot) slot.count += 1;
+        if (unknownWorst.realised === null || realised > unknownWorst.realised) {
+          unknownWorst.realised = realised;
+          unknownWorst.act = known(d.state?.run?.act);
+          unknownWorst.floor = known(d.state?.run?.floor);
+        }
+      }
+      continue;
+    }
     if (!isNum(predicted)) { unresolvable += 1; continue; }
     numeric += 1;
     const key = roomKey(d);
     const from = hpOf(d);
-    let j = i + 1;
-    if (scope === 'turn') while (j < list.length && !starts.has(j)) j += 1;
+    const j = boundaryIndex(list, i, starts, scope);
     // The room ended or the turn never closed: there is no actual to compare.
-    if (j >= list.length || roomKey(list[j]) !== key || from == null || hpOf(list[j]) == null) { unresolvable += 1; continue; }
+    if (j < 0 || roomKey(list[j]) !== key || from == null || hpOf(list[j]) == null) { unresolvable += 1; continue; }
     const actual = from - hpOf(list[j]);
     const err = Math.abs(predicted - actual);
     const ok = predicted === actual;
+    const trivial = predicted === 0 && actual === 0;
     scored += 1; if (ok) exact += 1; absError += err;
-    if (!ok) errors.push({ act: d.state.run.act, floor: d.state.run.floor, predicted, actual, absError: err, quality: f.quality ?? null, warnings: Array.isArray(f.warnings) ? f.warnings : [] });
+    if (actual > predicted) {
+      underPredictions += 1;
+      if (actual - predicted >= LETHAL_UNDERSHOOT) lethalUndershoots += 1;
+    } else if (actual < predicted) overPredictions += 1;
+    if (!trivial) { nonTrivialScored += 1; if (ok) nonTrivialExact += 1; nonTrivialAbsError += err; }
+    if (!ok) errors.push({ act: d.state.run.act, floor: d.state.run.floor, predicted, actual, absError: err, direction: actual > predicted ? 'under' : 'over', quality: f.quality ?? null, warnings: Array.isArray(f.warnings) ? f.warnings : [] });
     const bucket = buckets.find(b => b.test(predicted));
-    if (bucket) { bucket.predicted += predicted; bucket.actual += actual; bucket.count += 1; bucket.absError += err; if (ok) bucket.exact += 1; else bucket.wrong += 1; }
+    if (bucket) {
+      bucket.predicted += predicted; bucket.actual += actual; bucket.count += 1; bucket.absError += err;
+      if (ok) { bucket.exact += 1; if (trivial) bucket.trivialExact += 1; } else bucket.wrong += 1;
+    }
     const q = f.quality ?? 'unreported';
     const slot = byQuality[q] ?? (byQuality[q] = { scored: 0, exact: 0, wrong: 0 });
     slot.scored += 1; if (ok) slot.exact += 1; else slot.wrong += 1;
   }
+  const combatDecisions = list.filter(isCombat).length;
   return {
     scope,
-    combatDecisions: list.filter(isCombat).length,
+    combatDecisions,
     numericPredictions: numeric,
     unknownPredictions,
     unresolvableActual: unresolvable,
     scored,
     exact,
     wrong: scored - exact,
+    exactRate: scored ? exact / scored : null,
+    // How much of combat the scored rows actually cover. A percentage quoted without it reads
+    // as a verdict on the whole corpus when it is a verdict on the part the log could score.
+    coverage: combatDecisions ? scored / combatDecisions : null,
     meanAbsoluteError: scored ? absError / scored : null,
     meanSignedError: scored ? (buckets.reduce((s, b) => s + b.actual - b.predicted, 0) / scored) : null,
+    // The headline that survives trivial zeros. Both figures are published: dropping the raw one
+    // would read as a measured accuracy drop rather than a change of denominator.
+    nonTrivial: {
+      scored: nonTrivialScored,
+      exact: nonTrivialExact,
+      wrong: nonTrivialScored - nonTrivialExact,
+      exactRate: nonTrivialScored ? nonTrivialExact / nonTrivialScored : null,
+      meanAbsoluteError: nonTrivialScored ? nonTrivialAbsError / nonTrivialScored : null,
+      trivialZeros: scored - nonTrivialScored,
+    },
+    // Direction matters and a signed mean hides it: an average that nets a safe overestimate
+    // against a lethal underestimate describes neither.
+    underPredictions,
+    overPredictions,
+    lethalUndershoots,
+    underPredictionsAtLeast5: lethalUndershoots,
+    lethalUndershootThreshold: LETHAL_UNDERSHOOT,
     byQuality,
     buckets: buckets.filter(b => b.count > 0).map(b => ({
-      label: b.label, count: b.count, exact: b.exact, wrong: b.wrong,
+      label: b.label, count: b.count, exact: b.exact, wrong: b.wrong, trivialExact: b.trivialExact,
       predicted: b.count ? b.predicted / b.count : null,
       actual: b.count ? b.actual / b.count : null,
       meanAbsoluteError: b.count ? b.absError / b.count : null,
     })),
+    unknownLoss: {
+      scope,
+      rows: unknownPredictions,
+      resolved: unknownResolved,
+      unresolved: unknownUnresolved,
+      meanRealisedLoss: unknownResolved ? unknownAbs / unknownResolved : null,
+      atLeast5: unknownLethal,
+      lethalThreshold: LETHAL_UNDERSHOOT,
+      histogram: unknownBuckets.filter(b => b.count > 0).map(b => ({ label: b.label, count: b.count })),
+      worst: unknownWorst.realised === null ? null : { ...unknownWorst },
+    },
     errors,
   };
 }
@@ -274,7 +444,24 @@ export function hpLossCalibration(events) {
     // A confident wrong number is the failure this metric exists to catch.
     confidentWrong: (turn.byQuality.calculated?.wrong ?? 0) + (turn.byQuality.partial?.wrong ?? 0),
     calculatedWrong: turn.byQuality.calculated?.wrong ?? 0,
+    // The regime that kills, published next to the regime that scored well.
+    unknownLoss: turn.unknownLoss,
   };
+}
+
+// A death window is where "we had nothing" and "the log never said" have to be told apart. A
+// missing `potions` key is UNKNOWN, so this returns null; a present but empty list is a real
+// measurement of an empty hand and returns []. Collapsing the two is how a report ends up
+// claiming a healing potion was unavailable when the recording simply never carried one.
+function potionsOf(player) {
+  const list = player?.potions;
+  if (!Array.isArray(list)) return null;
+  return list.map(p => ({
+    slot: isNum(p?.slot) ? p.slot : null,
+    name: typeof p?.name === 'string' ? p.name : null,
+    // Absent is null, not false: "not usable" and "not recorded" are different claims.
+    usable: typeof p?.can_use_in_combat === 'boolean' ? p.can_use_in_combat : null,
+  }));
 }
 
 export function fatalDecisions(events, n = 5) {
@@ -315,6 +502,8 @@ export function fatalDecisions(events, n = 5) {
           predictedHpLoss: f?.hpLoss ?? null,
           predictedSurvives: f?.survives ?? null,
           warnings: Array.isArray(f?.warnings) ? f.warnings : [],
+          // null when the log recorded no potion list, [] when it recorded an empty one.
+          potions: potionsOf(d.state?.player),
         };
       }),
     };

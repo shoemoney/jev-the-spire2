@@ -15,7 +15,9 @@ const n = v => (typeof v === 'number' && Number.isFinite(v) ? String(v) : 'unkno
 const hp = v => (typeof v === 'number' && Number.isFinite(v) ? `${v} hp` : 'unknown');
 const pct = (a, b) => (a == null || b ? null : `${(a * 100).toFixed(1)}%`);
 const f = (v, d = 2) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : 'unknown');
-const row = cells => cells.map(c => String(c ?? '—').padEnd(14)).join('').trimEnd();
+// `widths` overrides the pad for cells that hold variable-length text (a room key, an action
+// name, a potion list). Truncating them would be a lie; padding to a floor is not.
+const row = (cells, widths = []) => cells.map((c, i) => String(c ?? '—').padEnd(widths[i] ?? 14)).join('').trimEnd();
 
 async function resolveTarget(arg) {
   if (arg) return resolve(arg);
@@ -68,11 +70,27 @@ function blindnessSection(b) {
   console.log(`  partial forecast            ${n(b.partial)}`);
   console.log(`  calculated forecast         ${n(b.calculated)}`);
   if (b.qualityUnreported) console.log(`  quality not reported        ${n(b.qualityUnreported)}`);
-  console.log('  why the forecast was unknown (a decision can carry several causes):');
+  console.log('  why the forecast was unknown — only the planner branches that set "unknown" qualify:');
   for (const [cause, count] of Object.entries(b.byCause)) console.log(`    ${cause.padEnd(18)}${String(count).padStart(5)}`);
   console.log(`    ${'-> attributions'.padEnd(18)}${String(b.causeTotal).padStart(5)} across ${b.unknown} decisions${b.byCauseOverlaps ? ' (causes overlap; not a partition)' : ''}`);
-  console.log(`  unexplained unknowns        ${n(b.unexplained)}  (no recognised cause)`);
-  if (b.unmatchedWarnings) console.log(`  warnings matching no bucket ${n(b.unmatchedWarnings)}`);
+  console.log(`  unexplained unknowns        ${n(b.unexplained)}  (no branch of the log states why)`);
+  if (b.unmatchedCauseWarnings) console.log(`  warnings naming no branch    ${n(b.unmatchedCauseWarnings)}`);
+  // The warnings that are NOT causes, and why. A warning can only ever make a forecast
+  // 'partial', so its presence on an 'unknown' row is coincidence of the same board, not
+  // explanation — and a family present on every combat decision explains nothing at all.
+  // 'other' is a catch-all, not a condition, so it is reported once below instead of listed here.
+  console.log('  attached context, NOT a cause (a warning can only make a forecast "partial"):');
+  for (const [kind, count] of Object.entries(b.attachedContext)) {
+    if (!count || kind === 'other') continue;
+    const on = b.contextOnCombat?.[kind];
+    const share = b.combatDecisions ? on === b.combatDecisions : false;
+    const note = share
+      ? `  <- on ${on}/${b.combatDecisions} combat decisions, i.e. ALWAYS: carries no information, explains nothing`
+      : `  <- on ${on ?? 'unknown'}/${b.combatDecisions} combat decisions`;
+    console.log(`    ${kind.padEnd(18)}${String(count).padStart(5)}${note}`);
+  }
+  if (b.constantTrueContext?.length) console.log(`  constant-true context families (useless as causes): ${b.constantTrueContext.join(', ')}`);
+  if (b.unmatchedWarnings) console.log(`  warnings matching no context family ${n(b.unmatchedWarnings)}`);
   if (b.calculated === 0 && b.combatDecisions > 0) console.log('  note: this run never emitted an uncaveated combat forecast, so there is no "confident" tier to judge.');
 }
 
@@ -84,11 +102,22 @@ function calibrationSection(c) {
   console.log(`  numeric predictions         ${n(t.numericPredictions)}`);
   console.log(`  unknown (null) predictions  ${n(t.unknownPredictions)}   <- admitted ignorance, not scored, never counted as wrong`);
   console.log(`  no actual available         ${n(t.unresolvableActual)}   (room ended or the turn never closed)`);
-  console.log(`  scored                      ${n(t.scored)}`);
-  console.log(`  exact                       ${n(t.exact)}   (${pct(t.scored ? t.exact / t.scored : null) ?? 'n/a'})`);
-  console.log(`  wrong                       ${n(t.wrong)}   (${pct(t.scored ? t.wrong / t.scored : null) ?? 'n/a'})`);
-  console.log(`  mean absolute error         ${f(t.meanAbsoluteError)} hp`);
-  console.log(`  mean signed error           ${f(t.meanSignedError)} hp   (negative = forecast predicted more damage than landed)`);
+  console.log(`  scored                      ${n(t.scored)}   of ${n(t.combatDecisions)} combat decisions (${pct(t.coverage) ?? 'n/a'} coverage)`);
+  console.log('  ALL scored rows (published unchanged, so no reader has to take the figure below on trust):');
+  console.log(`    exact                     ${n(t.exact)}   (${pct(t.exactRate) ?? 'n/a'})`);
+  console.log(`    mean absolute error       ${f(t.meanAbsoluteError)} hp`);
+  console.log(`    mean signed error         ${f(t.meanSignedError)} hp   (negative = forecast predicted more damage than landed)`);
+  // The headline. Half the corpus is "predicted 0, 0 landed", which agrees whether or not the
+  // planner understood the board, so it is excluded here and kept above.
+  const nt = t.nonTrivial;
+  console.log('  NON-TRIVIAL rows only (dropping the ' + n(nt?.trivialZeros) + ' that predicted 0 and had 0 land):');
+  console.log(`    exact                     ${n(nt?.exact)}/${n(nt?.scored)}   (${pct(nt?.exactRate) ?? 'n/a'})`);
+  console.log(`    mean absolute error       ${f(nt?.meanAbsoluteError)} hp`);
+  // A signed mean nets a safe overestimate against a lethal underestimate. Split them.
+  console.log(`  direction of the ${n(t.wrong)} wrong rows (an average cannot show this):`);
+  console.log(`    over-predicted            ${n(t.overPredictions)}   predicted MORE than landed`);
+  console.log(`    under-predicted           ${n(t.underPredictions)}   predicted LESS than landed`);
+  console.log(`    of those, short by >=${n(t.lethalUndershootThreshold)} hp  ${n(t.underPredictionsAtLeast5)}   <- the direction that kills`);
   console.log('  by declared forecast quality:');
   const quals = Object.entries(t.byQuality);
   if (!quals.length) console.log('    no scored forecast declared a quality');
@@ -96,18 +125,41 @@ function calibrationSection(c) {
   console.log(`  uncaveated "calculated" forecasts that proved wrong: ${n(c.calculatedWrong)}`);
   console.log('  by predicted magnitude:');
   console.log(`    ${row(['bucket', 'count', 'exact', 'wrong', 'mean pred', 'mean actual', 'mae'])}`);
-  for (const b of t.buckets) console.log(`    ${row([b.label, b.count, b.exact, b.wrong, f(b.predicted), f(b.actual), f(b.meanAbsoluteError)])}`);
+  for (const b of t.buckets) {
+    console.log(`    ${row([b.label, b.count, b.exact, b.wrong, f(b.predicted), f(b.actual), f(b.meanAbsoluteError)])}`);
+    // The 0 bucket reads as a perfect score. Say what it is made of instead of letting it stand.
+    if (b.trivialExact) console.log(`    ${''.padEnd(14)}all ${b.trivialExact} exact row(s) here predicted 0 and had 0 land — the trivial agreement, not a hard call`);
+  }
   if (t.errors.length) {
     console.log('  the wrong forecasts, ranked by size:');
     const worst = [...t.errors].sort((a, b) => b.absError - a.absError).slice(0, 5);
-    for (const e of worst) console.log(`    A${e.act}F${e.floor}  predicted ${e.predicted}  actual ${e.actual}  [${e.quality ?? 'quality unknown'}] ${e.warnings[0] ?? 'no warning recorded'}`);
+    for (const e of worst) console.log(`    A${e.act}F${e.floor}  predicted ${e.predicted}  actual ${e.actual}  [${e.direction === 'under' ? 'SHORT by ' + (e.actual - e.predicted) + ' hp' : 'over by ' + (e.predicted - e.actual) + ' hp'}] [${e.quality ?? 'quality unknown'}] context: ${e.warnings[0] ?? 'no warning recorded'}`);
     const causes = {};
     for (const e of t.errors) for (const w of e.warnings) { const k = classifyWarning(w); causes[k] = (causes[k] ?? 0) + 1; }
-    console.log(`  warnings attached to wrong forecasts: ${Object.entries(causes).map(([k, v]) => `${k}=${v}`).join('  ')}`);
+    console.log(`  context attached to wrong forecasts (NOT causes — a warning cannot make a forecast unknown): ${Object.entries(causes).map(([k, v]) => `${k}=${v}`).join('  ')}`);
   }
   console.log('  for contrast, the other reading of "actual" (this decision -> the very next decision, ignoring turn end):');
   console.log(`    scored ${n(s.scored)}  exact ${n(s.exact)}  wrong ${n(s.wrong)}  mean absolute error ${f(s.meanAbsoluteError)} hp`);
   console.log('    that scope disagrees with the forecast\'s stated meaning, so it is reported, not trusted.');
+  unknownLossSection(c.unknownLoss);
+}
+
+// The rows scored above are the rows the agent could see. These are the ones it could not, and
+// the accuracy figures deliberately exclude them — a null forecast is admitted ignorance, not a
+// wrong answer. That is the right treatment for the percentages and the wrong one for the
+// consequences: the log carries the HP either side of the turn boundary regardless, so the cost
+// of being blind is a measurement, not an unknown. It was computed nowhere before.
+function unknownLossSection(u) {
+  console.log('\nTHE COST OF BLINDNESS — realised hp loss on the rows with no forecast at all');
+  if (!u || !u.rows) { console.log('  not measured'); return; }
+  console.log(`  unknown-forecast rows        ${n(u.rows)}   (excluded from every accuracy figure above, correctly)`);
+  console.log(`  realised loss measurable     ${n(u.resolved)}   no turn boundary in the log: ${n(u.unresolved)}`);
+  console.log(`  mean realised loss           ${f(u.meanRealisedLoss)} hp   <- the turn the agent could not predict cost this much`);
+  console.log(`  lost >= ${n(u.lethalThreshold)} hp on a blind turn   ${n(u.atLeast5)}   of ${n(u.resolved)}`);
+  if (u.histogram?.length) {
+    console.log(`  distribution of realised loss: ${u.histogram.map(h => `${h.label} hp: ${h.count}`).join('   ')}`);
+  }
+  if (u.worst) console.log(`  worst blind turn: A${n(u.worst.act)}F${n(u.worst.floor)}, ${n(u.worst.realised)} hp landed unpredicted`);
 }
 
 function fatalSection(deaths) {
@@ -117,14 +169,35 @@ function fatalSection(deaths) {
     console.log(`\n  death at A${n(d.act)}F${n(d.floor)} (ascension ${n(d.ascension)}), hp at death: ${n(d.hpAtDeath)}`);
     console.log(`    last ${d.decisions.length} decisions: ${d.unknown} unknown, ${d.partial} partial, ${d.calculated} calculated, ${d.unreported} no quality`);
     console.log(`    preceded by an unknown forecast: ${d.anyUnknown ? 'YES' : 'no'}   low-confidence (unknown or partial): ${d.anyLowConfidence ? 'YES' : 'no'}`);
-    console.log(`    ${row(['room', 'hp', 'blk', 'nrg', 'quality', 'pred loss', 'survives', 'action'])}`);
+    // What was in the potion belt. "no healing available" is the usual reason a lethal board is
+    // called unwinnable, and until this column existed the tool could not confirm or refute it.
+    // `== null` covers undefined too: an absent field is UNKNOWN, and falling through to "the
+    // belt was recorded and empty" would state a measurement nobody made.
+    const held = d.decisions.flatMap(x => Array.isArray(x.potions) ? x.potions : []);
+    const beltUnknown = d.decisions.some(x => x.potions == null);
+    const names = [...new Set(held.map(p => p.name).filter(Boolean))];
+    if (names.length) console.log(`    potions in hand in that window: ${names.join(', ')}`);
+    else if (beltUnknown) console.log('    potions in hand in that window: none visible — the log recorded no potion list');
+    else console.log('    potions in hand in that window: none — the belt was recorded and empty');
+    const W = [14, 14, 14, 14, 14, 14, 14, 18, 30];
+    console.log(`    ${row(['room', 'hp', 'blk', 'nrg', 'quality', 'pred loss', 'survives', 'action', 'potions'], W)}`);
     for (const x of d.decisions) {
-      console.log(`    ${row([x.room ?? x.state_type, x.hp ?? '—', x.block ?? '—', x.energy ?? '—', x.quality ?? 'none', x.predictedHpLoss ?? 'unknown', x.predictedSurvives ?? 'unknown', x.action])}`);
+      console.log(`    ${row([x.room ?? x.state_type, x.hp ?? '—', x.block ?? '—', x.energy ?? '—', x.quality ?? 'none', x.predictedHpLoss ?? 'unknown', x.predictedSurvives ?? 'unknown', x.action, potionsCell(x.potions)], W)}`);
     }
     const causes = new Set();
     for (const x of d.decisions) for (const w of x.warnings) causes.add(classifyWarning(w));
-    if (causes.size) console.log(`    causes named in that window: ${[...causes].join(', ')}`);
+    if (causes.size) console.log(`    context named in that window (NOT causes of the unknown): ${[...causes].join(', ')}`);
   }
+}
+
+// null / undefined / [] / [names] are four different findings and must not be flattened into one
+// string. Absent means the log never carried a potion list, which is not the same claim as an
+// empty belt — on a death window that difference is the whole question.
+function potionsCell(potions) {
+  if (potions == null) return 'none visible';
+  if (!Array.isArray(potions)) return 'unreadable';
+  if (!potions.length) return 'none held';
+  return potions.map(p => `${p?.name ?? 'unnamed'}(s${p?.slot ?? '?'}${p?.usable === true ? ',usable' : p?.usable === false ? ',no' : ''})`).join('+');
 }
 
 const path = await resolveTarget(process.argv[2]);
