@@ -7,6 +7,7 @@ import {powerTimingReview} from './power-timing.mjs';
 import {decisionFocus} from './decision-focus.mjs';
 import {compactRequest} from './compact-request.mjs';
 import {decisionQuestion} from './planner.mjs';
+import {refuseLethalChoice} from './learning/lethal-gate.mjs';
 export const DELIBERATION_VERSION='jev-visible-review-v24-card-order';
 const upgradeValueReview = 'Evaluate upgrade and other setup effects by their marginal payoff. In combat, identify a specific eligible target from the visible hand, whether it is already upgraded, and whether remaining energy and card-play limits allow using it after setup. Separate immediate block or damage from the upgrade benefit; if the target cannot be played now, future payoff depends on retaining or redrawing it and the fight lasting long enough. Do not assume a combat upgrade permanently improves the deck. Use supplied upgrade text for exact gains; if unavailable, mark the gain uncertain rather than inventing it. For card rewards and purchases, count existing copies and already-upgraded cards, compare the added copy against skipping or other purchases, and account for drawing the setup card instead of needed damage or defense. Another copy needs an unmet need and useful targets, not merely a synergy label. Compare spending that energy on direct damage, defense or scaling. These are tradeoffs, not a ban on setup cards.';
 const mechanicsInstruction = 'When visible rules make facing matter, inspect forecast.facingProjection when available (incoming uses its conservative upper bound), forecast.facingReview and the last targeted action in each proposed sequence. Choose the final orientation for the lowest survivable total from all remaining attackers, not automatically the last damage target. Reserve a cheap targeted card or legal targeted potion for turning when needed before spending all energy; compare its cost with block, kills and retaliation. If both sides attack, compare both totals; if only one attacks, consider facing that attacker. Re-observe displayed intents after turning before ending. Do not assume area attacks turn you, or multiply already-adjusted displayed damage by the back-attack bonus again. '+
@@ -77,7 +78,13 @@ export async function deliberate({state,candidates,ask:rawAsk,recent=[],onStage=
   }
   return result;
  };
- if(candidates.length<=1) return {...await ask(decisionQuestion(state,candidates)),deliberation:null};
+ if(candidates.length<=1){
+  // One candidate is a forced choice: the gate has nothing to move to, so the only honest verdicts
+  // are "no claim was made" and "no alternative existed" - both worth having. Published on the RESULT
+  // rather than inside `deliberation`, which is null on this path (same reason as factored.mjs).
+  const forced=await ask(decisionQuestion(state,candidates));
+  return {...forced,safetyGate:refuseLethalChoice(forced.answers?.move?.choice??null,candidates,candidates),deliberation:null};
+ }
  onStage('Jev is assessing the encounter and deck synergy');
  const first=await ask(perspectiveQuestion(state,candidates,recent));
  onStage('Jev is reviewing its recommendations');
@@ -118,6 +125,104 @@ export async function deliberate({state,candidates,ask:rawAsk,recent=[],onStage=
   orderReviewed=true;orderReview={before:previous,after:final.answers.move.choice,changed:previous!==final.answers.move.choice,pairs:ordering.pairs.length};
   totals.input_tokens+=final.usage?.input_tokens??0;totals.output_tokens+=final.usage?.output_tokens??0;
  }
+ // The lethal gate. It runs on the FINAL choice, after every review step above, so no later
+ // re-decision can reinstate a candidate whose own forecast states survives:false. `deliberate`
+ // publishes a `move` answer rather than a recombined score, so there is no better ordering to
+ // prefer and the ranking is the candidate list itself - the gate lands on the first PROVEN
+ // survivor. Zero extra model calls: it is arithmetic over forecasts the planner already attached
+ // to this board, so the measured p50 of 5.7s and the 30s worst case are unchanged.
+ //
+ // This is what makes `deliberate` - the policy a bare `node spire-demo/server.mjs` resolves to -
+ // carry the same guard as the four opt-in policies, instead of the safety story being true only
+ // of the flag-gated paths. See learning/lethal-gate.mjs for the measurement behind the guard.
+ const gate=refuseLethalChoice(final.answers.move.choice,candidates,candidates);
  return {...final,usage:totals,
-  deliberation:{version:DELIBERATION_VERSION,choiceRepresentation:immediateChoices?'immediate-with-plan-evidence-v1':'plans',focus:decisionFocus(state).name,calls:2+Number(endTurnReviewed)+Number(merchantReviewed)+Number(orderReviewed),endTurnReviewed,merchantReviewed,orderReviewed,orderReview,initial:first.answers.move,assessments:first.answers,changed:first.answers.move.choice!==final.answers.move.choice,models:[first.model,final.model]}};
+  answers:{...final.answers,move:{...final.answers.move,choice:gate.choice}},
+  safetyGate:gate,
+  deliberation:{version:DELIBERATION_VERSION,choiceRepresentation:immediateChoices?'immediate-with-plan-evidence-v1':'plans',focus:decisionFocus(state).name,calls:2+Number(endTurnReviewed)+Number(merchantReviewed)+Number(orderReviewed),endTurnReviewed,merchantReviewed,orderReviewed,orderReview,initial:first.answers.move,assessments:first.answers,changed:first.answers.move.choice!==gate.choice,models:[first.model,final.model],
+   // Null unless the gate actually moved something, so a reader can tell a refusal from the
+   // ordinary "nothing was refused" case without parsing a sentence.
+   safetyGate:gate.overridden?{overridden:true,from:gate.from,to:gate.to,reason:gate.reason}:null,
+   safetyGateReason:gate.reason}};
+}
+
+// ── Which policy is running, and whether it runs the lethal gate ───────────────
+//
+// The server resolves a policy through a first-match chain over five flags, and a bare
+// `node spire-demo/server.mjs` - including via `npm start` - lands on `deliberate`. Until this
+// existed, nothing outside server.mjs could answer "which policy, and is it guarded", because
+// importing server.mjs starts the server, reads credentials and creates a log directory. These are
+// pure, so the chain is inspectable from a test and from a one-liner with no server running.
+//
+// POLICY_PRECEDENCE RESTATES server.mjs's ternary. Deleting that duplication is the obvious move
+// and the wrong one: the ternary is the shipped truth, and default-policy.test.mjs lifts that
+// literal out of the source and compares it against `resolvePolicy` over all 32 flag combinations,
+// so the two cannot drift apart unobserved.
+
+export const POLICY_PRECEDENCE = [
+ ['SPIRE_RECALL', '1', 'recall'],
+ ['SPIRE_BETTER_POLICY', '1', 'better'],
+ ['SPIRE_SINGLE_CALL', '1', 'factored'],
+ ['SPIRE_ADVISER', 'luna', 'assisted'],
+ ['SPIRE_PLAN_BENEFIT', '1', 'planBenefit'],
+];
+export const DEFAULT_POLICY_NAME = 'deliberate';
+
+/** First match wins, on the same strict `=== value` the server's own flag constants use. */
+export function resolvePolicyName(env = {}) {
+ return POLICY_PRECEDENCE.find(([variable, value]) => env[variable] === value)?.[2] ?? DEFAULT_POLICY_NAME;
+}
+
+/**
+ * Whether `name` can reach `refuseLethalChoice`, read from the function's own source.
+ *
+ * Delegates count: `planBenefit` and `assisted` never call the gate themselves, they wrap
+ * `deliberate`, which does. A hand-maintained status list would have to be hand-edited every time a
+ * policy moves, and would be wrong the moment one did - which is the bug this replaces. A CALL is
+ * required, not a mention: an import nobody invokes is not a guard, and reading a name as a guard
+ * is how an ungated policy ends up described as gated.
+ *
+ * Reports `absent` rather than throwing when the name is unknown. "I could not prove a guard" is the
+ * honest reading of a run log, and it is the one that makes an unguarded default visible.
+ *
+ * One asymmetry worth naming: `assisted` consults Luna AFTER `deliberate` returns, so its adviser
+ * review can move the choice off the one that was gated. The gate covers that policy's baseline
+ * proposal, not its final answer - the hole is in `experiment/assisted.mjs`, not here, and it is the
+ * reason `gateVia` is published rather than a bare `active`.
+ */
+export function gateReach(name, policies = {}) {
+ const seen = new Set();
+ const walk = (current, path) => {
+  if (seen.has(current)) return null;
+  seen.add(current);
+  const policy = policies[current];
+  if (typeof policy !== 'function') return null;
+  const source = String(policy);
+  if (/\brefuseLethalChoice\s*\(/.test(source)) return {gate: 'active', via: current, path: [...path, current]};
+  for (const [other, candidate] of Object.entries(policies)) {
+   if (other === current || typeof candidate !== 'function') continue;
+   if (new RegExp(`\\b${other}\\s*\\(`).test(source)) {
+    const reached = walk(other, [...path, current]);
+    if (reached) return reached;
+   }
+  }
+  return null;
+ };
+ return walk(name, []) ?? {gate: 'absent', via: null, path: [name]};
+}
+
+/**
+ * The fields every decision is stamped with. The name comes from the FUNCTION's identity, never
+ * from the env: the env resolution is a second statement of the same precedence and could drift,
+ * whereas a function cannot be misnamed. Falls back to `unknown`/`absent` if the chain and the
+ * running policy ever disagree, which is a loud, honest log line rather than a wrong claim.
+ */
+export function policyStamp(policy, policies = {}) {
+ const policyName = Object.keys(policies).find(key => policies[key] === policy) ?? 'unknown';
+ const {gate, via} = gateReach(policyName, policies);
+ return {policyName, gate, gateVia: via};
+}
+
+export function resolvePolicy(env = {}, policies = {}) {
+ return policyStamp(policies[resolvePolicyName(env)], policies);
 }

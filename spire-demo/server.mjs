@@ -3,7 +3,7 @@ import {selectionState} from './selections.mjs';
 import {encounterBrief,encounterMemory} from './encounters.mjs';
 import http from 'node:http';
 import {rewardState} from './rewards.mjs';
-import {deliberate} from './deliberation.mjs';
+import {deliberate, resolvePolicy, policyStamp} from './deliberation.mjs';
 import {planBenefitDeliberate,persistentPlan} from './plan-benefit.mjs';
 const planBenefitEnabled=process.env.SPIRE_PLAN_BENEFIT==='1';
 import {assistedDeliberate} from './experiment/assisted.mjs';
@@ -15,6 +15,13 @@ const betterPolicyEnabled=process.env.SPIRE_BETTER_POLICY==='1';
 import {recallingDeliberate} from './learning/wire.mjs';
 import {loadMemory, saveMemory, ingestLog, pruneStore, summarizeStore} from './learning/memory.mjs';
 const recallEnabled=process.env.SPIRE_RECALL==='1';
+// The chain the ternary in step() selects from, keyed by name. The order still lives in that
+// ternary, untouched, because it is the shipped truth - this map only names what it picks, and
+// default-policy.test.mjs evaluates the ternary itself over all 32 flag combinations to prove the
+// two agree. Without a name, a decision log records a `policy` constant (POLICY_VERSION, a planner
+// version string) and nothing at all about which guard produced the choice.
+const POLICY_CHAIN={recall:recallingDeliberate,better:betterDeliberate,factored:factoredDeliberate,assisted:assistedDeliberate,planBenefit:planBenefitDeliberate,deliberate};
+const resolvedPolicy=resolvePolicy(process.env,POLICY_CHAIN);
 import {hedged} from './hedge.mjs';
 const hedgeEnabled=process.env.SPIRE_HEDGE!=='0';
 if(lunaEnabled&&planBenefitEnabled)throw Error('Choose one experiment at a time: Luna or plan-benefit.');
@@ -58,6 +65,9 @@ if (saved) Object.assign(view, saved, { mode: 'paused', connected: false, config
 view.planBenefitEnabled=planBenefitEnabled;
 view.betterPolicyEnabled=betterPolicyEnabled;
 view.recallEnabled=recallEnabled;
+// Surfaced in /api/status and the sidecar so an ungated configuration is visible before the first
+// decision is paid for, not discoverable afterwards in a log nobody reads.
+view.activePolicy=resolvedPolicy;
 view.memory=memoryStore?summarizeStore(memoryStore):null;
 view.adviser=lunaEnabled?'gpt-5.6-luna:max':null;
 let generation = 0, busy = false, lastExecuted = '', latestState = null, waitingSince = 0, nextDecisionAt = 0;
@@ -104,7 +114,7 @@ function sidecarView(source = view) {
   const compact = e => {
     const candidates = e.candidates ?? actionsFor(e.state);
     return {
-      memory:e.memory??null, encounter:encounterBrief(e.state), deliberation:e.deliberation ?? null, time: e.time, label: e.chosen.plan?.[0]?.label ?? e.chosen.label, plan: e.chosen.plan ?? null, forecast: e.chosen.forecast ?? null, policy: e.policy ?? "jev-actions-v1", description: e.chosen.details?.description ?? e.chosen.details?.card_description ?? '',
+      memory:e.memory??null, encounter:encounterBrief(e.state), deliberation:e.deliberation ?? null, time: e.time, label: e.chosen.plan?.[0]?.label ?? e.chosen.label, plan: e.chosen.plan ?? null, forecast: e.chosen.forecast ?? null, policy: e.policy ?? "jev-actions-v1", policyName: e.policyName ?? null, gate: e.gate ?? null, description: e.chosen.details?.description ?? e.chosen.details?.card_description ?? '',
       action: e.chosen.command.action, confidence: e.answer.confidence, latencyMs: e.latencyMs,
       outcome: e.outcome, floor: e.state.run?.floor, facts: factsFor(e.state),
       options: Object.entries(e.answer.probabilities ?? {}).map(([id, probability]) => ({
@@ -113,7 +123,7 @@ function sidecarView(source = view) {
     };
   };
   const compactDecisions = decisions.map(compact);
-  return { adviser:source.adviser, review: source.review ?? null, policy: POLICY_VERSION, betterPolicyEnabled:source.betterPolicyEnabled, mode: source.mode, message: source.message, connected: source.connected, pending: source.pending ?? null,
+  return { adviser:source.adviser, review: source.review ?? null, policy: POLICY_VERSION, activePolicy: source.activePolicy ?? null, betterPolicyEnabled:source.betterPolicyEnabled, mode: source.mode, message: source.message, connected: source.connected, pending: source.pending ?? null,
     model: source.model, actions: source.actions, inputTokens: source.inputTokens, run: source.state?.run,
     player: source.state?.player ? { hp: source.state.player.hp, maxHp: source.state.player.max_hp, energy: source.state.player.energy, block: source.state.player.block } : null,
     room: source.state?.state_type, decisions: compactDecisions.slice(0, 8), spotlight: compactDecisions.find(e => e.options.length > 1) ?? compactDecisions[0] ?? null };
@@ -173,7 +183,11 @@ async function step(token, preview = false) {
     const start = performance.now();
     const memory=encounterMemory(s,view.events);
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
-    const result = await (recallEnabled?recallingDeliberate:betterPolicyEnabled?betterDeliberate:factoredEnabled?factoredDeliberate:lunaEnabled?assistedDeliberate:planBenefitEnabled?planBenefitDeliberate:deliberate)({state:planningState,candidates:actions,
+    // First match wins. Bound to a name so the decision below can be stamped with the policy that
+    // actually produced it, named by FUNCTION IDENTITY rather than by re-reading the env.
+    const policy=recallEnabled?recallingDeliberate:betterPolicyEnabled?betterDeliberate:factoredEnabled?factoredDeliberate:lunaEnabled?assistedDeliberate:planBenefitEnabled?planBenefitDeliberate:deliberate;
+    const stamp=policyStamp(policy,POLICY_CHAIN);
+    const result = await policy({state:planningState,candidates:actions,
       recent:memory,
       memory:memoryStore,
       onStage:stage=>{view.message=stage;view.pending.stage=stage;},
@@ -201,7 +215,10 @@ async function step(token, preview = false) {
     const answer = result.answers?.move;
     const chosen = actions.find(a => a.id === answer?.choice);
     if (!chosen || answer?.type !== 'choice') throw new Error('Jev returned an invalid action ID.');
-    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, memory, deliberation:result.deliberation, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
+    // `...stamp` on EVERY outcome - executed, preview, cancelled, stale_rejected, game_rejected -
+    // so a run log always answers which policy and which guard produced each decision. `policy`
+    // stays POLICY_VERSION: it is a planner version, not the policy that ran.
+    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
     if (token !== generation) { await log({ ...event, outcome: 'cancelled' }); return; }
     if (preview) { await log({ ...event, outcome: 'preview' }); view.message = `Preview: ${chosen.label}`; return; }
     const fresh = await observe();
@@ -276,5 +293,8 @@ const server = http.createServer(async (req, res) => {
     json(404, { error: 'Not found' });
   } catch { json(500, { error: 'Local server error' }); }
 });
-server.listen(port, '127.0.0.1', () => console.log(`Jev plays the Spire: http://127.0.0.1:${port}\nKey configured: ${Boolean(apiKey)}\nDecision log: ${logFile}`));
+// Named in the banner, not buried in the log: which policy answers a decision is a property of the
+// launch, and so is whether that policy refuses a lethal choice. Printed before any decision is paid
+// for, because a gate that is only discoverable in a run log has already run unguarded.
+server.listen(port, '127.0.0.1', () => console.log(`Jev plays the Spire: http://127.0.0.1:${port}\nPolicy: ${resolvedPolicy.policyName} - lethal gate ${resolvedPolicy.gate}${resolvedPolicy.gateVia ? ` (applied by ${resolvedPolicy.gateVia})` : ''}\nKey configured: ${Boolean(apiKey)}\nDecision log: ${logFile}`));
 process.on('SIGINT', () => { stop('Stopped'); server.close(); process.exit(0); });
