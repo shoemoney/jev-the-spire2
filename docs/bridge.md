@@ -69,8 +69,12 @@ permanent deck for deck-building decisions. It is a **one-line addition** to the
 state["deck"] = BuildPileCardList(player.Deck.Cards, PileType.Deck);
 ```
 
-It changes **observation data, not game rules**. Without it, permanent-deck context may be
-unavailable to the agent.
+It changes **observation data, not game rules**. Without it, `deck_assessment` reports
+`available:false` — and the card-reward request then **states the gap** and judges the offer
+from what is visible (the card's own text, relics, potions, HP, energy, observations) instead
+of pointing the model at a deck it cannot see. That unavailability is data, not a verdict: the
+agent is told the deck is missing and is explicitly not to read the absence as an empty or weak
+deck, so an unpatched build still takes a card when one fills a visible need.
 
 ---
 
@@ -86,6 +90,33 @@ Checked September 23, 2026: the installed mod DLL and local Release build were b
 The build checkout was upstream `55e064850a68f3b4cde7e5fd525bf9b2dec4e885` plus exactly the
 vendored `deck-state.patch`, rebuilt with .NET 9 against local game assemblies. The repository
 patch matched the local source diff.
+
+> [!WARNING]
+> **The deck half of that claim is contradicted by the run's own log.** All 779 records of
+> `2026-09-23T20-41-11.451Z.jsonl` were checked: 775 carry a `state.player`, and
+> `state.player.deck` is present in **zero** of them — including **all 27** `card_reward`
+> records — while `state.player.gold` is present in **all 775**. The vendored patch inserts its
+> one line immediately above `state["gold"] = player.Gold;`, so the patch's context line is
+> present in the binary that produced this log and the line the patch adds is absent. **That
+> binary did not include `deck-state.patch`.**
+>
+> This is the bridge omitting the key, not this repository dropping it: the session log records
+> the bridge payload as received, and the only place the request path removes a raw
+> `player.deck` is [`compact-request.mjs`](../spire-demo/compact-request.mjs), which does so
+> *after* replacing it with the `state.deck` snapshot — and `state.deck.available` is `false` in
+> the same run, so there was no snapshot to strip in favour of.
+>
+> **What cannot be determined from here — and is not guessed below:** which binary that was, or
+> why. No DLL is vendored, so the SHA-256 cannot be recomputed and no build manifest records
+> which patch was applied. The log cannot distinguish a patch never applied to the source
+> compiled that day, one applied and then reverted, a stale DLL left installed from an earlier
+> build, or a run driven from a different machine than the one that was checked. The September
+> 23 checks recorded a conclusion, not their evidence, so the byte-identical-DLL and
+> patch-matches-local-diff assertions can no longer be re-verified even though the log
+> contradicts the outcome they supported.
+>
+> The corrected reading of this run: it was played **without** permanent-deck context, so its
+> published numbers are a deck-blind result and say nothing about the patched build's ceiling.
 
 DLL SHA-256: `a5bebf899d3ce0f0c788f9bd14a0a1e1b368e2e0cf08434b4b3684245dbf9886`
 
