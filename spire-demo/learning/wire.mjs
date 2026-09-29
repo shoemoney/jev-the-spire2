@@ -216,9 +216,9 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
   // missing factors - and `factorFallback` says so in the log rather than leaving a clean ranking and a
   // confident margin to be read as evidence.
   const factorsComplete = completeFactors(candidates, answers);
-  const {scored, probabilities, margin} = factorsComplete
+  const {scored, probabilities, margin, unmeasured} = factorsComplete
     ? combine(candidates, answers, WEIGHTS)
-    : {scored: null, probabilities: jevMove.probabilities ?? null, margin: jevMove.confidence ?? null};
+    : {scored: null, probabilities: jevMove.probabilities ?? null, margin: jevMove.confidence ?? null, unmeasured: null};
   const best = factorsComplete ? scored[0] : {id: jevMove.choice};
   if (!candidates.some(candidate => candidate.id === best.id)) throw new Error('Invalid factored choice');
   const gate = refuseLethalChoice(best.id, candidates, scored ?? candidates);
@@ -236,6 +236,12 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
       // candidate the gate actually overrode, which is the one fact a reader needs. It is null on a
       // fallback, because no ranking was produced.
       ranking: scored?.slice(0, 5) ?? null,
+      // combine() builds a tally of which axes went unmeasured per candidate, for candidates that fall
+      // outside the top-five `ranking` and would otherwise be invisible in the log. It was returned and
+      // read by nobody. On THIS path it is now usually empty - the factorFallback guard above means
+      // combine() only runs on a board where every candidate was asked - so it is carried explicitly
+      // rather than left as a return value no caller destructures.
+      unmeasured: unmeasured ?? null,
       safetyGate: gate.overridden ? {overridden: true, from: gate.from, to: gate.to, reason: gate.reason} : null,
       safetyGateReason: gate.reason,
       memoryCorroboration: corroboration(store, gate.overridden),
