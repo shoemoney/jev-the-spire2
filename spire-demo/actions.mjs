@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { parseIntentLabel, readIntentDamage } from './planner.mjs';
+import { deckUnavailableInstruction } from './deck-assessment.mjs';
 
 export function fingerprint(state) {
   return createHash('sha256').update(JSON.stringify(state)).digest('hex');
@@ -170,32 +172,72 @@ export function actionsFor(s) {
   return out;
 }
 
+const attackingIntents = s => (s.battle?.enemies ?? []).filter(e => e.hp > 0)
+  .flatMap(e => e.intents ?? [])
+  .filter(i => /attack|deathblow/i.test(i.type) || /attack.*\d+ damage/i.test(i.description ?? ''));
+
+// The labels are what the model reads; the count is the authority when the list is capped.
+const UNREAD_LABEL_CAP = 8;
+
+// A field named for a total must hold the total or nothing. 0 is a claim that the
+// game showed no damage; an unread intent means the number is unknown, and
+// publishing a partial sum as the total is how a printed 12 read as a harmless 0
+// next to an `all_attack_labels_parsed:false` the model had no reason to distrust.
 export function factsFor(s) {
-  const enemies = s.battle?.enemies ?? [];
-  let knownAttack = 0, allAttacksParsed = true;
-  for (const enemy of enemies.filter(e => e.hp > 0)) for (const intent of enemy.intents ?? []) {
-    if (!/attack|deathblow/i.test(intent.type) && !/attack.*\d+ damage/i.test(intent.description??'')) continue;
-    const text = String(intent.label ?? '').replace(/\[.*?\]/g, '').trim();
-    const match = text.match(/^(\d+)(?:\s*[x×]\s*(\d+))?$/i);
-    if (match) knownAttack += Number(match[1]) * Number(match[2] ?? 1);
-    else allAttacksParsed = false;
+  const intents = attackingIntents(s);
+  let low = 0, high = 0, contradictory = 0, labelsParsed = true;
+  const unread = [];
+  for (const intent of intents) {
+    // The game prints multi-hit attacks as `4x3 (12)`. The planner's reader is the
+    // single parser; a second, narrower regex here is what zeroed a 12-damage attack.
+    // Label readability is recorded even for an intent the description cannot rescue:
+    // all_attack_labels_parsed names the labels, so a '?' must fail it either way.
+    if (!parseIntentLabel(intent.label)) labelsParsed = false;
+    const read = readIntentDamage(intent);
+    if (!read) { unread.push(String(intent.label ?? '').replace(/\[.*?\]/g, '').trim() || String(intent.type)); continue; }
+    const product = read.perHit * read.hits;
+    if (read.alt === null) { low += product; high += product; }
+    // Two printed numbers disagree: the truth is one of them, so carry the interval
+    // rather than picking the one that reads best.
+    else { contradictory++; low += Math.min(product, read.alt); high += Math.max(product, read.alt); }
   }
+  // An unread intent has no upper bound at all, so neither does the board: a max
+  // summed over the readable intents only would be the same partial sum again.
+  const known = unread.length === 0;
+  const single = known && low === high ? low : null;
+  const block = s.player?.block ?? 0;
   return {
-    displayed_incoming_attack_total: knownAttack,
-    all_attack_labels_parsed: allAttacksParsed,
-    displayed_block_gap: Math.max(0, knownAttack - (s.player?.block ?? 0)),
-    note: 'Arithmetic over displayed attack intents only, not a combat simulation. Powers, redirection, and actions can change damage. Card descriptions are supplied by the game. Never assume hidden draw order.',
+    displayed_incoming_attack_total: single,
+    displayed_incoming_attack_min: known ? low : null,
+    displayed_incoming_attack_max: known ? high : null,
+    attack_intents_read: intents.length - unread.length,
+    attack_intents_unread: unread.length,
+    contradictory_attack_labels: contradictory,
+    unread_attack_labels: unread.slice(0, UNREAD_LABEL_CAP),
+    all_attack_labels_parsed: labelsParsed,
+    displayed_block_gap: single === null ? null : Math.max(0, single - block),
+    note: 'Arithmetic over displayed attack intents only, not a combat simulation. Powers, redirection, and actions can change damage. Card descriptions are supplied by the game. Never assume hidden draw order.'
+      + ' A null total means the damage could not be read, not that there is none: read attack_intents_unread and unread_attack_labels for what is missing, and unread_attack_labels is capped at ' + UNREAD_LABEL_CAP + ' so the count is the authority.'
+      + ' Where min and max differ, two printed numbers disagree and the truth lies between them.',
   };
 }
 
 export function makeQuestion(state, actions) {
   if (!actions.length || actions.length > 255) throw new Error('Unsupported action count');
+  const facts = factsFor(state);
+  // A null the request never explains is indistinguishable from a zero the request
+  // invented, so an unread board says so in words as well as in the field.
+  const unreadNotice = facts.displayed_incoming_attack_total === null
+    ? ' This board\'s incoming attack damage could not be read, so displayed_incoming_attack_total and displayed_block_gap are null: that is unknown, not zero. Compare protection by what each card actually blocks, and do not treat the missing total as licence to ignore the turn.'
+    : '';
   return {
     model: 'typesafe/jev-1.13',
-    state: { game: 'Slay the Spire 2', objective: 'Win this complete run without human gameplay decisions.', state, facts: factsFor(state) },
+    state: { game: 'Slay the Spire 2', objective: 'Win this complete run without human gameplay decisions.', state, facts },
     questions: { move: {
       type: 'choice',
-      instructions: 'Choose the next legal action that best advances winning the run. Infer how cards and relics interact from their visible rules and the current deck. Compare each choice, including skip when offered, using current capabilities, costs, consistency and needs. Follow the actual selection prompt. No fixed archetype or encounter strategy is prescribed. Choose only a supplied ID.',
+      instructions: 'Choose the next legal action that best advances winning the run. Infer how cards and relics interact from their visible rules. Compare each choice, including skip when offered, using current capabilities, costs, consistency and needs. Follow the actual selection prompt. No fixed archetype or encounter strategy is prescribed. Choose only a supplied ID. '
+        + deckUnavailableInstruction
+        + unreadNotice,
       criteria: Object.fromEntries(actions.map(a => [a.id, JSON.stringify({ action: a.command, label: a.label, details: a.details })])),
     } },
   };
