@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarizeRun,splitRuns,blindness,hpLossCalibration,fatalDecisions,classifyWarning,COMBAT_STATES} from './metrics.mjs';
+import {summarizeRun,splitRuns,blindness,hpLossCalibration,fatalDecisions,classifyWarning,classifyBlindnessCause,COMBAT_STATES} from './metrics.mjs';
 
 // Synthetic events only. These tests never touch the private run log, so they
 // pass on a clean checkout with no recordings present.
@@ -44,34 +44,109 @@ test('one file may hold several runs, and the summary never hides the earlier on
   assert.equal(s.finalFloor,7);assert.equal(s.outcome,'death');
 });
 
-test('unknown combat forecasts are classified by the cause each warning names',()=>{
+test('unknown combat forecasts are attributed only to branches that can set quality=unknown',()=>{
+  // planner.mjs sets `quality: uncertain ? 'unknown' : warnings.length ? 'partial' : 'calculated'`.
+  // So a warning can only ever produce `partial`: "Unmodeled relic" rides along with an unknown
+  // forecast, it does not cause one, and must not be counted as if it did.
   const events=[
     dec({forecast:unknown(['Unmodeled relic: Akabeko','Unmodeled player power: Vigor'])}),
     dec({forecast:unknown(['Some incoming attacks could not be parsed.'])}),
     dec({forecast:unknown(['Re-observe after Patter; full consequences are not modeled.'])}),
     dec({forecast:unknown(['Enemy death triggers remain unresolved: do not assume victory or survival.'])}),
+    // Three branches of `uncertain` on one decision, so the causes are still demonstrably not
+    // a partition. 94+72+2 of the recorded unknowns are attributed this way.
+    dec({forecast:unknown(['Some incoming attacks could not be read from either the intent label or its description.','Retaliation timing or modifiers are unsupported for this action.','Enemy death triggers remain unresolved.'])}),
     dec({forecast:{quality:'partial',hpLoss:0,survives:true,warnings:[]}}),
     dec({state:{state_type:'map'},forecast:unknown(['Unmodeled relic: Akabeko'])}),
   ];
   const b=blindness(events);
-  assert.equal(b.combatDecisions,5);assert.equal(b.unknown,4);assert.equal(b.unknownRate,0.8);
+  assert.equal(b.combatDecisions,6);assert.equal(b.unknown,5);assert.equal(b.unknownRate,5/6);
   assert.equal(b.partial,1);assert.equal(b.calculated,0);assert.equal(b.qualityUnreported,0);
-  assert.equal(b.byCause.unmodeledRelic,1);assert.equal(b.byCause.unmodeledPower,1);
-  assert.equal(b.byCause.unparsedIncoming,1);assert.equal(b.byCause.unsupportedCard,1);assert.equal(b.byCause.other,1);
-  // A decision attributed only to "other" counts as unexplained.
-  assert.equal(b.unexplained,1);assert.equal(b.unmatchedWarnings,1);
-  // A decision with two causes is counted under both, so the causes are not a partition.
-  assert.equal(b.causeTotal,5);assert.equal(b.byCauseOverlaps,true);
+  // The two families that are NOT branches of `uncertain` are absent from the cause tally, and
+  // counting them there is what let a constant-true warning print as a complete explanation.
+  assert.equal('unmodeledRelic' in b.byCause,false);
+  assert.equal('unmodeledPower' in b.byCause,false);
+  assert.equal(b.byCause.unparsedIncoming,2);
+  assert.equal(b.byCause.unsupportedCard,2);
+  assert.equal(b.byCause.unresolvedDeathEffect,2);
+  // 'other' is not a cause bucket. A warning naming no branch says nothing about WHY the
+  // forecast was unknown, and counting one per warning made it constant-true across the corpus
+  // — the same defect as unmodeledRelic, one layer down. Such rows are `unexplained` instead.
+  assert.equal('other' in b.byCause,false);
+  assert.equal(b.byCause.other,undefined);
+  // The two families that are NOT branches of `uncertain` are reported as context, not causes.
+  assert.equal(b.attachedContext.unmodeledRelic,1);
+  assert.equal(b.attachedContext.unmodeledPower,1);
+  // A decision that names no branch at all is unexplained.
+  assert.equal(b.unexplained,1);
+  // Six warnings match no context family; the two unmodelled-relic/power warnings match no
+  // branch of `uncertain`, which is the whole point: they are on an unknown row and are not why.
+  assert.equal(b.unmatchedWarnings,6);assert.equal(b.unmatchedCauseWarnings,2);
+  // A decision with three causes is counted under all three, so the causes are not a partition.
+  assert.equal(b.causeTotal,6);assert.equal(b.byCauseOverlaps,true);
+  // 'other' is a catch-all, not a condition, so it is never reported as constant-true.
+  assert.deepEqual(b.constantTrueContext,[]);
   assert.equal(classifyWarning('Unmodeled enemy power: Skittish'),'unmodeledPower');
-  assert.equal(classifyWarning('Retaliation timing or modifiers are unsupported for this action (including lethal, multi-hit, area or attack-triggered block interactions). Re-observe; survival is unknown.'),'unsupportedCard');
+  assert.equal(classifyWarning('Unmodeled relic: Lava Rock'),'unmodeledRelic');
+  // The two classifiers answer different questions and are allowed to disagree. A retaliation
+  // warning names a branch of `uncertain`, so it is a cause and not a context family.
+  const retaliation='Retaliation timing or modifiers are unsupported for this action (including lethal, multi-hit, area or attack-triggered block interactions). Re-observe; survival is unknown.';
+  assert.equal(classifyBlindnessCause(retaliation),'unsupportedCard');
+  assert.equal(classifyWarning(retaliation),'other');
+  assert.equal(classifyBlindnessCause('Unmodeled relic: Lava Rock'),'other');
+  assert.equal(classifyWarning('Incoming damage is a bound, not a total: the readable intents prove at least 3 and at most 9.'),'incomingIsBound');
+  assert.equal(classifyWarning('An attack intent label disagrees with its own per-hit value and hit count; incoming damage is uncertain, not estimated.'),'intentMismatch');
   assert.equal(classifyWarning('something nobody has seen before'),'other');
   assert.equal(classifyWarning(undefined),'other');
+  assert.equal(classifyBlindnessCause(undefined),'other');
+});
+test('a context family present on every combat decision is named constant-true, not counted as a cause',()=>{
+  // The recorded corpus carries "Unmodeled relic" on 519 of 519 combat decisions, so its count
+  // among the unknowns equals the unknown count by arithmetic and explains nothing. Detected
+  // here, not hardcoded: one row without the warning must stop it being constant-true.
+  const relic=['Unmodeled relic: Lava Rock'];
+  const carry=(n,total)=>Array.from({length:total},(_,i)=>dec({forecast:unknown(i<n?[...relic]:['Some incoming attacks could not be parsed.'])}));
+  const constant=blindness(carry(4,4));
+  assert.equal(constant.combatDecisions,4);assert.equal(constant.unknown,4);
+  assert.equal(constant.attachedContext.unmodeledRelic,4);
+  assert.equal(constant.contextOnCombat.unmodeledRelic,4);
+  assert.deepEqual(constant.constantTrueContext,['unmodeledRelic']);
+  // Still a cause tally of the branches that can set unknown, and the relic is not one of them.
+  assert.equal('unmodeledRelic' in constant.byCause,false);
+  assert.equal(constant.byCause.unparsedIncoming,0);
+  // 3 of 4 does discriminate, so it is not named constant-true.
+  const mixed=blindness([
+    ...carry(4,4).slice(0,3).map(d=>d),
+    dec({forecast:unknown(['Unmodeled relic: Lava Rock','Unmodeled player power: Vigor'])}),
+  ]);
+  assert.equal(mixed.contextOnCombat.unmodeledRelic,4);
+  assert.equal(mixed.contextOnCombat.unmodeledPower,1);
+  assert.deepEqual(mixed.constantTrueContext,['unmodeledRelic']);
+  // Context is tallied over every combat decision, not only the unknown ones, so a partial row
+  // carrying the family is what makes it constant-true there.
+  const withPartial=blindness([
+    dec({forecast:unknown(['Some incoming attacks could not be parsed.'])}),
+    dec({forecast:{quality:'partial',hpLoss:0,survives:true,warnings:relic}}),
+  ]);
+  assert.equal(withPartial.contextOnCombat.unmodeledRelic,1);
+  assert.equal(withPartial.attachedContext.unmodeledRelic,0);
+  assert.equal(withPartial.combatDecisions,2);
+  assert.deepEqual(withPartial.constantTrueContext,[]);
+  // A corpus with no combat decisions reports no constant-true families rather than claiming all.
+  assert.deepEqual(blindness([]).constantTrueContext,[]);
 });
 test('an unknown forecast with no recognised cause is reported, not smoothed away',()=>{
   const b=blindness([dec({forecast:unknown(['a warning no rule covers'])})]);
-  assert.equal(b.unknown,1);assert.equal(b.byCause.other,1);assert.equal(b.unexplained,1);assert.equal(b.unmatchedWarnings,1);
+  // The warning names no branch of `uncertain`, so the row is unexplained. It is NOT counted
+  // under a cause bucket called 'other': that made the bucket constant-true across the corpus,
+  // which is the defect this whole split exists to remove.
+  assert.equal(b.unknown,1);assert.equal(b.causeTotal,0);
+  assert.equal('other' in b.byCause,false);assert.equal(b.byCause.other,undefined);
+  assert.equal(b.unexplained,1);assert.equal(b.unmatchedWarnings,1);assert.equal(b.unmatchedCauseWarnings,1);
   const none=blindness([dec({forecast:{quality:'unknown',hpLoss:null,warnings:[]}})]);
-  assert.equal(none.byCause.other,0);assert.equal(none.unexplained,1);
+  // No warnings at all is also unexplained, and matches no warning in either taxonomy.
+  assert.equal(none.causeTotal,0);assert.equal(none.unexplained,1);
+  assert.equal(none.unmatchedWarnings,0);assert.equal(none.unmatchedCauseWarnings,0);
 });
 test('blindness on a log with no combat reports an unknown rate, not zero',()=>{
   const b=blindness([dec({state:{state_type:'map'}}),end({hp:80})]);
