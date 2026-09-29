@@ -8,6 +8,50 @@ export function fingerprint(state) {
 // chooses an ID; it never supplies arbitrary HTTP endpoints or action arguments.
 // Explicit user exclusion: never acquire Sword of Stone.
 const excludedRelic = x => [x.name,x.relic_name,x.id,x.relic_id].some(v => /^(?:the )?sword(?: of| and the) stone$/i.test(String(v??'').replaceAll('_',' ')));
+
+// THE ONLY ROUTE EVIDENCE THE GAME GIVES IS `leads_to`, AND IT WAS BEING DROPPED ON THE FLOOR.
+// The label named the destination room and nothing else, so a System-One scorer was handed three
+// identically-labelled `Travel to Monster (column N)` options while the Elite one row below them sat
+// unread in `details`. Measured on 2026-09-23: 57 executed map decisions, 14 offered an Elite, 6 were
+// taken, and at act 1 floor 12 (asc 3, 67/75 HP) three of four options led to an Elite.
+//
+// THE MEASURED SHAPE DECIDES WHAT MAY BE CLAIMED. All 117 populated options were exactly one row
+// deep and every row within a list was uniform, so the entries in `leads_to` are SIBLING BRANCHES,
+// never a sequence. A RestSite listed beside an Elite is therefore an ALTERNATIVE to it, not
+// healing that lands first - so this reports a rest as "before" only when it is strictly shallower,
+// the same rule `factored.mjs` and `decision-focus.mjs` already state. Only the immediate children
+// are named in the label: a deeper `leads_to` may be walked to order the branch, but a label must
+// never describe a room the game has not shown.
+const ROUTE_MAX_DEPTH = 4;
+export function routeAhead(node) {
+  let eliteDepth = Infinity, restDepth = Infinity;
+  const immediate = [];
+  const visit = (nodes, depth) => {
+    if (depth > ROUTE_MAX_DEPTH) return;
+    for (const n of Array.isArray(nodes) ? nodes : []) {
+      if (!n || typeof n !== 'object' || typeof n.type !== 'string') continue;
+      if (n.type === 'Elite') eliteDepth = Math.min(eliteDepth, depth);
+      if (n.type === 'RestSite') restDepth = Math.min(restDepth, depth);
+      if (depth === 0 && !immediate.includes(n.type)) immediate.push(n.type);
+      visit(n.leads_to, depth + 1);
+    }
+  };
+  visit(node?.leads_to, 0);
+  return { ahead: immediate, elite_ahead: eliteDepth < Infinity, rest_ahead: restDepth < Infinity,
+           // Infinity < Infinity is false, so a board with neither never claims a rest precedes anything.
+           rest_before_elite: restDepth < eliteDepth };
+}
+
+// A rest and an elite at the SAME depth are alternatives, not a heal-then-fight order. Saying
+// "rest first" there would be the single most damaging thing this label could invent: it would
+// license walking into an elite at 10/75 HP on the strength of healing that is not coming.
+const routeNote = r => !r.elite_ahead ? ''
+  : r.rest_before_elite ? ', rest first'
+  : r.rest_ahead ? ', rest beside it not before'
+  : ', no rest before';
+const hp = s => { const {hp: cur, max_hp: max} = s.player ?? {};
+  return Number.isFinite(cur) && Number.isFinite(max) && max > 0 ? { cur, max, fraction: cur / max } : null; };
+const hpNote = h => h ? ` · ${h.cur}/${h.max} HP` : '';
 export function actionsFor(s) {
   const out = [];
   const add = (action, args = {}, label = action, details = {}) =>
@@ -44,9 +88,24 @@ export function actionsFor(s) {
       if(sphere.can_proceed)add('crystal_sphere_proceed',{},'Finish divination');
       break;
     }
-    case 'map':
-      for (const n of s.map?.next_options ?? []) add('choose_map_node', { index: n.index }, `Travel to ${n.type} (column ${n.col})`, n);
+    case 'map': {
+      // LABEL ENRICHMENT ONLY. Nothing here drops, vetoes, reorders or filters an option, and the
+      // candidate count is byte-identical to before. A veto is a DIFFERENT change and is not made:
+      // four of the six elites taken in the recorded run were forced (no alternative existed), a
+      // filter could only have changed 2 of 6 decisions, and none of the five runs ever reached a
+      // boss, so there is no evidence in the corpus that skipping elites is right. Act-1 elite
+      // relics are the main source of scaling damage. Adding the consequence can only inform.
+      const health = hp(s);
+      for (const n of s.map?.next_options ?? []) {
+        const risk = routeAhead(n);
+        const label = `Travel to ${n.type} (column ${n.col})`
+          + (risk.ahead.length ? ` → ${risk.ahead.join('/')} next` : ' → no room shown ahead')
+          + routeNote(risk) + hpNote(health);
+        add('choose_map_node', { index: n.index }, label,
+          { ...n, route_risk: risk, hp_fraction: health ? health.fraction : null });
+      }
       break;
+    }
     case 'event':
       if (s.event?.in_dialogue) add('advance_dialogue', {}, 'Advance dialogue');
       else list(s.event?.options, 'choose_event_option', 'index', x => !x.is_locked && !/\b(?:obtain|gain|receive|take) (?:the )?sword of stone\b/i.test(x.description??''));
