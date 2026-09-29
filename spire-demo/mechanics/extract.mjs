@@ -5,15 +5,26 @@
 // pattern is unambiguous; anything not matched leaves the field absent. Absence is the honest signal.
 import {existsSync, readFileSync, realpathSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {dirname, join, relative, resolve} from 'node:path';
+import {basename, dirname, join, relative, resolve} from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '../..');
 const DEFAULT_LOG = join(REPO, '.private/spire-runs/2026-09-23T20-41-11.451Z.jsonl');
 export const SAMPLE_LOG = join(HERE, 'sample-run.json');
-// Paths in output are repo-relative so a generated file reads the same from any clone or worktree. A path
-// outside the repo keeps its absolute form rather than becoming a ../.. chain up from a guessed root.
+// Two forms of the same path, because they answer different questions and only one of them is allowed to be
+// absolute. rel() is read by a person sitting at this machine right now, so a path outside the repo stays
+// absolute - that is the thing they can act on. sourceLabel() is written INTO a committed artifact, so it
+// must be a pure function of which corpus was read, never of where the checkout happens to sit.
 const rel = p => { const r = relative(REPO, p); return !r || r.startsWith('..') ? p : r; };
+// The corpus lives outside some checkouts (a worktree reading the main clone's .private/), so keying this on
+// a repo-relative path alone bakes the reader's home directory into a file every clone then carries. Anchor
+// on the .private segment itself: the same log yields the same label from any checkout on any machine.
+export function sourceLabel(p) {
+  const priv = p.match(/(?:^|[/\\])\.private[/\\](.*)$/);
+  if (priv) return `.private/${priv[1]}`;
+  const r = relative(REPO, p);
+  return r && !r.startsWith('..') ? r : basename(p);
+}
 
 // The game's own keyword glossary, harvested from the log. These are RULES, never entities: looking up
 // 'Retain' must not return a card. A glossary entry may also disagree with the live card it describes
@@ -511,13 +522,18 @@ export function resolveLogPath(explicit = process.argv[2] ?? process.env.SPIRE_R
 export function missingLogMessage(logPath) {
   return `No run log at ${rel(logPath)}.
 
-knowledge.mjs is committed and needs no log, so nothing is broken. Regenerating does:
+The run log is private and intentionally NOT committed: *.jsonl is gitignored, so no
+sample of the real corpus can ship in this repo. Nothing is broken - knowledge.mjs is
+committed and needs no log. Only regenerating it does, and you need your own log.
+
+Point at one with either of these:
 
   SPIRE_RUN_LOG=/path/to/run.jsonl node spire-demo/mechanics/extract.mjs
   node spire-demo/mechanics/extract.mjs /path/to/run.jsonl
 
-The pinned default is ${rel(DEFAULT_LOG)}. For a smoke test, point at the committed
-${rel(SAMPLE_LOG)} - it exercises every kind but is a fixture, not the corpus.`;
+The pinned default, if you have the corpus, is ${rel(DEFAULT_LOG)}.
+For a smoke test, point at the committed ${rel(SAMPLE_LOG)} - it exercises
+every kind but is a 2-decision fixture, not the corpus.`;
 }
 
 // JSONL (one decision per line) is the real format. A top-level JSON array is also accepted so a fixture
@@ -541,7 +557,7 @@ function main() {
   const built = buildKnowledge(obs);
   const kinds = Object.fromEntries(Object.entries(built.counts).sort());
   const meta = {
-    source: rel(logPath), decisions: lines.length,
+    source: sourceLabel(logPath), decisions: lines.length,
     counts: kinds, names: Object.keys(built.KNOWLEDGE).length, glossary: Object.keys(built.GLOSSARY).length,
     note: 'Effects are regex-derived from verbatim descriptions. Numbers that varied across the corpus are reported as <field>Observed with mutable:true instead of a single value.',
   };

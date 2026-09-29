@@ -7,7 +7,7 @@ import {existsSync, copyFileSync, mkdtempSync, readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {render, resolveLogPath, missingLogMessage, SAMPLE_LOG} from './extract.mjs';
+import {render, resolveLogPath, missingLogMessage, sourceLabel, SAMPLE_LOG} from './extract.mjs';
 import {KNOWLEDGE, GLOSSARY, META} from './knowledge.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -28,11 +28,11 @@ function runCli(args = [], env = {}) {
 
 // A copy in a temp dir, for the one case that DOES write: knowledge.mjs lands beside the copy, so a smoke
 // test can never clobber the committed file.
-function runCliWriting(args = []) {
+function runCliWriting(args = [], env = {}) {
   const dir = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'extract-cli-'));
   copyFileSync(GENERATOR, join(dir, 'extract.mjs'));
-  const r = spawnSync(process.execPath, [join(dir, 'extract.mjs'), ...args], {encoding: 'utf8', env: {...process.env, SPIRE_RUN_LOG: ''}});
-  return {...r, written: () => readFileSync(join(dir, 'knowledge.mjs'), 'utf8')};
+  const r = spawnSync(process.execPath, [join(dir, 'extract.mjs'), ...args], {encoding: 'utf8', env: {...process.env, SPIRE_RUN_LOG: '', ...env}});
+  return {...r, dir, written: () => readFileSync(join(dir, 'knowledge.mjs'), 'utf8')};
 }
 
 test('the private corpus is genuinely absent here, so "works without .private" is not a vacuous claim', () => {
@@ -63,6 +63,68 @@ test('the committed file is exactly what the generator emits: render() is a pure
   assert.equal(committed, render({KNOWLEDGE, GLOSSARY}, META));
 });
 
+// render() above is fed META, so it proves the BODY and can never notice a bad META.source. sourceLabel() is
+// the function that decides what source says, and it is the one that regressed: keying provenance on a
+// repo-relative path bakes the reader's home directory into a committed artifact the moment the log is read
+// from a sibling checkout, which is exactly how a worktree regenerates. These pin it to the corpus instead.
+test('sourceLabel names the corpus, not the checkout it was read from', () => {
+  const corpus = '.private/spire-runs/2026-09-23T20-41-11.451Z.jsonl';
+  assert.equal(sourceLabel(`/Users/someone/elsewhere/repo/${corpus}`), corpus);
+  assert.equal(sourceLabel(`/tmp/nested/deep/repo/${corpus}`), corpus);
+  assert.equal(sourceLabel(`/${corpus}`), corpus, 'even a bare absolute path normalises');
+  assert.equal(sourceLabel(SAMPLE_LOG), 'spire-demo/mechanics/sample-run.json', 'an in-repo log is repo-relative');
+  assert.equal(sourceLabel('/somewhere/else/run-2026.jsonl'), 'run-2026.jsonl', 'an external log keeps no absolute form');
+  for (const p of [`/Users/someone/elsewhere/repo/${corpus}`, SAMPLE_LOG, '/somewhere/else/run-2026.jsonl']) {
+    assert.ok(!sourceLabel(p).startsWith('/'), `no absolute path reached a committed file: ${p}`);
+  }
+});
+
+test('META.source is portable, so the committed corpus carries no machine path', () => {
+  assert.equal(META.source, '.private/spire-runs/2026-09-23T20-41-11.451Z.jsonl');
+  assert.ok(!META.source.startsWith('/'), 'META.source is not an absolute path');
+  assert.ok(!META.source.includes('..'), 'META.source has no escape out of the repo');
+  assert.ok(!committed.includes('/Users/'), 'no home directory leaked anywhere into the generated file');
+  assert.ok(committed.split('\n')[0].includes(META.source), 'the header names the same source META exports');
+});
+
+test('SPIRE_RUN_LOG is honoured as the input path, and a run driven by it really writes', () => {
+  const r = runCliWriting([], {SPIRE_RUN_LOG: SAMPLE_LOG});
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /sample-run\.json/, 'the summary reports the log it actually read');
+  assert.ok(existsSync(join(r.dir, 'knowledge.mjs')), 'a resolved input produces a file');
+  const out = r.written();
+  assert.ok(out.length > 0, 'and it is not empty');
+  assert.match(out, /export const KNOWLEDGE = \{\n {2}"/, 'and it is not truncated to a header');
+});
+
+test('with no resolvable input the generator writes NO knowledge.mjs, not an empty one', () => {
+  // Run against a temp copy so a regression in the guard cannot destroy the committed corpus. The guard is
+  // identical either way, so this measures the same thing at zero blast radius. Checking "not empty" would
+  // be the weaker claim: the only correct outcome is that the file is never created.
+  for (const args of [[], ['/nope/missing.jsonl']]) {
+    const r = runCliWriting(args);
+    assert.equal(r.status, 1, `expected a non-zero exit for ${JSON.stringify(args)}`);
+    assert.equal(existsSync(join(r.dir, 'knowledge.mjs')), false, 'no knowledge.mjs was created');
+    // Exit 1 alone does not prove the guard is there: a bare readFileSync crash also exits 1 and also writes
+    // nothing, so this assertion passes against the exact bug it is meant to catch. The refusal has to be the
+    // designed one - named, actionable, no stack trace.
+    assert.match(r.stderr, /No run log at/, 'the refusal is the generator speaking, not a crash');
+    assert.match(r.stderr, /SPIRE_RUN_LOG/, 'and it says how to supply a log');
+    assert.ok(!/ENOENT|\.mjs:\d+/.test(r.stderr), 'no raw stack trace leaked');
+  }
+  // And the committed artifact is untouched by a no-input run in place.
+  const before = readFileSync(join(HERE, 'knowledge.mjs'), 'utf8');
+  const r = runCli();
+  assert.equal(r.status, 1);
+  assert.equal(readFileSync(join(HERE, 'knowledge.mjs'), 'utf8'), before, 'committed corpus is byte-stable');
+});
+
+test('resolveLogPath prefers argv, then SPIRE_RUN_LOG, then the pinned default', () => {
+  assert.equal(resolveLogPath('/tmp/a.jsonl'), '/tmp/a.jsonl');
+  assert.equal(resolveLogPath(), join(REPO, '.private/spire-runs/2026-09-23T20-41-11.451Z.jsonl'));
+  assert.match(missingLogMessage(join(REPO, 'nope.jsonl')), /nope\.jsonl/);
+});
+
 test('with no log available the generator names SPIRE_RUN_LOG instead of throwing ENOENT', () => {
   const r = runCli();
   assert.equal(r.status, 1);
@@ -71,12 +133,6 @@ test('with no log available the generator names SPIRE_RUN_LOG instead of throwin
   assert.match(r.stderr, /spire-demo\/mechanics\/sample-run\.json/, 'points at the smoke-test fixture');
   assert.ok(!/ENOENT/.test(r.stderr), 'no raw stack trace leaked');
   assert.equal(r.stdout, '', 'nothing was written');
-});
-
-test('resolveLogPath prefers argv, then SPIRE_RUN_LOG, then the pinned default', () => {
-  assert.equal(resolveLogPath('/tmp/a.jsonl'), '/tmp/a.jsonl');
-  assert.equal(resolveLogPath(), join(REPO, '.private/spire-runs/2026-09-23T20-41-11.451Z.jsonl'));
-  assert.match(missingLogMessage(join(REPO, 'nope.jsonl')), /nope\.jsonl/);
 });
 
 test('a bad path passed either way is reported, not thrown', () => {
