@@ -2,7 +2,7 @@ import {orderingEvidence,orderingInstruction} from './order-review.mjs';
 import {immediateChoiceQuestion} from './immediate-choices.mjs';
 import {targetFocusReview} from './target-focus.mjs';
 import {deadlineReview} from './deadline-review.mjs';
-import {deckAssessment,deckAssessmentInstruction} from './deck-assessment.mjs';
+import {deckAssessment,deckAssessmentInstruction,deckUnavailableInstruction} from './deck-assessment.mjs';
 import {powerTimingReview} from './power-timing.mjs';
 import {decisionFocus} from './decision-focus.mjs';
 import {compactRequest} from './compact-request.mjs';
@@ -30,9 +30,14 @@ export function perspectiveQuestion(state,candidates,recent=[]) {
  }};
  for(const [role,instructions] of Object.entries(focus.instructions)) payload.questions[role].instructions=instructions+' Choose only a supplied candidate ID.';
  if(state.state_type==='card_reward'){
-  payload.state.deck_assessment=deckAssessment(state);
-  payload.questions.deck_need={type:'choice',criteria:{damage:'Reliable damage and ending fights',defense:'Reliable protection',draw:'Draw and hand consistency',energy:'Playable energy demands',scaling:'Sustained damage or defense over longer fights',balanced:'No clear single bottleneck'},instructions:deckAssessmentInstruction+' Select the best-supported bottleneck from the supplied deck and observations; do not infer it from a desired offered card.'};
-  for(const role of ['move','synergy','resources'])payload.questions[role].instructions+=' '+deckAssessmentInstruction;
+  const deck=deckAssessment(state);
+  // Keep deck_assessment in the payload either way, but only point the model at it when it
+  // holds a deck. An unavailable assessment is a stated gap, not something to reason from.
+  const instruction=deck.available?deckAssessmentInstruction:deckUnavailableInstruction;
+  const evidence=deck.available?'the supplied deck and observations':'the visible relic, potion, HP, energy and observation evidence, marked uncertain';
+  payload.state.deck_assessment=deck;
+  payload.questions.deck_need={type:'choice',criteria:{damage:'Reliable damage and ending fights',defense:'Reliable protection',draw:'Draw and hand consistency',energy:'Playable energy demands',scaling:'Sustained damage or defense over longer fights',balanced:'No clear single bottleneck'},instructions:instruction+' Select the best-supported bottleneck from '+evidence+'; do not infer it from a desired offered card.'};
+  for(const role of ['move','synergy','resources'])payload.questions[role].instructions+=' '+instruction;
   return payload;
  }
  const focusReview=targetFocusReview(state);
@@ -55,7 +60,10 @@ export function reviewQuestion(state,candidates,assessment,recent=[]) {
   return [role,{choice:a.choice,label:candidates.find(c=>c.id===a.choice).label,confidence:a.confidence}];
  }));
  if(!recommendations.move)throw Error('Missing initial Jev choice');
- if(state.state_type==='card_reward')return {...base,state:{...base.state,deck_assessment:deckAssessment(state),deck_need_hypothesis:assessment.answers?.deck_need??null,decision_focus:focus.name,jev_recommendations:recommendations,recent_observations:recent,review_note:'Same-model recommendations are fallible, not votes or independent evidence.'},questions:{move:{...base.questions.move,instructions:deckAssessmentInstruction+' '+focus.instructions.move+' '+focus.instructions.synergy+' '+focus.review+' Choose only a supplied candidate ID.'}}};
+ if(state.state_type==='card_reward'){
+  const deck=deckAssessment(state);
+  return {...base,state:{...base.state,deck_assessment:deck,deck_need_hypothesis:assessment.answers?.deck_need??null,decision_focus:focus.name,jev_recommendations:recommendations,recent_observations:recent,review_note:'Same-model recommendations are fallible, not votes or independent evidence.'},questions:{move:{...base.questions.move,instructions:(deck.available?deckAssessmentInstruction:deckUnavailableInstruction)+' '+focus.instructions.move+' '+focus.instructions.synergy+' '+focus.review+' Choose only a supplied candidate ID.'}}};
+ }
  return {...base,state:{...base.state,decision_focus:focus.name,end_turn_check:{energy:state.player?.energy,playable_cards:(state.player?.hand??[]).filter(c=>c.can_play).map(c=>({name:c.name,cost:c.cost,description:c.description})),note:'Before ending with playable cards, compare their concrete benefits and risks. DeathBlow and delayed death effects can be lethal even after reducing normal enemy HP to zero.'},jev_recommendations:recommendations,recent_observations:recent,
    review_note:'These recommendations are fallible assessments from the SAME model, not independent evidence or votes. Disagreement does not imply uncertainty about the game rules.'},
   questions:{move:{...base.questions.move,instructions:base.questions.move.instructions+' '+(focus.instructions.move??'')+' '+focus.review+' '+mechanicsInstruction+' '+killReview+' '+upgradeValueReview+' '+timingReview+' '+powerTimingReview(state)+' '+deadlineReview(state)+' '+targetFocusReview(state)+' Review the recommendations against the actual state and rules. Correct the initial choice if another action better wins the run. Do not blindly vote or defer to a recommendation. Treat encounter and deck-synergy recommendations as hypotheses. Check them against visible rules, the current deck, and this run’s observations. Compare observed HP and enemy Strength trends; surviving one turn is not sufficient if the approach is losing the encounter. Reconcile the prior unfinished plan with the new observation before choosing another setup action. If changing a still-legal plan, explicitly compare the defense and future protection sacrificed for extra damage or draw, and whether that damage reaches a kill or visible stun. Compare what changed and whether the replacement actually improves survival or progress. Compare cheaper lethal attacks against overkill that consumes energy needed for defense. Include visible end-of-turn status-card effects; partial forecasts can omit lethal damage. Check whether setup actually triggers soon enough to help; a power with no available trigger may do nothing before lethal damage. Do not prefer a numeric forecast over an unknown defensive option merely because it is numeric. Check missed kills/stuns, target focus, avoidable HP loss, wasted potions, free attacks, and ending early. Repeated short-term defense can still lose to scaling. Choose from ALL supplied candidates; none have been removed.'}}};
