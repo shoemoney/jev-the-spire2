@@ -28,6 +28,10 @@
 // tell the gate what this turn would do. Keeping the two apart matters, because a
 // forecast-based override later mistaken for a remembered lesson reads as experience
 // when it is arithmetic - and arithmetic is exactly what can be checked.
+//
+// It moves to a stated survivor when one exists, and on the board where EVERY stated plan
+// dies it falls back to ranking the deaths - see LAST RESORT below, which is the only part
+// of this file that chooses between plans that all say the player dies.
 
 // A forecast counts as a statement about survival only when it names a quality AND
 // actually states the verdict. planner.mjs sets `survives` to null whenever anything
@@ -95,7 +99,12 @@ export function refuseLethalChoice(choice, candidates = [], ranking = candidates
   const alternative = ranking
     .map(item => byId.get(item?.id ?? item))
     .find(candidate => candidate && candidate.id !== choice && statedSurvival(candidate) === true);
+  // A stated survivor always wins, and when there is one this function returns the shape it
+  // has always returned, byte for byte. The last-resort tier below is only ever reached on
+  // the board where NO candidate states it survives.
   if (!alternative) {
+    const lastResort = rankLethalLosses(chosen, choice, candidates, ranking);
+    if (lastResort) return lastResort;
     return {
       choice, overridden: false, from: evidenceOf(chosen),
       reason: `candidate ${choice} states survives:false, but no other candidate on this board states survives:true, so refusing it would be a guess about an unknown rather than a reading`,
@@ -104,6 +113,157 @@ export function refuseLethalChoice(choice, candidates = [], ranking = candidates
   return {
     choice: alternative.id, overridden: true, from: evidenceOf(chosen), to: evidenceOf(alternative),
     reason: `refused ${chosen.id} (${chosen.label ?? 'unlabelled'}, ${chosen.command?.action ?? 'unknown action'}) because its own forecast states survives:false at quality "${chosen.forecast.quality}"${chosen.forecast.hpAfter === null || chosen.forecast.hpAfter === undefined ? '' : ` with hpAfter ${chosen.forecast.hpAfter}`}; moved to ${alternative.id} (${alternative.label ?? 'unlabelled'}, ${alternative.command?.action ?? 'unknown action'}), the highest-ranked candidate whose forecast states survives:true at quality "${alternative.forecast.quality}"`,
+  };
+}
+
+// ---------------------------------------------------------------------------------------
+// LAST RESORT - a ranking among LOSSES, for the board where every stated plan dies.
+// ---------------------------------------------------------------------------------------
+// PLAN.md measured this gate rescuing 1 of 30 lethal windows, because in 29 of those 30 EVERY
+// known plan dies. Those are unwinnable rooms, not mispicked winnable ones, so a refusal has
+// nowhere to move to: the gate reports that nothing states survives:true and stops, which is
+// the only honest thing it could say. It is also why the safety story was thinnest exactly
+// where the deaths were - the one mechanism that can tell a death from a worse death had no
+// tier for the all-lethal board.
+//
+// So this tier ranks the deaths and reports the LEAST BAD one. Three things it is not:
+//
+//   1. Not a survival claim. `hpAfter: 0` is still death, and so is every other value here.
+//      Nothing in the return sets, implies, or reports `survives: true`; the destination's
+//      own `to.survives` is carried through as the `false` the forecast stated, and the
+//      reason says in words that this is a ranking of losses and that no candidate on the
+//      board claims survival. `lossRanking` is a separate flag beside `overridden` for the
+//      same reason: a reader skimming `overridden: true` must not read it as "and it lived".
+//   2. Not a new action. It ranks only candidates the board ALREADY carries, so it cannot
+//      spend a potion, exhaust a card, or reach for a line nobody proposed. A board that
+//      offers a `use_potion` candidate may be re-ranked ONTO it - that is the policy
+//      choosing an option it was already offered, not the gate spending anything.
+//   3. Not a nudge. A tie is not evidence, and a gap inside the forecasts' own uncertainty
+//      is not evidence either, so both leave the choice exactly where the policy put it.
+
+// How far apart two lethal plans have to be before moving between them means anything.
+//
+// The floor is 2 hp, not 1, because 1 hp is the width of the rounding noise this planner
+// produces by itself: a self-contradicting "4x3 (13)" intent that says 12 comes back as
+// incomingMin 12 / incomingMax 13 (see bounds.test.mjs), so two forecasts 1 hp apart are not
+// evidence of a real difference - they are the arithmetic disagreeing with itself by one.
+// Moving on that is how this tier would make play WORSE, which is the one outcome it must
+// never cause, so 1 hp is never material at any confidence.
+//
+// Above the floor, the gap must also clear the forecasts' OWN uncertainty. A forecast that
+// is not exact announces it: it brackets the turn's damage between `incomingMin` and
+// `incomingMax` and warns that the figure is "a bound, not a total" (planner.mjs), and
+// `incomingExact` is the flag saying the bracket is a point. Ranking two plans whose
+// forecasts overlap across that bracket ranks noise the planner already disclosed, so a gap
+// no wider than the widest bracket on the board is not a reason to move. Exact forecasts
+// carry no such uncertainty, which is why they are left to the floor alone rather than
+// being treated as unknowable.
+const LOSS_MARGIN_HP = 2;
+
+// The bracket width a forecast admits to. Missing bracket fields are 0, not Infinity: a
+// forecast that states no bracket has disclosed no uncertainty, and demanding evidence
+// against an unstated bracket would silence the tier entirely rather than make it cautious.
+const bracketOf = forecast => {
+  const low = forecast?.incomingMin, high = forecast?.incomingMax;
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return 0;
+  return Math.max(0, high - low);
+};
+
+// A death is rankable only when it STATES it and carries a margin to rank on. An `unknown`
+// is not a death to rank, and a stated death with no hpAfter is a death with no margin -
+// inventing one is the guess this module exists not to make.
+const rankableLoss = candidate =>
+  statedSurvival(candidate) === false && Number.isFinite(candidate?.forecast?.hpAfter);
+
+// Highest hpAfter first: that is the death that came closest to not being one, so it is the
+// one most likely to be a mis-read bound rather than a settled death. Ties fall to the lower
+// hpLoss - the same comparison one axis down - and then to the caller's own ranking, because
+// the list is built in ranking order and sort() is stable. That keeps this tier parallel to
+// the survivor path above, which also breaks ties by the caller's ranking.
+const byLeastBadLoss = (a, b) =>
+  (b.forecast.hpAfter - a.forecast.hpAfter)
+  || ((Number.isFinite(a.forecast.hpLoss) ? a.forecast.hpLoss : Infinity)
+    - (Number.isFinite(b.forecast.hpLoss) ? b.forecast.hpLoss : Infinity));
+
+const describe = (id, candidate) =>
+  `${id} (${candidate.label ?? 'unlabelled'}, ${candidate.command?.action ?? 'unknown action'})`
+  + ` at hpAfter ${candidate.forecast.hpAfter}, hpLoss ${Number.isFinite(candidate.forecast.hpLoss) ? candidate.forecast.hpLoss : 'unstated'}`;
+
+/**
+ * Build the last-resort verdict for an all-lethal board, or `null` when there is nothing
+ * to rank - which leaves the caller on the "no other candidate states survives:true"
+ * reading it has always used.
+ *
+ * `null` comes back for every board that must not move: a lone lethal candidate, a board
+ * whose alternatives are all `unknown`, and a chosen candidate that states it dies without
+ * saying by how much. Each is a case where the evidence is thin, and thin evidence means
+ * leaving the decision alone.
+ */
+function rankLethalLosses(chosen, choice, candidates, ranking) {
+  const byId = new Map(candidates.map(candidate => [candidate?.id, candidate]));
+  // Walk `ranking` so ties keep the policy's order, and drop anything off this board.
+  const losses = [...new Map(
+    ranking.map(item => byId.get(item?.id ?? item)).filter(rankableLoss).map(c => [c.id, c]),
+  ).values()];
+  if (losses.length < 2) return null; // nothing to be less bad than
+  const ranked = losses.sort(byLeastBadLoss);
+  const best = ranked[0];
+  const current = ranked.find(candidate => candidate.id === choice) ?? null;
+  // The distance the CHOICE would have to travel to reach the least-bad loss, measured in HP
+  // on the FIRST key that actually separates them.
+  //
+  // hpAfter alone is not enough, and the reason is in the planner: `hpAfter` is
+  // `Math.max(0, hp - loss)` (planner.mjs), so it is CLAMPED AT ZERO and every stated-lethal
+  // plan in a real forecast reads `hpAfter: 0`. On the boards this tier was added for - the
+  // 29 of 30 where every known plan dies - hpAfter is therefore flat across the whole board
+  // and separates nothing, and a margin read off it alone would leave the tier permanently
+  // inert. When hpAfter ties, hpLoss carries the margin instead: it is the same quantity in
+  // the same HP units, and with the player at a known HP a lower hpLoss IS a smaller
+  // overshoot, which is the smaller lethal margin by another name.
+  //
+  // So the two keys are the same measurement at different resolutions, not a preference
+  // order, and the threshold below is in HP either way.
+  const hpLossOf = candidate => (Number.isFinite(candidate.forecast.hpLoss) ? candidate.forecast.hpLoss : null);
+  const separatesOnHpAfter = current !== null && best.forecast.hpAfter !== current.forecast.hpAfter;
+  const gap = current === null ? null
+    : separatesOnHpAfter
+      ? best.forecast.hpAfter - current.forecast.hpAfter
+      : (hpLossOf(current) !== null && hpLossOf(best) !== null ? hpLossOf(current) - hpLossOf(best) : null);
+  // A tie the two keys cannot break is not a margin at all, so it can never be material.
+  const required = Math.max(LOSS_MARGIN_HP, ...ranked.map(candidate => bracketOf(candidate.forecast)));
+  // A chosen plan that states it dies but never says by how much is unmeasurable, not worst.
+  // The ranking is still reported, but nothing is moved on a comparison that cannot be made.
+  const moved = current !== null && best.id !== choice && gap !== null && gap >= required;
+
+  // One prefix on every outcome, because a log reader who sees only the first clause must
+  // not be able to mistake any of them for a survival claim.
+  const head = `every plan this gate can rank on this board states it dies: there is no surviving plan to refuse. This is a RANKING AMONG LOSSES, not a survival claim - no candidate here states survives:true, and the least-bad loss is still a loss. Least-bad loss is ${describe(best.id, best)}`;
+  // Name the key the gap was read on: a reader comparing this to the two hpAfter figures in
+  // the log has to be able to see why the comparison was made on hpLoss instead.
+  const on = separatesOnHpAfter ? 'hpAfter' : 'hpLoss';
+  const bar = `the ${required} hp this gate requires (a ${LOSS_MARGIN_HP} hp floor, widened to the widest incomingMin/incomingMax bracket the forecasts admit)`;
+  const reason = moved
+    ? `${head}; the policy chose ${describe(choice, current)}, a ${gap} hp worse margin on ${on}, past ${bar}. Re-ranked onto ${best.id}, an option this board already offered - nothing was spent, nothing was invented, and every plan here still dies.`
+    : current === null
+      ? `${head}; the policy's own ${choice} states it dies but carries no hpAfter, so there is no margin to compare and this gate will not move on a comparison it cannot make. The choice stands.`
+      : gap === null
+        ? `${head}; the policy chose ${describe(choice, current)} and the two plans agree on hpAfter with no hpLoss stated on both to separate them, so there is no margin here and this gate will not move on one. The choice stands.`
+        : best.id === choice
+          ? `${head}; the policy already chose it, so nothing moved - the only thing this board can say is which death is closest, and the policy found the same one.`
+          : `${head}; the policy chose ${describe(choice, current)}, a ${gap} hp better margin on ${on}, which is below ${bar}, so the choice stands - a gap the forecasts cannot distinguish is not evidence.`;
+
+  return {
+    choice: moved ? best.id : choice,
+    overridden: moved,
+    from: evidenceOf(chosen),
+    // `to` is the destination ONLY when one was chosen, and it carries the forecast's own
+    // `survives: false` - the evidence that the plan it moved to dies as well.
+    ...(moved ? {to: evidenceOf(best)} : {}),
+    // The separate flag. `overridden` alone reads as "and it lived"; this cannot be misread.
+    lossRanking: true,
+    leastBad: evidenceOf(best),
+    rankedAmong: ranked.map(candidate => candidate.id),
+    reason,
   };
 }
 
