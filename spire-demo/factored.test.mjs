@@ -122,7 +122,13 @@ test('the whole decision costs exactly one round trip', async () => {
       move: { type: 'choice', choice: 'b', probabilities: { a: 0.3, b: 0.5, c: 0.2 }, confidence: 0.4 },
       safe_a: { noul: 0.8 }, prog_a: { noul: 0.9 },
       safe_b: { noul: 0.9 }, prog_b: { noul: 0.1 },
-      safe_c: { noul: 0.2 }, prog_c: { noul: 0.1 } } };
+      safe_c: { noul: 0.2 }, prog_c: { noul: 0.1 },
+      // A board is only "complete" — and so only worth recombining — when safe, prog AND waste all
+      // answered. The other two policies that carry this guard have always stubbed all three
+      // (wire.test.mjs, better-policy.test.mjs); this one did not, because the guard did not exist here.
+      // All three carry the SAME value, so the axis has zero spread, the deadband silences it, and the
+      // ranking this test demonstrates is unchanged. Every assertion below is untouched.
+      waste_a: { noul: 0.1 }, waste_b: { noul: 0.1 }, waste_c: { noul: 0.1 } } };
   } });
   assert.equal(calls, 1);
   assert.equal(result.deliberation.calls, 1);

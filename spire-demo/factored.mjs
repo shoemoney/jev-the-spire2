@@ -23,9 +23,23 @@
 // questions and recombined in code, rather than asked as one broad question.
 
 import { decisionQuestion } from './planner.mjs';
+import { decisionFocus } from './decision-focus.mjs';
 import { compactRequest } from './compact-request.mjs';
+import { refuseLethalChoice, completeFactors } from './learning/lethal-gate.mjs';
 
-export const FACTORED_VERSION = 'jev-single-call-factored-v1';
+// v2 adds the safety gate and the refuse-to-recombine guard, routes the `move`
+// question through decisionFocus, and rephrases the per-candidate nouls on boards
+// with no battle.
+//
+// THE NOUL REPHRASING BREAKS COLLECTED FACTORS. Every safe/progress/waste noul
+// recorded under v1 was the meaning of THAT sentence. A non-combat board now asks a
+// different question than it used to, so a v1 reading and a v2 reading of `safe_a3`
+// are not two measurements of one quantity - they are measurements of two different
+// quantities filed under one key. Rows already stored in learning/attribute.mjs must
+// be split by policy version before any of them is fitted against the other; a fitter
+// handed the union will read the wording change as a relationship. The combat wording
+// is byte-identical to v1, so combat rows stay comparable within their own board types.
+export const FACTORED_VERSION = 'jev-single-call-factored-v2';
 
 // A choice distribution over N candidates and an independent noul are not on the
 // same scale: with 30 candidates the best `move` probability may be 0.20 while a
@@ -99,20 +113,66 @@ function normalise(values, deadband = DEADBAND) {
     [id, typeof v !== 'number' ? null : (v - lo) / span]));
 }
 
+// The same three nouls in two phrasings, because one phrasing cannot be right for
+// both kinds of board.
+//
+// v1 asked every candidate on every board whether it would "survive the displayed
+// incoming attack this turn", whether it achieved "securing a kill", and whether a
+// payoff needed "a card, a target, an energy amount or a number of remaining turns".
+// There is no displayed incoming attack, no kill and no turn on a map board. The cost
+// was measurable: at the act-1 floor-12 decision that chose an Elite, safe spanned
+// 0.120, progress 0.090 and waste 0.080 - every one under DEADBAND of 0.15 - so all
+// three factors returned a uniform 0.5 and the two Elites were ranked on the `move`
+// probability alone, with no survival axis anywhere in the decision. The board had HP,
+// potions, node `type` and `leads_to` in it the whole time and none of it was asked
+// about. The non-combat phrasing asks what the board can actually answer: surviving the
+// room being entered, and what the visible `leads_to` and HP say about it.
+const COMBAT_NOULS = {
+  safe: 'Given `state`, does taking the candidate identified by `candidate` leave the player able to survive the displayed incoming attack this turn? Answer no if it leaves lethal or near-lethal damage unblocked. Answer no if the candidate is not a legal action here.',
+  progress: 'Given `state`, does taking the candidate identified by `candidate` make real progress toward winning the run, such as securing a kill, applying a debuff that pays off, or spending energy efficiently? Answer no if it merely survives the turn without advancing.',
+  waste: 'Given `state`, does the candidate identified by `candidate` pay a lasting cost whose payoff cannot actually be collected here? Costs include losing HP, exhausting or discarding cards, and spending energy on setup. Answer yes if the payoff needs a card, a target, an energy amount or a number of remaining turns that the visible state does not supply, or if it forgoes an available decisive play such as a kill. Answer no when the payoff is collectable now.',
+};
+
+// On a non-combat board `safe` is about the ROOM, not a turn: HP and potions against
+// what entering costs, judged from the node type and the visible `leads_to` chain. It
+// must not say "incoming attack this turn" - there is no turn - because a question the
+// board cannot answer is answered from priors, and priors are not evidence.
+const ROOM_NOULS = {
+  safe: 'Given `state`, does taking the candidate identified by `candidate` leave the player able to survive the room being entered and the rooms it visibly leads to? Judge it from current HP against `max_hp`, held potions, and the `type` and `leads_to` of the nodes on the visible path; count a forced fight after a rest site as a fight before the rest site, not after it. Answer no if it walks into a room this player cannot currently survive. Answer no if the candidate is not a legal action here.',
+  progress: 'Given `state`, does taking the candidate identified by `candidate` make real progress toward winning the run, such as advancing toward the boss, reaching a reward or upgrade, or spending gold on something the deck needs? Answer no if it merely leaves the run where it already was. Judge only from visible rooms, visible connections and current resources; unknown rooms stay unknown.',
+  waste: 'Given `state`, does the candidate identified by `candidate` pay a lasting cost whose payoff cannot actually be collected here? Costs include spending gold, using a potion, discarding or declining a permanent improvement, and taking a room that forces a harder fight later. Answer yes if the payoff needs gold, a potion slot, a reward or a room that the visible state does not supply, or if it forgoes an available decisive option. Answer no when the payoff is collectable now.',
+};
+
+export const isCombat = state => ['monster', 'elite', 'boss'].includes(state?.state_type);
+
 export function factoredQuestion(state, candidates, { maxFactored = MAX_FACTORED_CANDIDATES, waste = true } = {}) {
   const base = decisionQuestion(state, candidates);
   const factored = candidates.slice(0, maxFactored);
   const questions = { ...base.questions };
+  // The broad `move` question carries the screen's own criteria. decisionFocus holds
+  // them for map, shop, campfire, card reward, hand select and divination; combat and
+  // every other board fall through to `{name:'General', instructions:{}}` and are
+  // left byte-identical, so the `move` distribution WEIGHTS was fitted against does
+  // not move on the combat boards that fit produced.
+  //
+  // Without this, a map decision fell through to the generic text in actions.mjs,
+  // which never mentions HP, survival or Elites. On the 2026-09-23 run that is the
+  // whole story: at act1 floor 12, ascension 3, 67/75 HP, options
+  // [Monster, Unknown, Monster, Elite, Elite], the policy took the Elite. At floor 13
+  // with 10/75 HP the options were four Elites and an Unknown, and it took an Elite
+  // and died.
+  //
+  // Only this board's own focus is applied. The Route block is NOT bolted onto every
+  // board's `move` question: it would bias one distribution on shop, campfire and
+  // card-reward screens too, and a screen-specific criterion is only an improvement
+  // on the screen it was written for.
+  const focus = decisionFocus(state);
+  if (focus.instructions.move) questions.move.instructions += ' ' + focus.instructions.move;
+  const phrased = isCombat(state) ? COMBAT_NOULS : ROOM_NOULS;
   for (const c of factored) {
-    questions['safe_' + c.id] = { type: 'noul', instructions: {
-      candidate: c.id,
-      question: 'Given `state`, does taking the candidate identified by `candidate` leave the player able to survive the displayed incoming attack this turn? Answer no if it leaves lethal or near-lethal damage unblocked. Answer no if the candidate is not a legal action here.' } };
-    questions['prog_' + c.id] = { type: 'noul', instructions: {
-      candidate: c.id,
-      question: 'Given `state`, does taking the candidate identified by `candidate` make real progress toward winning the run, such as securing a kill, applying a debuff that pays off, or spending energy efficiently? Answer no if it merely survives the turn without advancing.' } };
-    if (waste) questions['waste_' + c.id] = { type: 'noul', instructions: {
-      candidate: c.id,
-      question: 'Given `state`, does the candidate identified by `candidate` pay a lasting cost whose payoff cannot actually be collected here? Costs include losing HP, exhausting or discarding cards, and spending energy on setup. Answer yes if the payoff needs a card, a target, an energy amount or a number of remaining turns that the visible state does not supply, or if it forgoes an available decisive play such as a kill. Answer no when the payoff is collectable now.' } };
+    questions['safe_' + c.id] = { type: 'noul', instructions: { candidate: c.id, question: phrased.safe } };
+    questions['prog_' + c.id] = { type: 'noul', instructions: { candidate: c.id, question: phrased.progress } };
+    if (waste) questions['waste_' + c.id] = { type: 'noul', instructions: { candidate: c.id, question: phrased.waste } };
   }
   return { ...base, questions };
 }
@@ -223,25 +283,60 @@ export function combine(candidates, answers, weights = WEIGHTS) {
 }
 
 export async function factoredDeliberate({ state, candidates, ask, onStage = () => {}, weights = WEIGHTS, maxFactored = MAX_FACTORED_CANDIDATES }) {
+  // One candidate is a forced choice, not a ranking, so there is no combination to
+  // do. The gate still runs: with one candidate nothing can be swapped TO, so the only
+  // honest verdicts are "no alternative existed" and "no claim was made", and both are
+  // worth having. `deliberation` stays null here, which is why the verdict is published
+  // on the result itself - a refusal that only ever reached the deliberation block
+  // would be a refusal nobody could see on the one path that has no deliberation.
   if (candidates.length <= 1) {
-    return { ...await ask(compactRequest(decisionQuestion(state, candidates))), deliberation: null };
+    const result = await ask(compactRequest(decisionQuestion(state, candidates)));
+    return { ...result, safetyGate: refuseLethalChoice(candidates[0]?.id ?? null, candidates, candidates), deliberation: null };
   }
   onStage('Jev is scoring every option in one pass');
   const result = await ask(compactRequest(factoredQuestion(state, candidates, { maxFactored, waste: (weights.waste ?? 0) > 0 })));
   const answers = result.answers ?? {};
-  const { scored, probabilities, margin } = combine(candidates, answers, weights);
-  const best = scored[0];
-  if (!candidates.some(c => c.id === best.id)) throw new Error('Invalid factored choice');
   const jevMove = answers.move;
+  if (jevMove?.type !== 'choice') throw new Error('Missing Jev move choice');
+
+  // Refuse to recombine a board the model only half-answered. Falling back to the broad
+  // `move` answer is not a downgrade in confidence - it is the only reading on this
+  // board that is not assembled from missing factors - and `factorFallback` says so in
+  // the log rather than leaving a clean ranking and a confident margin to be read as
+  // evidence. See learning/lethal-gate.mjs for the measurement behind this.
+  const factorsComplete = completeFactors(candidates, answers);
+  const combined = factorsComplete ? combine(candidates, answers, weights) : null;
+  const probabilities = combined ? combined.probabilities : (jevMove.probabilities ?? null);
+  const confidence = combined ? combined.margin : (jevMove.confidence ?? null);
+  const proposed = factorsComplete ? combined.scored[0].id : jevMove.choice;
+  if (!candidates.some(c => c.id === proposed)) throw new Error('Invalid factored choice');
+
+  // The gate is independent of the guard above and runs on both paths. It is walked over
+  // the recombine ranking, so a swap lands on the best-scoring PROVEN survivor rather
+  // than the first one in the candidate list; on a fallback, where no ranking exists, it
+  // walks the candidate list and says so in `safetyGateReason`.
+  const gate = refuseLethalChoice(proposed, candidates, combined?.scored ?? candidates);
   return {
     ...result,
-    answers: { ...answers, move: { type: 'choice', choice: best.id, probabilities, confidence: margin } },
+    answers: { ...answers, move: { type: 'choice', choice: gate.choice, probabilities, confidence } },
+    safetyGate: gate,
     deliberation: {
       version: FACTORED_VERSION, calls: 1, weights, maxFactored,
+      factorsComplete,
+      factorFallback: !factorsComplete,
       jevMove: { choice: jevMove.choice, confidence: jevMove.confidence },
-      changed: jevMove.choice !== best.id,
+      changed: jevMove.choice !== gate.choice,
       factorsAsked: Object.keys(answers).length - 1,
-      ranking: scored.slice(0, 5),
+      // Left as the scorer produced it. Rewriting it to match an override would hide
+      // which candidate the gate actually overrode, which is the one fact a reader
+      // needs. Null on a fallback, because no ranking was produced.
+      ranking: combined?.scored.slice(0, 5) ?? null,
+      // Which axes went unmeasured per candidate, including candidates below the
+      // top-five cut. Empty on any board combine() saw, so it is carried rather than
+      // returned as a value no caller destructures.
+      unmeasured: combined?.unmeasured ?? null,
+      safetyGate: gate.overridden ? { overridden: true, from: gate.from, to: gate.to, reason: gate.reason } : null,
+      safetyGateReason: gate.reason,
     },
   };
 }
