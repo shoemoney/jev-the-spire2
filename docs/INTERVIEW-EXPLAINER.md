@@ -1,3 +1,18 @@
+<!--
+Exported artefacts. INTERVIEW-EXPLAINER.docx and INTERVIEW-EXPLAINER.pdf are generated
+from this file. Regenerate them with:
+
+    pandoc docs/INTERVIEW-EXPLAINER.md -o docs/INTERVIEW-EXPLAINER.docx
+    soffice --headless --convert-to pdf --outdir docs docs/INTERVIEW-EXPLAINER.docx
+
+Run both from the repository root. The --outdir flag is required: without it soffice
+writes the PDF to the current directory and leaves it outside docs/.
+
+Commit the regenerated binaries in the same commit as the edit to this file that
+required them. spire-demo/explainer-sync.test.mjs fails when a binary no longer matches
+this source, so the two can no longer drift apart unnoticed.
+-->
+
 # How I made a fast game agent make more careful choices
 
 **Interview brief — September 25, 2026**
