@@ -101,12 +101,23 @@ export function blindness(events) {
   const combat = decisionsOf(events).filter(isCombat);
   const byCause = Object.fromEntries(CAUSES.map(c => [c, 0]));
   const byQuality = { calculated: 0, partial: 0, unknown: 0, unreported: 0 };
+  // Blind and bounded are different failures, and a fix moves decisions from the
+  // first into the second, so the two must be counted apart. `unbounded` is a
+  // forecast that stayed unreadable and therefore keeps the flat ranking penalty.
+  const byBound = { exact: 0, bounded: 0, unbounded: 0, unreported: 0 };
   let unknown = 0, unexplained = 0, unmatchedWarnings = 0;
   for (const d of combat) {
     const f = forecastOf(d);
     const q = f?.quality;
     if (q === 'calculated' || q === 'partial' || q === 'unknown') byQuality[q] += 1;
     else byQuality.unreported += 1;
+    // A bounded forecast is a usable one: still rankable on its interval. Counted
+    // for every combat decision, not only the unknown ones, so the tier can be
+    // watched as it fills and not mistaken for a subset of blindness.
+    if (f === null) byBound.unreported += 1;
+    else if (f.incomingExact === true) byBound.exact += 1;
+    else if (isNum(f.incomingMin) && isNum(f.incomingMax)) byBound.bounded += 1;
+    else byBound.unbounded += 1;
     if (q !== 'unknown') continue;
     unknown += 1;
     const warnings = Array.isArray(f?.warnings) ? f.warnings : [];
@@ -124,6 +135,12 @@ export function blindness(events) {
     partial: byQuality.partial,
     calculated: byQuality.calculated,
     qualityUnreported: byQuality.unreported,
+    bounded: byBound.bounded,
+    boundedRate: combat.length ? byBound.bounded / combat.length : null,
+    unbounded: byBound.unbounded,
+    exact: byBound.exact,
+    boundUnreported: byBound.unreported,
+    byBound,
     byCause,
     causeTotal,
     byCauseOverlaps: causeTotal > unknown,

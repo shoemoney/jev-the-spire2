@@ -17,6 +17,20 @@ const knownPlayerPowers = new Set(['strength','dexterity','weak','frail','vulner
 const knownEnemyPowers = new Set(['strength','weak','vulnerable','slippery','plow','artifact']);
 const knownRelics = new Set(['BURNING_BLOOD','VAJRA','GORGET','ORNAMENTAL_FAN','ANCHOR','STRAWBERRY','PEAR','MANGO','BAG_OF_PREPARATION','POTION_BELT','ARCANE_SCROLL','TUNING_FORK']);
 
+// An attack states its damage twice: in the intent label and in the intent
+// description. Reading both turns "the label did not parse" from a dead end into
+// an interval, so a plan that blocks 12 stops looking identical to one that
+// blocks 5 whenever a label form is unrecognised. `alt` is the label's own
+// second number: when it contradicts perHit*hits the truth is one of the two the
+// game printed, so the reading is a two-point range rather than a discard.
+export function readIntentDamage(intent) {
+  const label = parseIntentLabel(intent.label);
+  if (label) return {perHit:label.perHit, hits:label.hits, alt:label.mismatch?label.total:null, exact:!label.mismatch, source:'intent label'};
+  const said = String(intent.description??'').match(/(\d+) damage(?: (\d+) times?)?/i);
+  if (said) return {perHit:Number(said[1]), hits:Number(said[2]??1), alt:null, exact:true, source:'intent description'};
+  return null;
+}
+
 function initial(s) {
   const warnings = [];
   for (const p of s.player.status ?? []) if (!knownPlayerPowers.has(p.name.toLowerCase())) warnings.push(`Unmodeled player power: ${p.name}`);
@@ -43,6 +57,9 @@ function initial(s) {
     vicious:amount(s.player.status,'Vicious'),
     rage: amount(s.player.status,'Rage'), plating: amount(s.player.status,'Plating'), metallicize: amount(s.player.status,'Metallicize'),
     attacks: 0, fan: Boolean(fan), fanProgress, steps: [], warnings,
+    // Energy an unmodeled card may have consumed. Bounded-worst-case ranking
+    // charges it, so an unknown card never scores as though it were free.
+    unsupportedEnergy: 0,
     // Unknown interactions stop search expansion; never invent complete outcomes.
     unsupported: false, boundary: null, freeAttack: amount(s.player.status,'Free Attack') > 0,
     originalVulnerable:Object.fromEntries(s.battle.enemies.map(e=>[e.entity_id,amount(e.status,'Vulnerable')])),
@@ -108,6 +125,7 @@ function apply(m0, a) {
   const name = nameOf(item), text = item.description ?? '';
   if (!(potion ? supportedPotions : supportedCards).has(name)) {
     m.boundary = 'unsupported'; m.unsupported = true;
+    m.unsupportedEnergy += potion ? 0 : cost(item,m);
     m.warnings.push(`Re-observe after ${item.name}; full consequences are not modeled.`);
     return m;
   }
@@ -115,7 +133,7 @@ function apply(m0, a) {
   // Only the fully understood plain Strike replay is modeled. Other replayed
   // effects may draw, change costs, exhaust, or alter targets between plays.
   if(replayCount && (name!=='strike' || !/^Deal \d+ damage\.\s*Replay \d+\.?$/i.test(text.trim()) || replayCount>10 || m.freeAttack || m.ringing)) {
-    m.unsupported=true;m.boundary='unsupported';
+    m.unsupported=true;m.boundary='unsupported';m.unsupportedEnergy+=cost(item,m);
     m.warnings.push('Replay effects require a fresh observation; this card or play-limit interaction is not modeled.');
     return m;
   }
@@ -257,20 +275,33 @@ export function parseIntentLabel(label) {
 }
 
 function forecast(m, s) {
-  let incoming = 0, parsed = true, mismatched = false;
+  // Every attack contributes a floor and a ceiling instead of a point. The floor
+  // is what the readable intents prove will land; the ceiling is the most those
+  // same readings allow. They are equal for every attack the planner fully
+  // understands, so a fully readable turn is numerically unchanged.
+  let incomingMin = 0, incomingMax = 0, parsed = true, mismatched = false, unreadable = [];
   for (const e of m.enemies.filter(e => e.hp > 0)) {
     if(m.stunned.includes(e.entity_id))continue;
     const before = s.battle.enemies.find(x => x.entity_id === e.entity_id);
     for (const intent of e.intents ?? []) {
       if (!/attack|deathblow/i.test(intent.type) && !/attack.*\d+ damage/i.test(intent.description??'')) continue;
-      const hit = parseIntentLabel(intent.label);
-      if (!hit || hit.mismatch) { parsed = false; mismatched = mismatched || hit?.mismatch === true; continue; }
-      let perHit = hit.perHit;
+      const read = readIntentDamage(intent);
+      // No visible source names this attack's damage, so no ceiling exists and
+      // the whole turn stays unscoreable. Never widen the range to hide that.
+      if (!read) { parsed = false; unreadable.push(`${e.name}: ${intent.type??'attack'} ${JSON.stringify(intent.label??'')}`); continue; }
+      let perHit = read.perHit;
       if (amount(before?.status,'Weak') === 0 && amount(e.status,'Weak') > 0) perHit = Math.floor(perHit*.75);
       if(m.colossus && amount(e.status,'Vulnerable')>0)perHit=Math.floor(perHit*.5);
-      incoming += perHit * hit.hits;
+      // A self-contradicting label names two numbers the game printed, so the
+      // truth is one of them: the interval runs between them, whichever is larger.
+      // Pinning the floor at the product would overstate what provably lands.
+      const product = perHit * read.hits;
+      incomingMin += read.alt == null ? product : Math.min(product, read.alt);
+      incomingMax += read.alt == null ? product : Math.max(product, read.alt);
+      if (!read.exact) { parsed = false; mismatched = true; }
     }
   }
+  const bounded = unreadable.length === 0;
   const defeatedEnemies = s.battle.enemies.filter(e=>e.hp>0 && m.enemies.some(after=>after.entity_id===e.entity_id && after.hp<=0 && !after.departedWithLeader)).map(e=>({
     id:e.entity_id,name:e.name,
     attackRemoved:(e.intents??[]).reduce((sum,i)=>{
@@ -286,23 +317,49 @@ function forecast(m, s) {
   const facingProjection=positioningUnknown?facingDamage(s,m.steps,m.enemies):null;
   const facingEffectsChanged=m.enemies.some(e=>JSON.stringify(e.status)!==JSON.stringify(s.battle.enemies.find(x=>x.entity_id===e.entity_id)?.status));
   const facingUsable=facingProjection&&!facingEffectsChanged&&!m.unsupported;
-  if(facingUsable)incoming=facingProjection.incomingMax;
+  // A usable facing projection is already an interval, so take both of its ends
+  // rather than only the conservative one it publishes.
+  if(facingUsable){incomingMin=facingProjection.incomingMin;incomingMax=facingProjection.incomingMax;}
+  // An unresolved orientation can raise any surviving attack by a visible
+  // percentage, so no ceiling exists until a facing projection resolves it.
+  // Publishing the displayed total as the ceiling would be a bound posing as a
+  // fact, so such a turn stays unscoreable and keeps the flat ranking penalty.
+  const ceilingKnown = bounded && !(positioningUnknown && !facingUsable);
+  const boundMin = facingUsable ? facingProjection.incomingMin : incomingMin;
+  const boundMax = ceilingKnown ? (facingUsable ? facingProjection.incomingMax : incomingMax) : null;
+  // `incoming` keeps the value every existing consumer already reads: the exact
+  // total when the intents are fully readable, otherwise one end of the range.
+  // A facing review keeps its documented conservative upper bound, because that
+  // is the number the turn review already compares against.
+  const incoming = ceilingKnown ? (facingUsable ? boundMax : boundMin) : null;
+  // Exact means the intent arithmetic is complete, not that the turn is won: an
+  // unmodeled card or an unreadable label each widen what the reading supports,
+  // and each is reported rather than absorbed into the number.
+  const incomingExact = ceilingKnown && !mismatched && !m.unsupported;
   const uncertain = lethalTurnRule || (positioningUnknown&&!facingUsable) || m.unsupported || m.deathUnresolved || defeatedEnemies.some(e=>e.deathRules.length) || !parsed;
   const endTurnCardDamage = m.enemies.some(e=>e.hp>0) ? m.hand.reduce((sum,c)=>sum+(/At the end of your turn, if this is in your Hand, take (\d+) damage/i.test(c.description??'') ? number(c.description,/take (\d+) damage/i) : 0),0) : 0;
   const endTurnCardHpLoss = m.enemies.some(e=>e.hp>0) ? m.hand.reduce((sum,c)=>sum+number(c.description,/At the end of your turn, if this is in your Hand,\s+lose (\d+) HP/i),0) : 0;
-  const projectedLoss = endTurnCardHpLoss + Math.max(0,incoming+endTurnCardDamage-block);
+  // Two loss figures, never one: what the readable intents prove will land, and
+  // what the whole interval allows. They are equal whenever incomingExact, so an
+  // exact forecast keeps the single number it always had.
+  const unblocked = inc => endTurnCardHpLoss + Math.max(0, inc + endTurnCardDamage - block);
+  const projectedLoss = unblocked(incoming ?? 0);
   const loss = Math.max(0,s.player.hp-m.hp) + projectedLoss;
+  const lossUpper = boundMax === null ? null : Math.max(0,s.player.hp-m.hp) + unblocked(boundMax);
   const warnings = [...new Set(m.warnings)];
   if(lethalTurnRule)warnings.push('A visible rule says the enemy taking its turn kills you regardless of ordinary block. Attack-only HP estimates cannot establish survival; prevent that turn using a supported kill or stated interruption.');
   if(positioningUnknown&&!facingUsable)warnings.push('Position-dependent incoming damage is not modeled; targeting can change orientation. Survival is uncertain.');
-  if (!parsed) warnings.push('Some incoming attacks could not be parsed.');
+  if (!parsed) warnings.push(unreadable.length ? `Some incoming attacks could not be read from either the intent label or its description, so this turn has no damage ceiling: ${unreadable.join('; ')}.` : 'Some incoming attacks could not be parsed.');
   if (mismatched) warnings.push('An attack intent label disagrees with its own per-hit value and hit count; incoming damage is uncertain, not estimated.');
+  // A bound must never read as a total. One warning covers every inexact reason,
+  // and its presence also keeps `quality` from ever claiming 'calculated'.
+  if (!incomingExact) warnings.push(`Incoming damage is a bound, not a total: the readable intents prove at least ${boundMin} and at most ${boundMax ?? 'an unbounded amount, so this turn cannot be ranked against another'}. Compare plans on surviving incomingMax, and do not read the single incoming figure as the damage that will land.`);
   return {
     ...(facingUsable?{facingProjection}:{}),
     ...(positioningUnknown?{facingReview:{lastTargetedAction:[...m.steps].reverse().find(a=>a.command?.target)??null,note:facingUsable?'Use facingProjection for the candidate final direction; incoming uses its conservative upper bound. Facing evidence comes from executed actions; re-observe after every action.':'Visible rules say targeting changes orientation. Compare the final target with each surviving attacker before ending. Current facing and unmodified attack values are not supplied, so do not multiply displayed intents again or assume exact damage after turning. Reserve an affordable targeted card or potion when a final turn can reduce incoming damage; re-observe live intents after it. Untargeted block or area damage is not evidence of turning.'}}:{}),
     damage: m.unsupported ? null : m.cardDamage,
     block: m.unsupported ? null : block,
-    incoming: parsed ? incoming : null,
+    incoming, incomingMin: boundMin, incomingMax: boundMax, incomingExact,
     endTurnCardDamage, endTurnCardHpLoss,
     defeatedEnemies,
     retaliationEvents:m.retaliationEvents,
@@ -311,23 +368,38 @@ function forecast(m, s) {
     hpLoss: uncertain ? null : loss,
     hpAfter: uncertain ? null : Math.max(0,s.player.hp-loss),
     survives: uncertain ? null : m.hp > projectedLoss,
+    // The pessimistic end of the bound, for ranking a plan whose survival cannot
+    // be stated outright. Null whenever there is no ceiling to test against.
+    hpLossUpper: lossUpper,
+    survivesUpper: boundMax === null ? null : m.hp > unblocked(boundMax),
     bossStunned:m.stunned.length>0, bossThresholds:m.enemies.flatMap(e=>(e.status??[]).filter(p=>p.name.toLowerCase()==='plow').map(p=>({enemy:e.name,damageToStun:Math.max(0,e.hp-p.amount)}))),
     energyLeft:m.unsupported ? null : m.energy, slipperyRemoved:m.removedCharges, strengthGained:m.extraStrength,
     quality:uncertain?'unknown':warnings.length?'partial':'calculated',
     boundary:m.boundary, warnings,
-    assumption:'Forecast if this prefix is followed by ending the turn. Known-effects estimate; unmodeled interactions are omitted when marked partial. Displayed damage intents and explicit end-of-turn damage from remaining hand; no prediction of hidden draws or future turns. Extra block from an unavailable Fan counter is omitted.',
+    assumption:'Forecast if this prefix is followed by ending the turn. Known-effects estimate; unmodeled interactions are omitted when marked partial. Displayed damage intents and explicit end-of-turn damage from remaining hand; no prediction of hidden draws or future turns. Extra block from an unavailable Fan counter is omitted. incomingMin/incomingMax bracket the turn\'s attack damage; when incomingExact is true they are equal and incoming is the total. Otherwise incoming is one end of that range (the provable floor, or a facing review\'s conservative ceiling) and incomingMax is the ceiling: compare plans on surviving it, never on the single incoming figure. hpLossUpper and survivesUpper are the same pessimistic reading taken through to HP. A null bound means the damage could not be read at all, not zero.',
   };
 }
 
 function preference(m,s,kind) {
   const f=forecast(m,s);
-  if(f.quality==='unknown')return -10000;
-  const safety=f.survives?0:-10000;
+  // No ceiling on this turn's damage: every candidate's outcome turns on a number
+  // that was never read, so none of them can be told apart. The flat penalty is
+  // the honest answer here, and the only place a null is allowed to stand in for
+  // a number — widening the range to rank anyway would be inventing damage.
+  if(f.incomingMax===null)return -10000;
+  // Otherwise rank on the pessimistic end of the bound: a plan earns its place by
+  // surviving the worst the interval allows, and only then by what it adds. Being
+  // a bound is never itself a penalty, or a wide-but-readable plan would be buried
+  // under a narrow one describing the very same danger.
+  const safety=f.survivesUpper?0:-10000;
+  const loss=f.hpLossUpper??0, damage=f.damage??0, gained=f.strengthGained, slippery=f.slipperyRemoved;
+  // Charge an unmodeled card its cost: the bounded worst case is that it did nothing.
+  const energy=m.energy-m.unsupportedEnergy;
   const potionsUsed=m.steps.filter(a=>a.command.action==='use_potion').length;
-  if(kind==='setup')return safety+m.energy*8+f.strengthGained*8+m.rage*3+f.slipperyRemoved*4-f.hpLoss*2-potionsUsed*2;
-  if(kind==='conserve')return safety+f.damage*2-f.hpLoss*8+f.slipperyRemoved*5-potionsUsed*18;
-  if(kind==='defense')return safety-f.hpLoss*20+f.damage+f.strengthGained*2;
-  return safety+f.damage*3+f.slipperyRemoved*6-f.hpLoss*5+f.strengthGained*5;
+  if(kind==='setup')return safety+energy*8+gained*8+m.rage*3+slippery*4-loss*2-potionsUsed*2;
+  if(kind==='conserve')return safety+damage*2-loss*8+slippery*5-potionsUsed*18;
+  if(kind==='defense')return safety-loss*20+damage+gained*2;
+  return safety+damage*3+slippery*6-loss*5+gained*5;
 }
 
 // Bounded search proposes options; Jev alone chooses among them. Keep every
@@ -412,8 +484,22 @@ export function withRageReorders(s,candidates,{maxExtra=16}={}) {
   return [...candidates,...added];
 }
 
-export function projectSequence(s, labels) {
-  let m=initial(s);
+// The ranking the bounded search sorts candidates with, exposed on its own so
+// the numbers that decide which plans are kept can be checked directly. It runs
+// the identical initial/apply/preference path the search uses, so a test here is
+// a statement about the real ranking and not a re-implementation of it.
+export function planPreference(s, labels, kind) {
+  let m = initial(s);
+  for (const label of labels) {
+    if (m.boundary) throw new Error(`Cannot project past ${m.boundary}`);
+    const action = available(m,s).find(a => a.label===label);
+    if (!action) throw new Error(`Action not available: ${label}`);
+    m = apply(m, action);
+  }
+  return preference(m, s, kind);
+}
+
+export function projectSequence(s, labels) {  let m=initial(s);
   for(const label of labels) {
     if(m.boundary)throw new Error(`Cannot project past ${m.boundary}`);
     const action=available(m,s).find(a=>a.label===label);
@@ -439,7 +525,7 @@ export function decisionQuestion(s,candidates) {
   return {
     model:'typesafe/jev-1.13',
     state:{game:'Slay the Spire 2',objective:'Win the run. Survive the current turn and preserve useful resources.',state:s,encounter:encounterBrief(s),deck:deckSnapshot(s),facts:factsFor(s),policy:POLICY_VERSION,setup_dependencies:setupLinks(s),mechanics_review:mechanicsReview(s),potion_timing:potionTiming(s),
-      forecast_scope:'Plans are short prefixes, not complete optimal turns. Forecasts assume ending after the prefix. Null means unknown, not zero. Partial outcomes have explicit caveats. Do not treat displayed card damage as actual damage through enemy powers.'},
+      forecast_scope:'Plans are short prefixes, not complete optimal turns. Forecasts assume ending after the prefix. Null means unknown, not zero. Partial outcomes have explicit caveats. Do not treat displayed card damage as actual damage through enemy powers. When incomingExact is false, incomingMin and incomingMax bracket the turn\'s damage: prefer a plan that survives incomingMax, and do not read the single incoming figure as what will land. A bounded plan is a usable plan — rank it on its bound instead of setting it aside.'},
     questions:{move:{type:'choice',
       instructions:'Choose the next action or short plan that best advances winning the run. Derive tactics from visible rules, intents, cards and observations. Calculations are aids, not guaranteed outcomes; partial estimates omit stated effects and null means unknown. Evaluate tradeoffs over the encounter, not only the current turn. Only the FIRST action executes, followed by a fresh observation. Choose only among supplied IDs.',
       criteria:Object.fromEntries(candidates.map(c=>[c.id,JSON.stringify({sequence:c.plan,forecast:c.forecast,first_action_rules:c.details.description})])),
