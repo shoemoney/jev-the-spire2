@@ -6,6 +6,7 @@ import {mechanicsReview} from './mechanics.mjs';
 import {setupLinks} from './setup-links.mjs';
 import {encounterBrief,deckSnapshot,visibleState} from './encounters.mjs';
 import { actionsFor, factsFor, makeQuestion } from './actions.mjs';
+import {retrieveMechanics} from './mechanics/retrieve.mjs';
 
 export const POLICY_VERSION = 'jev-visible-v23-retaliation';
 const amount = (powers, name) => (powers ?? []).filter(p => p.name?.toLowerCase() === name.toLowerCase()).reduce((n,p) => n + Number(p.amount ?? 0), 0);
@@ -662,12 +663,99 @@ export function decisionWarnings(s,c) {
 const isCombat = s => ['monster','elite','boss'].includes(s.state_type);
 export function decisionCandidates(s) { return isCombat(s) ? planCandidates(s) : actionsFor(s); }
 
+// The knowledge base in mechanics/ is 159 resolved entities - damage, block, debuff counts parsed out of
+// the game's own descriptions - and it existed with no consumer, so every policy was reading card prose and
+// re-deriving numbers the agent already had verified. decisionQuestion() is the one place that reaches all
+// of them: deliberate(), factoredDeliberate(), betterDeliberate() and recallingDeliberate() all build their
+// request through it, and factoredQuestion() is that base plus per-candidate nouls, so a single attach here
+// covers the one-call fast policies AND the multi-call upstream path.
+//
+// WHY IT ATTACHES BEFORE compactRequest(), WHICH IS THE OPPOSITE OF learning/wire.mjs. wire.mjs has to
+// attach late because its recall context is a late-arriving argument with no business reshaping the
+// request. This one is built from the same state the compactor is about to walk, and compactRequest() only
+// ever rewrites four structures: state.state.player piles, recent_observations, candidate_details (and the
+// forecast_references interned out of it) and card_order_review. `mechanics` is a fifth top-level key that
+// none of those can reach, so it reaches Jev byte-identical either side of the compactor. That is asserted,
+// not assumed - see mechanics-live.test.mjs, which strips the key before compacting and requires the
+// compactor's output to be identical byte for byte, interning tables included.
+//
+// A per-decision byte budget, because $/decision and latency are published claims and this rides every call.
+// Measured across the 50 combat fixtures: the median request is 52,171 bytes and the largest is 151,518, so
+// the cap is under 4% of a median request - but a percentage of a big request is the flattering half of the
+// story, and against the smallest board (18,755 bytes) it is 9.5%. The honest median addition is 1,945 bytes,
+// ~540 tokens; the largest is 2,054 including the JSON key. The budget is met by DROPPING entities in value
+// order and publishing the drop - never by inventing a value and never by slicing a string mid-sentence.
+export const MECHANICS_STATE_KEY = 'mechanics';
+export const MECHANICS_BYTE_CAP = 2048;
+
+// The safety contract, and the reason this key is worth its bytes: an absent field means the generator could
+// not read it, known:false means no reading exists at all, and `mutable` means the corpus recorded several
+// readings so the entity publishes all of them instead of picking one. The counts are described in place
+// because a counts block the model has to interpret is a counts block it can misread.
+const MECHANICS_NOTE = 'Resolved effects for the entities on this board, parsed from the game\'s own descriptions. An absent field means the generator could not read it, NOT zero. known:false = no reading exists, so use that entity\'s own description in state.state. mutable = every reading on record, not a choice. counts: found (on the board) / listed (attached here) / dropped (left out to fit the byte budget - read those in state.state).';
+
+// `description` rides for an UNKNOWN entity only. That is the one case where it is the only effect evidence
+// there is; a known entity's effects already encode its text and the full text is still in state.state.
+// `piles` is dropped outright: it is a name-only listing of the draw and discard piles that state.state
+// already carries, and it is the one part of retrieveMechanics() that would read pile order at all.
+const projectMechanics = entity => ({name:entity.name,kind:entity.kind,...(entity.side?{side:entity.side}:{}),
+  known:entity.known,confidence:entity.confidence,source:entity.source,
+  ...(entity.known?{}:{description:entity.description??null}),
+  ...(entity.instances>1?{instances:entity.instances}:{}),effects:entity.effects});
+
+// What survives the budget. A resolved effect first, because it is the one thing on this key the model
+// cannot get anywhere else on the request; then a known entity that resolved to nothing; then an unknown
+// one, whose name and description are both already in state.state and whose real contribution - "expect no
+// number here" - is carried by the unknown count whether or not the entry itself fits. `effects` is tested
+// for CONTENT, not truthiness: a known entry the corpus resolved to an empty object is evidence-free, and
+// under a tight budget it must not outrank one that actually carries a number.
+const mechanicsValue = entity => entity.known ? (Object.keys(entity.effects ?? {}).length ? 0 : 1) : 2;
+
+/**
+ * The knowledge base's resolved semantics for the entities in THIS state, bounded to `cap` bytes.
+ *
+ * retrieveMechanics() already does the part that matters most - it only returns entities present in this
+ * state, and an entity it has never seen comes back known:false with effects:null - so none of that is
+ * re-derived here. On top it merges entries whose projection is byte-identical (two enemies each carrying
+ * the same Strength), which is lossless because `name` is part of the projection key, so only the same name
+ * with the same everything can collapse, and the instance count carries the multiplicity.
+ *
+ * Returns null when there is nothing to say - no battle, no entities, or a cap too small to hold a single
+ * one. Omitting the key beats publishing a counts block that does not describe what was attached, which is
+ * the same confidently-wrong-value failure one layer up.
+ */
+export function mechanicsContext(state, cap = MECHANICS_BYTE_CAP) {
+  if(!state?.battle)return null;
+  const retrieved = retrieveMechanics(state), found = retrieved.counts.entities;
+  if(!found)return null;
+  const byProjection = new Map();
+  for(const entity of retrieved.entities){
+    const projected = projectMechanics(entity), key = JSON.stringify(projected), prior = byProjection.get(key);
+    if(prior)prior.instances = (prior.instances??1)+1; else byProjection.set(key,projected);
+  }
+  const merged = [...byProjection.values()].toSorted((a,b)=>mechanicsValue(a)-mechanicsValue(b));
+  const build = kept => {
+    // The glossary is re-derived from the KEPT entities, not from the whole retrieval: a rule explaining a
+    // keyword the budget dropped would be context about something the model cannot see.
+    const glossary = {};
+    for(const entity of kept)for(const keyword of entity.effects?.keywords??[])if(retrieved.glossary[keyword])glossary[keyword]=retrieved.glossary[keyword];
+    const unknown = kept.filter(e=>!e.known).length;
+    return {entities:kept,
+      counts:{found,listed:kept.length,known:kept.length-unknown,unknown,merged:found-byProjection.size,dropped:byProjection.size-kept.length},
+      unknown:[...new Set(kept.filter(e=>!e.known).map(e=>e.name))],glossary,note:MECHANICS_NOTE};
+  };
+  let kept = merged, context = build(kept);
+  while(kept.length && Buffer.byteLength(JSON.stringify(context))>cap){kept = kept.slice(0,-1);context = build(kept);}
+  return kept.length ? context : null;
+}
+
 export function decisionQuestion(s,candidates) {
   s=visibleState(s);
   if(!isCombat(s)){const q=makeQuestion(s,candidates);q.state.encounter=encounterBrief(s);q.state.deck=deckSnapshot(s);q.state.spending_routes=spendingRoutes(s);return q;}
+  const mechanics = mechanicsContext(s);
   return {
     model:'typesafe/jev-1.13',
-    state:{game:'Slay the Spire 2',objective:'Win the run. Survive the current turn and preserve useful resources.',state:s,encounter:encounterBrief(s),deck:deckSnapshot(s),facts:factsFor(s),policy:POLICY_VERSION,setup_dependencies:setupLinks(s),mechanics_review:mechanicsReview(s),potion_timing:potionTiming(s),
+    state:{game:'Slay the Spire 2',objective:'Win the run. Survive the current turn and preserve useful resources.',state:s,encounter:encounterBrief(s),deck:deckSnapshot(s),facts:factsFor(s),policy:POLICY_VERSION,setup_dependencies:setupLinks(s),mechanics_review:mechanicsReview(s),...(mechanics?{[MECHANICS_STATE_KEY]:mechanics}:{}),potion_timing:potionTiming(s),
       forecast_scope:'Plans are short prefixes, not complete optimal turns. Forecasts assume ending after the prefix. Null means unknown, not zero. Partial outcomes have explicit caveats. Do not treat displayed card damage as actual damage through enemy powers. When incomingExact is false, incomingMin and incomingMax bracket the turn\'s damage: prefer a plan that survives incomingMax, and do not read the single incoming figure as what will land. A bounded plan is a usable plan — rank it on its bound instead of setting it aside.'},
     questions:{move:{type:'choice',
       instructions:'Choose the next action or short plan that best advances winning the run. Derive tactics from visible rules, intents, cards and observations. Calculations are aids, not guaranteed outcomes; partial estimates omit stated effects and null means unknown. Evaluate tradeoffs over the encounter, not only the current turn. Only the FIRST action executes, followed by a fresh observation. Choose only among supplied IDs.',
