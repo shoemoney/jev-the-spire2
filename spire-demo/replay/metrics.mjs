@@ -87,7 +87,7 @@ function summarizeSlice(events) {
     // at 0, so the column printed the same 64 five times and read like a measurement. The two
     // numbers differ wherever a run healed at a rest site, which is exactly where the old one
     // was most misleading. `hpNetChange` keeps the old arithmetic, named for what it is.
-    hpLost: cumulativeHpLost(events, hpStart),
+    ...(() => { const l = cumulativeHpLost(events, hpStart, endHp); return l === null ? {hpLost: null} : {hpLost: l.value, hpLossIsFloor: l.isFloor, hpLossGaps: l.gaps}; })(),
     hpNetChange: hpStart == null || endHp == null ? null : hpStart - endHp,
     hpHealed: cumulativeHpHealed(events),
     deathsByFloor: endHp === 0 ? [{ floor: known(terminal?.run?.floor), state_type: terminal?.state_type ?? null, hp: endHp }] : [],
@@ -106,16 +106,24 @@ function summarizeSlice(events) {
  * Consecutive observations can belong to different rooms, and a room transition does not heal
  * anyone, so the sum is taken across the whole run rather than per room.
  */
-function cumulativeHpLost(events, hpStart) {
-  if (hpStart == null) return null;
-  let lost = 0, previous = null;
+function cumulativeHpLost(events, hpStart, endHp) {
+  // An unobservable end is not a zero loss. `hpStart - endHp` used to make this exact mistake in
+  // reverse; the rule is the same either way: if the account cannot be closed, say so.
+  if (hpStart == null || endHp == null) return null;
+  let lost = 0, previous = null, gaps = 0;
   for (const event of events) {
     const hp = event?.state?.player?.hp;
-    if (typeof hp !== 'number') continue;
+    if (typeof hp !== 'number') { gaps++; continue; }
     if (previous !== null && hp < previous) lost += previous - hp;
     previous = hp;
   }
-  return lost;
+  // A gap in the middle means the sum is missing whatever happened across it, so it is a FLOOR,
+  // not the total. Returning it as the total would be a confident under-count, and returning an
+  // object where a number is expected is worse: an earlier draft did exactly that and the report
+  // printed `[object Object]` in the hp-lost column. The number is always a number; the floor
+  // flag travels beside it.
+  if (gaps) return {value: lost, gaps, isFloor: true};
+  return {value: lost, gaps, isFloor: false};
 }
 
 function cumulativeHpHealed(events) {
