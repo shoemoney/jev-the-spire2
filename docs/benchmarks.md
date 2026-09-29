@@ -37,6 +37,7 @@ These make **real, billed calls**. Key resolution differs per script — see the
 
 ```sh
 node spire-demo/benchmark/sweep.mjs --repeats=10 --only=default,waste-veto
+node spire-demo/benchmark/run.mjs --better --fresh --repeats=3
 node spire-demo/benchmark/vs-llm.mjs --repeats=3 --models=anthropic/claude-opus-5.5
 ```
 
@@ -66,6 +67,11 @@ node spire-demo/benchmark/run-sequences.mjs
 ```
 
 These read `TYPESAFE_API_KEY`, falling back to `.private/typesafe.cfg`.
+
+`--better` compares the existing fast policy with the contextual fast policy on
+the same recorded states. Add `--fresh` for the separate immediate-survival cases.
+Use `--only=deck-reward` for one named case. These are first-action checks, not
+complete-run results.
 
 🔁 **Recorded-state tests** compare the current policy with a simpler two-pass policy.
 `--comparison` tests an experimental action-versus-end-turn summary. These experiments **do not

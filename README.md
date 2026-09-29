@@ -317,7 +317,7 @@ Steamworks init fails with `No appID found`.
 ## 🚀 Run it
 
 ```bash
-SPIRE_SINGLE_CALL=1 node spire-demo/server.mjs     # dashboard at http://127.0.0.1:4317
+SPIRE_BETTER_POLICY=1 node spire-demo/server.mjs   # dashboard at http://127.0.0.1:4317
 ```
 
 Start a normal singleplayer run in the game, then press **Autoplay**. 🚀
@@ -329,6 +329,7 @@ Start a normal singleplayer run in the game, then press **Autoplay**. 🚀
 
 | variable | default | what it does |
 |---|---|---|
+| `SPIRE_BETTER_POLICY` | *unset* | `1` enables one-call screen-specific decisions, bounded encounter memory, and a calculated fatal-end-turn guard. The companion launcher enables it unless set to `0`. |
 | `SPIRE_SINGLE_CALL` | *unset* | `1` enables single-call factored decisions. **Unset falls back to the upstream multi-call policy.** |
 | `SPIRE_HEDGE` | `1` | `0` disables request hedging |
 | `SPIRE_PLAN_BENEFIT` | *unset* | enables the plan-benefit scoring path |
@@ -336,6 +337,8 @@ Start a normal singleplayer run in the game, then press **Autoplay**. 🚀
 | `PORT` | `4317` | dashboard port |
 | `MAX_INPUT_TOKENS` | — | stop threshold for a run |
 | `MAX_DECISIONS` | — | stop after N decisions |
+
+When both fast-policy flags are set, `SPIRE_BETTER_POLICY` takes precedence.
 
 🍎 macOS users can also double-click **`spire-demo/Open Jev Companion.command`**, which builds the
 native companion app on first run, starts the server if port 4317 is quiet, and opens it.

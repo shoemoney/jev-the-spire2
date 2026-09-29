@@ -13,3 +13,6 @@ __pycache__/
 
 # the full upload cut, too big for git
 media/shoemoney-agent-plays-*.mp4
+
+# todo-cycle agent worktrees (never commit these)
+.claude/worktrees/

@@ -4,6 +4,8 @@ import {createHash} from 'node:crypto';
 import {planBenefitDeliberate,persistentPlan} from '../plan-benefit.mjs';
 import {netDeliberate} from '../experiment/jev-net.mjs';
 import {deliberate} from '../deliberation.mjs';
+import {factoredDeliberate} from '../factored.mjs';
+import {betterDeliberate} from '../better-policy.mjs';
 import {simpleDeliberate,comparisonDeliberate} from './simple.mjs';
 import {decisionCandidates} from '../planner.mjs';
 import {encounterMemory} from '../encounters.mjs';
@@ -12,10 +14,14 @@ import {freshCases,gradeFresh} from './fresh-suite.mjs';
 const benefits=process.argv.includes('--benefits');
 const net=process.argv.includes('--net');
 const fresh=process.argv.includes('--fresh');
+const better=process.argv.includes('--better');
+const only=process.argv.find(x=>x.startsWith('--only='))?.split('=')[1]?.split(',');
 const repeats=Number(process.argv.find(x=>x.startsWith('--repeats='))?.split('=')[1]??1);
 if(!Number.isInteger(repeats)||repeats<1||repeats>5)throw Error('repeats must be 1..5');
-const selected=((net||benefits)?[...cases.filter(c=>c.check),...freshCases]:fresh?freshCases:cases).filter(c=>process.argv.includes('--scored-only')?c.check:process.argv.includes('--review-only')?!c.check:true);
-const policies=benefits?['current','benefits']:net?['current','net']:process.argv.includes('--comparison')?['simple','comparison']:['current','simple'];
+const selected=((net||benefits)?[...cases.filter(c=>c.check),...freshCases]:fresh?freshCases:cases)
+ .filter(c=>!only||only.includes(c.fixture))
+ .filter(c=>process.argv.includes('--scored-only')?c.check:process.argv.includes('--review-only')?!c.check:true);
+const policies=better?['factored','better']:benefits?['current','benefits']:net?['current','net']:process.argv.includes('--comparison')?['simple','comparison']:['current','simple'];
 const dry=process.argv.includes('--dry-run');
 const stamp=new Date().toISOString().replaceAll(':','-');
 const dir=new URL(`../../.private/spire-benchmark/${stamp}/`,import.meta.url);
@@ -34,7 +40,7 @@ for(let repeat=0;repeat<repeats;repeat++)for(let i=0;i<selected.length;i++){
  for(const policy of (i+repeat)%2?[...policies].reverse():policies){
   const calls=[];const start=Date.now();let row={fixture:test.fixture,category:test.category,policy,repeat,rationale:test.rationale};
   try{
-   const result=await ({current:deliberate,net:netDeliberate,benefits:planBenefitDeliberate,simple:simpleDeliberate,comparison:comparisonDeliberate}[policy])({state,candidates,recent:policy==='benefits'?{...recent,persistentPlan:persistentPlan(state,fixture.history??[])}:recent,ask:async payload=>{
+   const result=await ({current:deliberate,net:netDeliberate,benefits:planBenefitDeliberate,simple:simpleDeliberate,comparison:comparisonDeliberate,factored:factoredDeliberate,better:betterDeliberate}[policy])({state,candidates,recent:policy==='benefits'?{...recent,persistentPlan:persistentPlan(state,fixture.history??[])}:recent,ask:async payload=>{
     if(totalTokens>2000000)throw Error('Benchmark input-token budget reached');
     const r=await fetch('https://openrouter.ai/api/alpha/decisions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
     if(!r.ok)throw Error('TypeSafe HTTP '+r.status);

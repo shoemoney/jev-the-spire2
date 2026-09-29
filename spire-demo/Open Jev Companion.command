@@ -15,7 +15,7 @@ if ! curl -fsS --max-time 2 http://127.0.0.1:4317/api/sidecar >/dev/null; then
     read -r '?Press Return to close.'
     exit 1
   fi
-  nohup "$node_bin" "$demo_dir/server.mjs" > "$demo_dir/../.private/spire-server.log" 2>&1 &
+  SPIRE_BETTER_POLICY="${SPIRE_BETTER_POLICY:-1}" nohup "$node_bin" "$demo_dir/server.mjs" > "$demo_dir/../.private/spire-server.log" 2>&1 &
   for attempt in {1..20}; do
     if curl -fsS --max-time 1 http://127.0.0.1:4317/api/sidecar >/dev/null 2>&1; then break; fi
     sleep 0.25
