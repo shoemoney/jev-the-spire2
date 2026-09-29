@@ -10,6 +10,11 @@ import {assistedDeliberate} from './experiment/assisted.mjs';
 const lunaEnabled=process.env.SPIRE_ADVISER==='luna';
 import {factoredDeliberate} from './factored.mjs';
 const factoredEnabled=process.env.SPIRE_SINGLE_CALL==='1';
+import {betterDeliberate} from './better-policy.mjs';
+const betterPolicyEnabled=process.env.SPIRE_BETTER_POLICY==='1';
+import {recallingDeliberate} from './learning/wire.mjs';
+import {loadMemory, saveMemory, ingestLog, pruneStore, summarizeStore} from './learning/memory.mjs';
+const recallEnabled=process.env.SPIRE_RECALL==='1';
 import {hedged} from './hedge.mjs';
 const hedgeEnabled=process.env.SPIRE_HEDGE!=='0';
 if(lunaEnabled&&planBenefitEnabled)throw Error('Choose one experiment at a time: Luna or plan-benefit.');
@@ -33,6 +38,13 @@ const snapshotFile = resolve(logDir, 'session.json');
 const saved = JSON.parse(await readFile(snapshotFile, 'utf8').catch(() => 'null'));
 const sessionId = saved?.sessionId ?? new Date().toISOString().replaceAll(':', '-');
 const logFile = resolve(logDir, `${sessionId}.jsonl`);
+// Cross-run memory. A missing or unreadable file is a normal first run: loadMemory hands back a clean store
+// and says why, so the server still boots and no lesson is invented. Only loaded when the flag is on, so
+// leaving SPIRE_RECALL unset behaves exactly as before - no read, no write, no file.
+const memoryPath = resolve(root, '../.private/learning/memory.json');
+const memoryLoad = recallEnabled ? loadMemory(memoryPath) : null;
+let memoryStore = memoryLoad?.store ?? null;
+if (memoryLoad && memoryLoad.status !== 'loaded') console.log(`Memory: ${memoryLoad.status} - ${memoryLoad.note}`);
 const MAX_DECISIONS = Number(process.env.MAX_DECISIONS ?? 2000);
 const MAX_INPUT_TOKENS = Number(process.env.MAX_INPUT_TOKENS ?? 10000000);
 const view = {
@@ -43,6 +55,9 @@ const view = {
 };
 if (saved) Object.assign(view, saved, { mode: 'paused', connected: false, configured: Boolean(apiKey), maxDecisions: MAX_DECISIONS, maxInputTokens: MAX_INPUT_TOKENS, message: 'Session restored. Press Autoplay to resume.' });
 view.planBenefitEnabled=planBenefitEnabled;
+view.betterPolicyEnabled=betterPolicyEnabled;
+view.recallEnabled=recallEnabled;
+view.memory=memoryStore?summarizeStore(memoryStore):null;
 view.adviser=lunaEnabled?'gpt-5.6-luna:max':null;
 let generation = 0, busy = false, lastExecuted = '', latestState = null, waitingSince = 0, nextDecisionAt = 0;
 async function log(event) {
@@ -51,6 +66,25 @@ async function log(event) {
   await appendFile(logFile, JSON.stringify(entry) + '\n', { mode: 0o600 });
   await writeFile(snapshotFile + '.tmp', JSON.stringify(view), { mode: 0o600 });
   await rename(snapshotFile + '.tmp', snapshotFile);
+}
+// Fold this run back into the cross-run store so the next run starts from it. The session log already holds
+// every decision of the run and its run_end line is written before this is called, so the file parses into
+// this run's own records. Re-reading a run that is already stored deduplicates by run id and by evidence, so
+// a second run_end in one session cannot inflate a confirmation count. A failure here is reported and
+// swallowed: losing a run's lessons is recoverable, ending the run over it is not.
+async function learnFromThisRun() {
+  if (!memoryStore) return;
+  try {
+    const learned = ingestLog(memoryStore, await readFile(logFile, 'utf8'));
+    const pruned = pruneStore(memoryStore);
+    const saved = saveMemory(memoryStore, memoryPath);
+    view.memory = summarizeStore(memoryStore);
+    view.message = `Run learned from: ${learned.runs} run(s) read, ${learned.added} new lesson(s), ${learned.deduplicated} already known.`;
+    await log({ kind: 'learned', runs: learned.runs, lessonsAdded: learned.added, lessonsDeduplicated: learned.deduplicated, refused: learned.refused, dropped: pruned.dropped, bytes: saved.bytes, path: memoryPath });
+  } catch (error) {
+    view.message = `Run ended, but learning from it failed: ${error.message}`;
+    await log({ kind: 'learn_error', message: error.message });
+  }
 }
 async function gameRequest(path = '/api/v1/singleplayer', command) {
   const response = await fetch(bridge + path, {
@@ -78,7 +112,7 @@ function sidecarView(source = view) {
     };
   };
   const compactDecisions = decisions.map(compact);
-  return { adviser:source.adviser, review: source.review ?? null, policy: POLICY_VERSION, mode: source.mode, message: source.message, connected: source.connected, pending: source.pending ?? null,
+  return { adviser:source.adviser, review: source.review ?? null, policy: POLICY_VERSION, betterPolicyEnabled:source.betterPolicyEnabled, mode: source.mode, message: source.message, connected: source.connected, pending: source.pending ?? null,
     model: source.model, actions: source.actions, inputTokens: source.inputTokens, run: source.state?.run,
     player: source.state?.player ? { hp: source.state.player.hp, maxHp: source.state.player.max_hp, energy: source.state.player.energy, block: source.state.player.block } : null,
     room: source.state?.state_type, decisions: compactDecisions.slice(0, 8), spotlight: compactDecisions.find(e => e.options.length > 1) ?? compactDecisions[0] ?? null };
@@ -95,7 +129,7 @@ async function step(token, preview = false) {
     const s = await observe();
     if (s.state_type === 'game_over') {
       stop(s.player?.hp <= 0 ? 'Run ended in defeat.' : 'Run ended. Verify the result in the game.');
-      await log({ kind: 'run_end', state: s }); return;
+      await log({ kind: 'run_end', state: s }); await learnFromThisRun(); return;
     }
     // The bridge briefly reports unknown while entering a room or opening a selection.
     // Poll without issuing mutations, but retain a bounded stop for genuinely stuck screens.
@@ -138,8 +172,9 @@ async function step(token, preview = false) {
     const start = performance.now();
     const memory=encounterMemory(s,view.events);
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
-    const result = await (factoredEnabled?factoredDeliberate:lunaEnabled?assistedDeliberate:planBenefitEnabled?planBenefitDeliberate:deliberate)({state:planningState,candidates:actions,
+    const result = await (recallEnabled?recallingDeliberate:betterPolicyEnabled?betterDeliberate:factoredEnabled?factoredDeliberate:lunaEnabled?assistedDeliberate:planBenefitEnabled?planBenefitDeliberate:deliberate)({state:planningState,candidates:actions,
       recent:memory,
+      memory:memoryStore,
       onStage:stage=>{view.message=stage;view.pending.stage=stage;},
       ask:async payload=>{
         if(token!==generation)throw Error('Decision cancelled.');

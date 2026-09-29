@@ -274,6 +274,83 @@ export function parseIntentLabel(label) {
   return {perHit, hits, total: m[3] === undefined ? product : Number(m[3]), mismatch: m[3] !== undefined && Number(m[3]) !== product};
 }
 
+// A turn is not a prefix. Search stops at maxDepth, at a beam edge, or the
+// moment a card draws unknown cards — and the old forecast claimed all three
+// were "this prefix, followed by ending the turn", so a menu of fragments read
+// as a calendar of whole turns. The calendar was always one card short: a
+// 12-HP state with 3 energy was offered "Defend, Defend, Strike, End turn"
+// while a fourth Defend sat in hand.
+//
+// A plan is turnComplete only when the turn genuinely closes: the plan ends it,
+// the fight is won, or nothing affordable is left. Every other ending is a
+// prefix, and a prefix is labelled as one rather than dressed up as a turn.
+// Potions are deliberately not played by the completion pass: holding one is a
+// real decision about the run, not a card to be spent to fill a turn out.
+const TURN_REASONS = {
+  'end-turn':'the plan itself ends the turn',
+  'combat-won':'the fight is over, so no turn remains',
+  'energy-exhausted':'no card left is affordable with the energy in hand',
+  'no-playable-cards':'no card left is playable',
+};
+// Every non-complete reason, phrased for the assumption string. These plans stay
+// turnComplete:false and are never rounded up into a finished turn. Each carries
+// its own consequence too, because "truncated" alone would imply unspent cards
+// in every case — and after a potion-cleared plan no card is left at all.
+const TURN_CUTS = {
+  'depth-limit':['the completion pass ran out of steps before the turn could close','cards and energy may remain unspent'],
+  'potions-remaining':['every card is spent, but a potion still works and could extend this turn','no card remains unspent, yet the turn is not over'],
+  'search-prefix':['this is a search prefix, never extended to a turn end','cards and energy may remain unspent'],
+  'draw':['the turn stops at a draw, and the drawn cards are unknown','the cards after this point are unknown'],
+  'unsupported':['the turn stops at a card whose consequences are not modeled','the effects after this point are unknown'],
+  'death_effect':['the turn stops at an unresolved enemy death effect','what the death effect does is unknown'],
+  'player_dead':['the turn stops because the player dies','nothing further can be played'],
+};
+function completion(m, complete, reason) { m.turn = {turnComplete:complete, completionReason:reason}; return m; }
+
+// Greedily extend a partial plan to a real turn end, ranking each continuation
+// with the SAME preference() the search already uses — this changes which plans
+// get generated, never how any of them is scored. Each step takes the best
+// surviving continuation; a step that opens a boundary (a draw, an unmodeled
+// card, a death effect) is taken only when nothing else is on offer, and then
+// the turn is reported as cut short rather than quietly rounded off.
+function completeTurn(m0, s) {
+  // Playing a card always removes it from hand, so the visible hand and potions
+  // bound the pass exactly; the counter only stops a pathological cycle.
+  const budget = Math.max(8, m0.hand.length + m0.potions.length);
+  let m = m0, played = 0;
+  while (!m.boundary && played < budget) {
+    const continuations = available(m, s)
+      .filter(a => a.command.action === 'play_card')
+      .map(a => apply(m, a))
+      .filter(Boolean);
+    if (!continuations.length) break;
+    m = continuations.toSorted((a,b) => preference(b,s,'attack') - preference(a,s,'attack'))[0];
+    played++;
+  }
+  if (m.boundary === 'end_turn') return completion(m, true, 'end-turn');
+  if (m.boundary === 'combat_won') return completion(m, true, 'combat-won');
+  // A boundary is the honest reason a turn cannot be finished. It is never
+  // rounded up into "complete", because the cards after it are unknown.
+  if (m.boundary) return completion(m, false, `boundary:${m.boundary}`);
+  if (played >= budget) return completion(m, false, 'depth-limit');
+  // No card is left to play, but the turn is not over while a potion still
+  // works. That is neither a finished turn nor a depth cut, and calling it
+  // either one is how a prefix gets presented as a calendar.
+  if (available(m, s).some(a => a.command.action === 'use_potion')) return completion(m, false, 'potions-remaining');
+  return completion(m, true, m.energy > 0 || !m.hand.length ? 'no-playable-cards' : 'energy-exhausted');
+}
+
+// The verdict for a plan that was never offered a completion pass — a bare
+// legal action, or a beam prefix. It is a prefix by construction unless the
+// turn is provably over, and it says so rather than borrowing a certainty it
+// has not earned.
+function turnVerdict(m) {
+  if (m.boundary === 'end_turn') return {turnComplete:true, completionReason:'end-turn'};
+  if (m.boundary === 'combat_won') return {turnComplete:true, completionReason:'combat-won'};
+  if (m.boundary) return {turnComplete:false, completionReason:`boundary:${m.boundary}`};
+  return {turnComplete:false, completionReason:'search-prefix'};
+}
+
 function forecast(m, s) {
   // Every attack contributes a floor and a ceiling instead of a point. The floor
   // is what the readable intents prove will land; the ceiling is the most those
@@ -347,6 +424,20 @@ function forecast(m, s) {
   const loss = Math.max(0,s.player.hp-m.hp) + projectedLoss;
   const lossUpper = boundMax === null ? null : Math.max(0,s.player.hp-m.hp) + unblocked(boundMax);
   const warnings = [...new Set(m.warnings)];
+  // Settled before the forecast is published so every field a caller might read
+  // carries the same verdict. A prefix is never dressed up as a whole turn.
+  const turn = m.turn ?? turnVerdict(m);
+  // The prefix disclosure deliberately does NOT enter `warnings`: warnings set
+  // `quality`, and a prefix is not a less certain estimate, it is a different
+  // object. Labelling it in the assumption and the two fields below leaves the
+  // existing caveat ladder exactly as calibrated.
+  // A boundary reason names what stopped the turn; every other cut reason is a
+  // statement about the plan itself. Unknown stays unknown either way.
+  const key=turn.completionReason.startsWith('boundary:')?turn.completionReason.slice('boundary:'.length):turn.completionReason;
+  const cut=TURN_CUTS[key]??[`the turn stops at the ${key.replace(/-/g,' ')} boundary`,'what happens after this point is unknown'];
+  const scope = turn.turnComplete
+    ? `Forecast for a WHOLE turn: this plan plays out the cards worth playing until ${TURN_REASONS[turn.completionReason]}, so the figures below are this turn's end state and not a prefix. A potion still held is a separate decision this plan does not make.`
+    : `Forecast for a TRUNCATED prefix, NOT a whole turn: this plan stops early because ${cut[0]}, so ${cut[1]}, and the figures below end the turn at this exact point. Extend it from a fresh observation before treating it as the turn.`;
   if(lethalTurnRule)warnings.push('A visible rule says the enemy taking its turn kills you regardless of ordinary block. Attack-only HP estimates cannot establish survival; prevent that turn using a supported kill or stated interruption.');
   if(positioningUnknown&&!facingUsable)warnings.push('Position-dependent incoming damage is not modeled; targeting can change orientation. Survival is uncertain.');
   if (!parsed) warnings.push(unreadable.length ? `Some incoming attacks could not be read from either the intent label or its description, so this turn has no damage ceiling: ${unreadable.join('; ')}.` : 'Some incoming attacks could not be parsed.');
@@ -376,7 +467,8 @@ function forecast(m, s) {
     energyLeft:m.unsupported ? null : m.energy, slipperyRemoved:m.removedCharges, strengthGained:m.extraStrength,
     quality:uncertain?'unknown':warnings.length?'partial':'calculated',
     boundary:m.boundary, warnings,
-    assumption:'Forecast if this prefix is followed by ending the turn. Known-effects estimate; unmodeled interactions are omitted when marked partial. Displayed damage intents and explicit end-of-turn damage from remaining hand; no prediction of hidden draws or future turns. Extra block from an unavailable Fan counter is omitted. incomingMin/incomingMax bracket the turn\'s attack damage; when incomingExact is true they are equal and incoming is the total. Otherwise incoming is one end of that range (the provable floor, or a facing review\'s conservative ceiling) and incomingMax is the ceiling: compare plans on surviving it, never on the single incoming figure. hpLossUpper and survivesUpper are the same pessimistic reading taken through to HP. A null bound means the damage could not be read at all, not zero.',
+    turnComplete:turn.turnComplete, completionReason:turn.completionReason,
+    assumption:`${scope} Known-effects estimate; unmodeled interactions are omitted when marked partial. Displayed damage intents and explicit end-of-turn damage from remaining hand; no prediction of hidden draws or future turns. Extra block from an unavailable Fan counter is omitted. incomingMin/incomingMax bracket the turn\'s attack damage; when incomingExact is true they are equal and incoming is the total. Otherwise incoming is one end of that range (the provable floor, or a facing review\'s conservative ceiling) and incomingMax is the ceiling: compare plans on surviving it, never on the single incoming figure. hpLossUpper and survivesUpper are the same pessimistic reading taken through to HP. A null bound means the damage could not be read at all, not zero.`,
   };
 }
 
@@ -408,6 +500,7 @@ export function planCandidates(s, { maxDepth=6, beamWidth=256, maxPlans=64 }={})
   const roots=actionsFor(s);
   if(!s.battle || !s.player?.hand)return roots;
   const start=initial(s), singles=roots.map(a=>apply(start,a)).filter(Boolean);
+  const keyOf=m=>JSON.stringify(m.steps.map(a=>a.command));
   let frontier=singles, all=[...singles], expanded=0;
   for(let depth=1;depth<maxDepth;depth++) {
     const next=[];
@@ -429,27 +522,77 @@ export function planCandidates(s, { maxDepth=6, beamWidth=256, maxPlans=64 }={})
         for(const best of group.toSorted((a,b)=>preference(b,s,kind)-preference(a,s,kind)).slice(0,2))
           if(!kept.includes(best))kept.push(best);
       }
+      // Reserve a beam slot for a plan that closes the turn. A prefix reaching
+      // maxDepth is not evidence that the turn ended there, and the beam used
+      // to spend every one of its slots on prefixes. The completion pass is
+      // what makes a plan closable, so it is run here: without it this slot
+      // would look reserved while reserving nothing.
+      const closed=group.map(m=>completeTurn(m,s)).filter(m=>m.turn.turnComplete)
+        .toSorted((a,b)=>preference(b,s,'attack')-preference(a,s,'attack'))[0];
+      if(closed&&!kept.includes(closed))kept.push(closed);
       groups.push(kept);
     }
     frontier=[];
     for(let i=0;i<8;i++) for(const group of groups) if(group[i] && frontier.length<beamWidth)frontier.push(group[i]);
     if(!frontier.length || expanded>6000)break;
   }
-  const selected=[...singles], seen=new Set(singles.map(m=>JSON.stringify(m.steps.map(a=>a.command))));
+  // Search reaches a turn boundary rather than a depth limit. Every first
+  // action is extended to a real turn end by completeTurn, and the strongest
+  // ordering-sensitive prefixes are extended too, so the menu offers whole
+  // turns in genuinely different card orders and not just one greedy line.
+  const closed=[];
+  const seenClosed=new Set(singles.map(keyOf));
+  const addClosed=seed=>{
+    if(!seed||seed.boundary&&seed.boundary!=='end_turn')return;
+    const turn=completeTurn(seed,s);
+    if(turn.steps.length<2||!turn.turn.turnComplete)return;
+    const key=keyOf(turn);
+    if(seenClosed.has(key))return;
+    seenClosed.add(key);closed.push(turn);
+  };
+  for(const root of roots)addClosed(singles.find(m=>m.steps[0].id===root.id));
+  for(const kind of ['attack','defense']) for(const root of roots)
+    addClosed(all.filter(m=>m.steps.length>1&&m.steps[0].id===root.id).toSorted((a,b)=>preference(b,s,kind)-preference(a,s,kind))[0]);
+  // The best whole turns claim the reserved share first; a menu of prefixes is
+  // what made "End turn" look like the only option while energy sat in hand.
+  closed.sort((a,b)=>preference(b,s,'attack')-preference(a,s,'attack'));
+  const cap=Math.max(maxPlans,singles.length);
+  // Whole turns may take at most half the free room, so the per-kind
+  // exploration this search has always offered is never crowded out by them.
+  const prefixCap=Math.max(singles.length,cap-Math.ceil(Math.min(closed.length,cap-singles.length)/2));
+  const selected=[...singles], seen=new Set(singles.map(keyOf));
   for(const kind of ['attack','defense','conserve']) for(const root of roots) {
     const group=all.filter(m=>m.steps.length>1 && m.steps[0].id===root.id).toSorted((a,b)=>preference(b,s,kind)-preference(a,s,kind));
     for(const m of group) {
-      const key=JSON.stringify(m.steps.map(a=>a.command));
+      const key=keyOf(m);
       if(seen.has(key))continue;
-      if(selected.length>=Math.max(maxPlans,singles.length))break;
+      if(selected.length>=prefixCap)break;
       seen.add(key);selected.push(m);break;
     }
   }
-  return selected.map((m,i)=>({
-    id:`p${i}`,command:m.steps[0].command,label:m.steps.map(a=>a.label).join(' → '),
-    details:m.steps[0].details,
-    plan:m.steps.map(a=>({label:a.label,command:a.command})), forecast:forecast(m,s),
-  }));
+  for(const m of closed) {
+    if(selected.length>=cap)break;
+    const key=keyOf(m);
+    if(seen.has(key)) {
+      // The very same command sequence can arrive twice: once as a beam prefix
+      // that happened to stop at a turn end, and once completed. The completed
+      // reading is the true one, so it replaces the prefix in place rather than
+      // being dropped — a plan must never be shown as shorter than it is.
+      const at=selected.findIndex(x=>keyOf(x)===key);
+      if(at>=0)selected[at]=m;
+      continue;
+    }
+    seen.add(key);selected.push(m);
+  }
+  return selected.map((m,i)=>{
+    const f=forecast(m,s);
+    return {
+      id:`p${i}`,command:m.steps[0].command,label:m.steps.map(a=>a.label).join(' → '),
+      details:m.steps[0].details,
+      plan:m.steps.map(a=>({label:a.label,command:a.command})), forecast:f,
+      turnComplete:f.turnComplete, completionReason:f.completionReason,
+    };
+  });
 }
 
 // Offline opt-in: rebuild complete plans with Rage before attacks, preserving
