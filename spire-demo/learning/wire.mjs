@@ -128,6 +128,30 @@ const recallSummary = recall => ({
   note: recall.note,
 });
 
+// The refuse-to-score guard, ported from better-policy.mjs so that making THIS the default did not
+// quietly weaken the default.
+//
+// betterDeliberate carries an all-or-nothing check: if the model did not answer the safety, progress
+// and waste nouls for EVERY candidate, it declines to combine at all and falls back to Jev's broad
+// `move` choice. That guard is load-bearing. With factors missing, `combine()` now votes 0 for the
+// unmeasured axes - correct, and still a ranking built on an incomplete board. The reviewer measured a
+// board where the model answered 2 of 4 candidates: this policy returned a five-candidate ranking and
+// published `move.confidence = 0.7083`, a real-looking margin off a board where half the candidates
+// had no safety, no progress and no waste reading at all. That is the exact failure this project exists
+// to prevent - a confident number the evidence does not support - reintroduced through a commit titled
+// "turn the flag on".
+//
+// So the guard travels with the policy. A partial board falls back to the broad choice, the fallback is
+// named in `deliberation`, and the confidence that reaches the log is the broad answer's own, not a
+// recombined margin. The safety gate is independent and still runs either way.
+const FACTOR_PREFIXES = ['safe_', 'prog_', 'waste_'];
+function completeFactors(candidates, answers) {
+  return candidates.every(candidate => FACTOR_PREFIXES.every(prefix => {
+    const value = answers[prefix + candidate.id]?.noul;
+    return Number.isFinite(value) && value >= 0 && value <= 1;
+  }));
+}
+
 // The sentence an auditor reads first. It states what memory contributed and what the gate did, separately,
 // because those are two different kinds of claim and merging them would let a forecast reading pass as
 // remembered experience.
@@ -187,21 +211,31 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
     };
   }
   if (jevMove?.type !== 'choice') throw new Error('Missing Jev move choice');
-  const {scored, probabilities, margin} = combine(candidates, answers, WEIGHTS);
-  const best = scored[0];
+  // Refuse to recombine a board the model only half-answered. Falling back to the broad `move` answer is
+  // not a downgrade in confidence - it is the only reading on the board that is not assembled from
+  // missing factors - and `factorFallback` says so in the log rather than leaving a clean ranking and a
+  // confident margin to be read as evidence.
+  const factorsComplete = completeFactors(candidates, answers);
+  const {scored, probabilities, margin} = factorsComplete
+    ? combine(candidates, answers, WEIGHTS)
+    : {scored: null, probabilities: jevMove.probabilities ?? null, margin: jevMove.confidence ?? null};
+  const best = factorsComplete ? scored[0] : {id: jevMove.choice};
   if (!candidates.some(candidate => candidate.id === best.id)) throw new Error('Invalid factored choice');
-  const gate = refuseLethalChoice(best.id, candidates, scored);
+  const gate = refuseLethalChoice(best.id, candidates, scored ?? candidates);
   return {
     ...result,
     answers: {...answers, move: {type: 'choice', choice: gate.choice, probabilities, confidence: margin}},
     deliberation: {
       ...base,
       weights: WEIGHTS,
+      factorsComplete,
+      factorFallback: !factorsComplete,
       jevMove: {choice: jevMove.choice, confidence: jevMove.confidence},
       changed: jevMove.choice !== gate.choice,
       // The ranking is left as the scorer produced it. Rewriting it to match an override would hide which
-      // candidate the gate actually overrode, which is the one fact a reader needs.
-      ranking: scored.slice(0, 5),
+      // candidate the gate actually overrode, which is the one fact a reader needs. It is null on a
+      // fallback, because no ranking was produced.
+      ranking: scored?.slice(0, 5) ?? null,
       safetyGate: gate.overridden ? {overridden: true, from: gate.from, to: gate.to, reason: gate.reason} : null,
       safetyGateReason: gate.reason,
       memoryCorroboration: corroboration(store, gate.overridden),

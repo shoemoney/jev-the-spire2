@@ -41,8 +41,12 @@ test('the committed corpus carries no path to any machine, so it needs no .priva
   // who had a run log. The property that actually matters is a property of the ARTIFACT, not of whatever
   // happens to be lying next to it: the committed file must resolve with no path into a machine, and must
   // not have been generated from one. That holds whether or not .private/ exists.
-  assert.ok(!existsSync(join(REPO, META.source)) || existsSync(join(REPO, META.source)),
-    'sanity: the corpus path resolves to something inspectable when the log is present');
+  //
+  // (An earlier draft of this test opened with `!existsSync(x) || existsSync(x)` — a tautology that
+  // asserts nothing. It sat here because the honest version of that line, which demanded the corpus
+  // path resolve, cannot pass in a clean clone where the log is correctly absent. The real work is done
+  // by the four assertions below; the tautology was pure noise and has been deleted rather than left to
+  // look like coverage.)
   assert.ok(!META.source.startsWith('/'), `META.source must not be an absolute machine path: ${META.source}`);
   assert.ok(!/^\/Users\/|^\/home\/|[A-Z]:\\\\/.test(META.source), `META.source leaks a home directory: ${META.source}`);
   // No absolute path anywhere in the file - this is what a fresh clone has to live with.

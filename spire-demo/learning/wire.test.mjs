@@ -205,3 +205,58 @@ test('a single-candidate board still runs and still reports the gate honestly', 
 test('an empty board is rejected rather than answered with a guess', async () => {
   await assert.rejects(() => recallingDeliberate({state, candidates: [], ask: prefersLethal(board), memory: storeWith()}), /No decision candidates/);
 });
+
+// The launcher default was swapped to this policy in the same cycle that removed the 0.5 fallback, and
+// the swap silently dropped betterDeliberate's all-or-nothing factor guard. A board where the model
+// answered 2 of 4 candidates produced a five-candidate ranking and published `confidence 0.7083` — a
+// real-looking margin computed from a board where half the candidates had no safety, no progress and no
+// waste reading. This is the project's own named failure mode, so the guard is pinned here.
+test('a half-answered board is not recombined into a confident ranking', async () => {
+  const candidates = ['a', 'b', 'c', 'd'].map((id, i) => ({
+    id, label: `plan ${id}`, command: {action: 'play_card', card_index: i},
+    plan: [{label: `plan ${id}`, command: {action: 'play_card', card_index: i}}],
+    details: {description: `plan ${id}`},
+    forecast: {quality: 'partial', survives: true, hpAfter: 12, incoming: 17, incomingExact: true},
+  }));
+  const answers = {
+    move: {type: 'choice', choice: 'd', probabilities: {a: 0.2, b: 0.25, c: 0.25, d: 0.3}, confidence: 0.31},
+    // Only `a` and `b` were asked. `c` and `d` have no safety, progress or waste reading at all.
+    safe_a: {noul: 0.9}, prog_a: {noul: 0.9}, waste_a: {noul: 0.1},
+    safe_b: {noul: 0.1}, prog_b: {noul: 0.1}, waste_b: {noul: 0.9},
+  };
+  const r = await recallingDeliberate({
+    state: {state_type: 'elite', run: {act: 1, floor: 12}, player: {hp: 12, max_hp: 86}, battle: {enemies: []}},
+    candidates, recent: {}, memory: createStore(),
+    ask: async () => ({model: 'stub', answers, usage: {input_tokens: 1}}),
+  });
+  assert.equal(r.deliberation.factorsComplete, false, 'an incomplete board must be reported as incomplete');
+  assert.equal(r.deliberation.factorFallback, true, 'and must fall back rather than recombine');
+  assert.equal(r.deliberation.ranking, null, 'no ranking may be published from missing factors');
+  assert.equal(r.answers.move.confidence, 0.31,
+    'the confidence that reaches the log is the broad answer\'s own, not a recombined margin');
+});
+
+test('a fully-answered board still recombines normally', async () => {
+  const candidates = ['a', 'b', 'c', 'd'].map((id, i) => ({
+    id, label: `plan ${id}`, command: {action: 'play_card', card_index: i},
+    plan: [{label: `plan ${id}`, command: {action: 'play_card', card_index: i}}],
+    details: {description: `plan ${id}`},
+    forecast: {quality: 'partial', survives: true, hpAfter: 12, incoming: 17, incomingExact: true},
+  }));
+  const answers = {move: {type: 'choice', choice: 'd', probabilities: {a: 0.2, b: 0.25, c: 0.25, d: 0.3}, confidence: 0.31}};
+  for (const [id, safe, prog] of [['a', 0.9, 0.9], ['b', 0.1, 0.1], ['c', 0.5, 0.5], ['d', 0.5, 0.5]]) {
+    answers[`safe_${id}`] = {noul: safe};
+    answers[`prog_${id}`] = {noul: prog};
+    answers[`waste_${id}`] = {noul: 0.2};
+  }
+  const r = await recallingDeliberate({
+    state: {state_type: 'elite', run: {act: 1, floor: 12}, player: {hp: 12, max_hp: 86}, battle: {enemies: []}},
+    candidates, recent: {}, memory: createStore(),
+    ask: async () => ({model: 'stub', answers, usage: {input_tokens: 1}}),
+  });
+  assert.equal(r.deliberation.factorsComplete, true);
+  assert.equal(r.deliberation.factorFallback, false);
+  assert.ok(Array.isArray(r.deliberation.ranking) && r.deliberation.ranking.length === 4,
+    'a complete board produces a full ranking');
+  assert.equal(r.answers.move.choice, 'a', 'the safest, most progressive plan wins a complete board');
+});
