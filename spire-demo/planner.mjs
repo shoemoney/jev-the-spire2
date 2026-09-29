@@ -244,27 +244,39 @@ function apply(m0, a) {
   return m;
 }
 
+// Attack intents render as `4x3 (12)`, not just `4x3`; the old regex only read the bare
+// perHitxhits form, so every real multi-hit intent failed to parse and blanked the whole
+// forecast. A parenthesised total that contradicts perHit*hits is reported as a mismatch
+// rather than resolved: a confidently wrong incoming total is worse than an uncertain one.
+export function parseIntentLabel(label) {
+  const m = String(label ?? '').trim().replace(/\.$/, '').trim()
+    .match(/^(\d+)\s*(?:[x×]\s*(\d+))?(?:\s*\(\s*(\d+)\s*\))?$/i);
+  if (!m) return null;
+  const perHit = Number(m[1]), hits = Number(m[2] ?? 1), product = perHit * hits;
+  return {perHit, hits, total: m[3] === undefined ? product : Number(m[3]), mismatch: m[3] !== undefined && Number(m[3]) !== product};
+}
+
 function forecast(m, s) {
-  let incoming = 0, parsed = true;
+  let incoming = 0, parsed = true, mismatched = false;
   for (const e of m.enemies.filter(e => e.hp > 0)) {
     if(m.stunned.includes(e.entity_id))continue;
     const before = s.battle.enemies.find(x => x.entity_id === e.entity_id);
     for (const intent of e.intents ?? []) {
       if (!/attack|deathblow/i.test(intent.type) && !/attack.*\d+ damage/i.test(intent.description??'')) continue;
-      const match = String(intent.label).trim().match(/^(\d+)(?:\s*[x×]\s*(\d+))?$/i);
-      if (!match) { parsed = false; continue; }
-      let perHit = Number(match[1]);
+      const hit = parseIntentLabel(intent.label);
+      if (!hit || hit.mismatch) { parsed = false; mismatched = mismatched || hit?.mismatch === true; continue; }
+      let perHit = hit.perHit;
       if (amount(before?.status,'Weak') === 0 && amount(e.status,'Weak') > 0) perHit = Math.floor(perHit*.75);
       if(m.colossus && amount(e.status,'Vulnerable')>0)perHit=Math.floor(perHit*.5);
-      incoming += perHit * Number(match[2] ?? 1);
+      incoming += perHit * hit.hits;
     }
   }
   const defeatedEnemies = s.battle.enemies.filter(e=>e.hp>0 && m.enemies.some(after=>after.entity_id===e.entity_id && after.hp<=0 && !after.departedWithLeader)).map(e=>({
     id:e.entity_id,name:e.name,
     attackRemoved:(e.intents??[]).reduce((sum,i)=>{
       if(!/attack|deathblow/i.test(i.type??'') && !/attack.*\d+ damage/i.test(i.description??''))return sum;
-      const hit=String(i.label??'').trim().match(/^(\d+)(?:\s*[x×]\s*(\d+))?$/i);
-      return hit && sum!==null ? sum+Number(hit[1])*Number(hit[2]??1) : null;
+      const hit=parseIntentLabel(i.label);
+      return hit && !hit.mismatch && sum!==null ? sum+hit.perHit*hit.hits : null;
     },0),
     deathRules:(e.status??[]).filter(p=>/when killed|upon dying|on death|when this dies|would be defeated|revives?/i.test(p.description??'')).map(p=>p.description),
   }));
@@ -284,6 +296,7 @@ function forecast(m, s) {
   if(lethalTurnRule)warnings.push('A visible rule says the enemy taking its turn kills you regardless of ordinary block. Attack-only HP estimates cannot establish survival; prevent that turn using a supported kill or stated interruption.');
   if(positioningUnknown&&!facingUsable)warnings.push('Position-dependent incoming damage is not modeled; targeting can change orientation. Survival is uncertain.');
   if (!parsed) warnings.push('Some incoming attacks could not be parsed.');
+  if (mismatched) warnings.push('An attack intent label disagrees with its own per-hit value and hit count; incoming damage is uncertain, not estimated.');
   return {
     ...(facingUsable?{facingProjection}:{}),
     ...(positioningUnknown?{facingReview:{lastTargetedAction:[...m.steps].reverse().find(a=>a.command?.target)??null,note:facingUsable?'Use facingProjection for the candidate final direction; incoming uses its conservative upper bound. Facing evidence comes from executed actions; re-observe after every action.':'Visible rules say targeting changes orientation. Compare the final target with each surviving attacker before ending. Current facing and unmodified attack values are not supplied, so do not multiply displayed intents again or assume exact damage after turning. Reserve an affordable targeted card or potion when a final turn can reduce incoming damage; re-observe live intents after it. Untargeted block or area damage is not evidence of turning.'}}:{}),
