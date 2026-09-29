@@ -9,7 +9,7 @@
 [![cost per decision](https://img.shields.io/badge/%24%2Fdecision-0.00046-00d084?style=for-the-badge)](#-the-measurements)
 [![calls per decision](https://img.shields.io/badge/calls%2Fdecision-1.00-00d084?style=for-the-badge)](#questions-are-free-round-trips-are-not)
 
-[![tests](https://img.shields.io/badge/tests-214%20passing-brightgreen)](#-reproduce)
+[![tests](https://img.shields.io/badge/tests-333%20passing-brightgreen)](#-reproduce)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![dependencies](https://img.shields.io/badge/dependencies-zero-blue)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -329,16 +329,21 @@ Start a normal singleplayer run in the game, then press **Autoplay**. 🚀
 
 | variable | default | what it does |
 |---|---|---|
+| `SPIRE_RECALL` | *unset* | `1` swaps the decision policy for `learning/wire.mjs` and opens the cross-run store at `.private/learning/memory.json`. **Unset means no read, no write, no file** — every run starts from the same fixed policy. |
 | `SPIRE_BETTER_POLICY` | *unset* | `1` enables one-call screen-specific decisions, bounded encounter memory, and a calculated fatal-end-turn guard. The companion launcher enables it unless set to `0`. |
 | `SPIRE_SINGLE_CALL` | *unset* | `1` enables single-call factored decisions. **Unset falls back to the upstream multi-call policy.** |
 | `SPIRE_HEDGE` | `1` | `0` disables request hedging |
 | `SPIRE_PLAN_BENEFIT` | *unset* | enables the plan-benefit scoring path |
 | `SPIRE_ADVISER` | *unset* | `luna` runs the opt-in Luna advisory experiment ([details](spire-demo/experiment/README.md)) |
+| `SPIRE_RUN_LOG` | newest `.jsonl` | which run log to read, when you run `learning/attribute.mjs` as a CLI. Read by that one tool only. |
+| `SPIRE_REPLAY_CONTROLS` | *unset* | `1` swaps the boss-review replay for two counterfactual controls. Read by `experiment/run-next-decision.mjs` only — an offline replay, not the play loop. |
 | `PORT` | `4317` | dashboard port |
-| `MAX_INPUT_TOKENS` | — | stop threshold for a run |
-| `MAX_DECISIONS` | — | stop after N decisions |
+| `MAX_INPUT_TOKENS` | `10000000` | stop threshold for a run |
+| `MAX_DECISIONS` | `2000` | stop after N decisions |
 
-When both fast-policy flags are set, `SPIRE_BETTER_POLICY` takes precedence.
+Only one decision policy is live at a time. `server.mjs` picks the first match, in this order:
+`SPIRE_RECALL` → `SPIRE_BETTER_POLICY` → `SPIRE_SINGLE_CALL` → `SPIRE_ADVISER=luna` →
+`SPIRE_PLAN_BENEFIT` → upstream `deliberate`.
 
 🍎 macOS users can also double-click **`spire-demo/Open Jev Companion.command`**, which builds the
 native companion app on first run, starts the server if port 4317 is quiet, and opens it.
@@ -355,10 +360,36 @@ native companion app on first run, starts the server if port 4317 is quiet, and 
 |---|---|
 | 🧮 [`spire-demo/factored.mjs`](spire-demo/factored.mjs) | One request carrying the broad choice plus three nouls per candidate, recombined in code with weights you own. Holds the deadband and the 64-candidate cap. |
 | 🪝 [`spire-demo/hedge.mjs`](spire-demo/hedge.mjs) | Staggered request hedging for a bimodally-slow endpoint. **Idempotent reads only** — game commands are never hedged. |
+| 🧠 [`spire-demo/learning/`](spire-demo/learning/) | Cross-run memory. Log what the run did, turn it into evidence-backed lessons, and recall the few that match into the next run's requests — **reachable from the server behind `SPIRE_RECALL=1`**. `attribute.mjs` is the other half and runs as its own CLI. |
+| 📖 [`spire-demo/mechanics/`](spire-demo/mechanics/) | A knowledge base of card/enemy/potion/relic effects generated from your **own** run logs, so an entity's real effect can be looked up instead of re-read off its description text. `extract.mjs` is a generator you run by hand. **Not in the play loop.** |
 | 🧪 [`spire-demo/benchmark/sweep.mjs`](spire-demo/benchmark/sweep.mjs) | Parameter sweep scoring latency against decision quality on fixed fixtures. |
 | 🏁 [`spire-demo/benchmark/vs-llm.mjs`](spire-demo/benchmark/vs-llm.mjs) | Head-to-head against any OpenRouter model on byte-identical state. |
 | 📤 [`tools/youtube-upload.mjs`](tools/youtube-upload.mjs) | Uploads the run video, sets metadata, attaches a thumbnail. |
 | 📝 [`tools/youtube-meta.json`](tools/youtube-meta.json) | Title/description/tags as **reviewable JSON**, so the copy is diffable before anything goes public. |
+
+> [!NOTE]
+> **Those two directories are not equally live, and it is worth being precise about which is
+> which.**
+>
+> `learning/` is **wired**. `server.mjs` imports `learning/wire.mjs` and `learning/memory.mjs`
+> directly, and the moment you set `SPIRE_RECALL=1` that policy takes over the decision path and
+> the cross-run store starts reading and writing `.private/learning/memory.json`. Turn the flag off
+> and nothing touches either. 🟢
+>
+> `mechanics/` is **not wired**, and it is a claim about the *play loop*, not a criticism of the
+> code. The knowledge base is built ahead of time by a CLI you run yourself; it is never fetched,
+> refreshed, or generated while the game is open. And as of this commit `retrieveMechanics()` has
+> **no caller in the decision path** — `planner.mjs` still reads the game's own live description
+> text. The lookup half is committed and tested so the base can be switched in without
+> regenerating it, but switching it in is a change to `planner.mjs`, not a flag. 🔴
+>
+> ⚠️ Do not confuse the directory with the file. `planner.mjs` **does** import something called
+> `mechanicsReview` from [`spire-demo/mechanics.mjs`](spire-demo/mechanics.mjs) — a single top-level
+> file, no trailing slash — and that one *is* in the play loop. It is unrelated to the generated
+> knowledge base in `spire-demo/mechanics/`.
+>
+> Likewise, the companion launcher sets **only** `SPIRE_BETTER_POLICY`. Double-clicking it will not
+> turn recall on — pass `SPIRE_RECALL=1` yourself.
 
 ### 📂 Directories
 
