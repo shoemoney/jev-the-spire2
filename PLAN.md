@@ -50,6 +50,37 @@ to the decisions that caused it. The 17MB run log is written and never read.
 
 ---
 
+## ✅ What shipped (measured, on the 519 logged combat states)
+
+| change | before | after |
+|---|---|---|
+| Blind combat decisions | **18.3%** | **0.0%** |
+| Incoming damage `null` | every unparsed case | 0 |
+| Plans that close the turn | 0 | 3,883 |
+| Plans labelled as prefixes | 0 (silently assumed end-of-turn) | 2,332, each named |
+| Tests actually run by `npm test` | 224 | **333** |
+| Cross-run memory | none | 6 lessons, 5/5 confirmations on the core death |
+| Fresh clone boots | ❌ ERR_MODULE_NOT_FOUND | ✅ |
+
+Safety gate verified against six cases: it fires only when a plan's own forecast *states* it dies
+and another *states* it survives, it stays silent on `unknown`, and it does not refuse a lone lethal
+candidate because that would be a guess.
+
+## 🔎 What the measurement then revealed
+
+Re-planning all 519 states with the fixed planner, the top-ranked plan *states it dies* in 30 of
+them — up from 12. That is the system working, not regressing: a stated-lethal verdict only becomes
+possible once a plan covers the whole turn, and 20 of the 30 sit on complete turns the old prefix
+search never evaluated.
+
+The gate then rescued 1 of those 30, because in **29 of 30 every known plan dies.** Those are not
+mispicked winnable boards — they are unwinnable rooms, and **100% of them were entered below 30%
+max HP** (7/85 at floor 14; 16/91 at floor 9).
+
+> **So the blindness fix closed the mid-fight hole, and what is left is a run-level hole: the agent
+> walks into rooms it cannot win.** It arrives at the elite already broken. The next milestone is
+> not a better turn — it is refusing the fight, healing, and routing on HP and ascension.
+
 ## 🏗️ The plan
 
 The design principle: **a decision that cannot be evaluated must never be presented as if it
