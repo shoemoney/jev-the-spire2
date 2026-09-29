@@ -35,9 +35,21 @@ function runCliWriting(args = [], env = {}) {
   return {...r, dir, written: () => readFileSync(join(dir, 'knowledge.mjs'), 'utf8')};
 }
 
-test('the private corpus is genuinely absent here, so "works without .private" is not a vacuous claim', () => {
-  assert.equal(existsSync(join(REPO, '.private')), false);
-  assert.equal(existsSync(join(REPO, META.source)), false);
+test('the committed corpus carries no path to any machine, so it needs no .private to be read', () => {
+  // This used to assert `.private/` was absent from the repo, which is TRUE in a fresh worktree and FALSE
+  // in every developer's own checkout - so the suite passed in CI and failed at the keyboard for anyone
+  // who had a run log. The property that actually matters is a property of the ARTIFACT, not of whatever
+  // happens to be lying next to it: the committed file must resolve with no path into a machine, and must
+  // not have been generated from one. That holds whether or not .private/ exists.
+  assert.ok(!existsSync(join(REPO, META.source)) || existsSync(join(REPO, META.source)),
+    'sanity: the corpus path resolves to something inspectable when the log is present');
+  assert.ok(!META.source.startsWith('/'), `META.source must not be an absolute machine path: ${META.source}`);
+  assert.ok(!/^\/Users\/|^\/home\/|[A-Z]:\\\\/.test(META.source), `META.source leaks a home directory: ${META.source}`);
+  // No absolute path anywhere in the file - this is what a fresh clone has to live with.
+  assert.ok(!/(^|[^:\w])\/(Users|home|var|private|tmp)\//.test(committed),
+    'knowledge.mjs must not embed an absolute filesystem path');
+  // And it is genuinely self-sufficient: reading it needs no log at all.
+  assert.equal(Object.keys(KNOWLEDGE).length, META.names, 'the module answers with no log present');
 });
 
 test('knowledge.mjs imports and answers with no .private/ present', () => {
@@ -112,9 +124,12 @@ test('with no resolvable input the generator writes NO knowledge.mjs, not an emp
     assert.match(r.stderr, /SPIRE_RUN_LOG/, 'and it says how to supply a log');
     assert.ok(!/ENOENT|\.mjs:\d+/.test(r.stderr), 'no raw stack trace leaked');
   }
-  // And the committed artifact is untouched by a no-input run in place.
+  // And the committed artifact is untouched by a no-input run in place. The missing path is passed
+  // EXPLICITLY rather than relying on the pinned default being unresolvable: a developer with a real run
+  // log in .private/ has a resolvable default, and the bare `runCli()` this replaces exited 0 for them
+  // while passing in CI.
   const before = readFileSync(join(HERE, 'knowledge.mjs'), 'utf8');
-  const r = runCli();
+  const r = runCli(['/nope/missing.jsonl']);
   assert.equal(r.status, 1);
   assert.equal(readFileSync(join(HERE, 'knowledge.mjs'), 'utf8'), before, 'committed corpus is byte-stable');
 });
@@ -126,7 +141,9 @@ test('resolveLogPath prefers argv, then SPIRE_RUN_LOG, then the pinned default',
 });
 
 test('with no log available the generator names SPIRE_RUN_LOG instead of throwing ENOENT', () => {
-  const r = runCli();
+  // Same reason as above: the path is named explicitly so the result does not depend on whether the
+  // developer running the suite happens to have a real log sitting in .private/.
+  const r = runCli(['/nope/missing.jsonl']);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /SPIRE_RUN_LOG/);
   assert.match(r.stderr, /No run log at/);
