@@ -5,11 +5,20 @@
 **An agent plays Slay the Spire 2 and decides every move in about 315 milliseconds for $0.00046 —
 15x faster and 259x cheaper than Claude scoring the same decisions.**
 
+> [!NOTE]
+> **Which policy that is.** 315 ms and one call describe the **one-call factored policy**, which is
+> opt-in (`SPIRE_RECALL=1` selects the guarded recall policy, which is also one call). A **bare**
+> `node spire-demo/server.mjs` with no environment runs `deliberate`, the upstream multi-call policy,
+> at roughly **2.4 calls and 758 ms** per decision. Both carry the same lethal gate — that is
+> checked from each policy's own source at startup and printed in the boot line — but only the
+> flagged ones are fast. The headline was describing a configuration rather than the default, which a
+> reviewer caught.
+
 [![p50 latency](https://img.shields.io/badge/p50-315ms-00d084?style=for-the-badge)](#-the-measurements)
 [![cost per decision](https://img.shields.io/badge/%24%2Fdecision-0.00046-00d084?style=for-the-badge)](#-the-measurements)
 [![calls per decision](https://img.shields.io/badge/calls%2Fdecision-1.00-00d084?style=for-the-badge)](#questions-are-free-round-trips-are-not)
 
-[![tests](https://img.shields.io/badge/tests-386%20passing-brightgreen)](#-reproduce)
+[![tests](https://img.shields.io/badge/tests-516%20passing-brightgreen)](#-reproduce)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![dependencies](https://img.shields.io/badge/dependencies-zero-blue)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -317,8 +326,13 @@ Steamworks init fails with `No appID found`.
 ## 🚀 Run it
 
 ```bash
-SPIRE_BETTER_POLICY=1 node spire-demo/server.mjs   # dashboard at http://127.0.0.1:4317
+SPIRE_RECALL=1 SPIRE_BETTER_POLICY=1 node spire-demo/server.mjs   # dashboard at http://127.0.0.1:4317
 ```
+
+`SPIRE_RECALL=1` is the shipped path and the one the companion launcher sets. Both are opt-in: a bare
+launch runs `deliberate`, which carries the same lethal gate but costs ~2.4 calls and ~758 ms. The
+boot line names the resolved policy and whether its gate is active, so a run log always records which
+guard produced each decision.
 
 Start a normal singleplayer run in the game, then press **Autoplay**. 🚀
 
