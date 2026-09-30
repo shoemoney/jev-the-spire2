@@ -1,38 +1,30 @@
 ---
 active: true
-iteration: 51
+iteration: 53
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## I PROMISED A MEASUREMENT BEFORE BUILDING THE GRADED TREATMENT. HERE IT IS, AND IT SAYS DON'T.
-  logged boards with >=2 candidates and at least one survivor : 2191
-    a CALCULATED and a PARTIAL survivor both present          : 5  (0.2%)
-    only a calculated survivor                              : 45
-    only a partial survivor                                : 2141  (98%)
-    no survivor at all, gate already silent                 : 162
+## THE STORE'S BEST NUMBER WAS REACHING NOBODY
+The store holds `elite 29/52 won (56%)` — the agent's own measured elite record over twenty runs. It
+was attached by `recallingDeliberate`, so it reached exactly ONE policy of five, and the default
+policy decided whether to walk into an elite with that number sitting unread.
 
-Grading a survivor by forecast quality would change **5 boards out of 2191**. On 98% of boards the
-only survivors are partial, so there is nothing to prefer them over.
+The base question builder has two return paths. The non-combat one is where MAP decisions live —
+precisely the elite decision — and it returns early. **My first attempt attached to the combat
+branch only, which would have reproduced the attrition bug on a different screen.**
 
-**So the principled fix is not worth the risk.** The inconsistency is real — a `partial` is the same
-species of incomplete estimate as a bound, and I wrote the rule that a bound must never prove safety
-— but fixing it would add scoring complexity to the hot path for a 0.2% effect, and every scoring
-change I have rushed in this loop has broken something. Building it would have been me preferring the
-shape of the argument to its measured effect.
+That is the THIRD time in this loop a signal has reached one of two paths, and it is now the first
+thing I check when wiring anything new. `recall-delivery.test.mjs` asserts both branches carry the
+record, that the attrition note reaches both, and that supplying nothing attaches nothing.
 
-The principle stays recorded, the code stays as it is, and the honest summary is:
-**correct in principle, unmeasurable in practice, deliberately not built.**
-
-## That is the third finding this loop that did not survive a measurement
-1. waste at 1.0 "can outvote survival" — built the cases, the safer plan won every one
-2. the graded survival treatment — measured, affects 0.2% of boards
-3. (earlier) two of Opus's five findings were about code the review packet did not contain
-
-A review finding is a hypothesis. Testing it costs a turn; shipping it costs a day. The two this
-loop has found real — the 18 invisible potion types, and attrition reaching nothing — were both
-confirmed by a CONSTRUCTED CASE before any code was written. That order is the part worth keeping.
+## The good news inside the store
+  monster 547/576 won (95%), 13.8 HP average cost
+  elite    29/52  won (56%)
+Elite was 11/34 (32%) when this record was first computed. It has roughly doubled as the run-level
+guidance, the complete turns, and the potion visibility landed. Still the worst class by a wide
+margin, and now at least the agent can see the number when it decides.
 
 ## Loop state
-528 tests green · sweep 4: 6/14 · game batch running · server up on :4317
+535 tests green · sweep 4: 9/14 · game batch restarted · server up
