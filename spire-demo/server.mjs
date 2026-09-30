@@ -65,7 +65,22 @@ const view = {
   message: 'Ready. Start a normal singleplayer run in the game, then press Autoplay.',
   events: [], sessionId, maxDecisions: MAX_DECISIONS, maxInputTokens: MAX_INPUT_TOKENS,
 };
-if (saved) Object.assign(view, saved, { mode: 'paused', connected: false, configured: Boolean(apiKey), maxDecisions: MAX_DECISIONS, maxInputTokens: MAX_INPUT_TOKENS, message: 'Session restored. Press Autoplay to resume.' });
+// A restart is how you get ANOTHER session — the budget message says so — so a restart must not
+// carry the spent budget across with it. It did: the restore copied `decisions` and `inputTokens`
+// out of the snapshot while re-raising the limits, so a server started after hitting the cap came
+// straight back up already over it, paused, with "restart the server" as the only offered remedy.
+// An instruction that cannot be followed is a bug, and it stops the loop silently: the agent just
+// stops deciding and the log stops growing, which looks exactly like a game that has gone quiet.
+//
+// What survives a restart is the FIGHT context (so a mid-fight restart does not lose the attrition
+// accumulator) and the on-disk memory, which is loaded separately. What does not survive is the
+// meter.
+if (saved) Object.assign(view, saved, {
+  mode: 'paused', connected: false, configured: Boolean(apiKey),
+  maxDecisions: MAX_DECISIONS, maxInputTokens: MAX_INPUT_TOKENS,
+  decisions: 0, inputTokens: 0,
+  message: 'Session restored. Press Autoplay to resume.',
+});
 view.planBenefitEnabled=planBenefitEnabled;
 view.betterPolicyEnabled=betterPolicyEnabled;
 view.recallEnabled=recallEnabled;
@@ -240,15 +255,35 @@ async function step(token, preview = false) {
     else{
       if(view.fightKey!==fightKey){view.fightKey=fightKey;view.fightAccum=null;view.fightLastRound=null;view.fightPending=null;}
       const round=(planningState?.battle?.round??0);
+      const nowEnemyHp=liveEnemies.reduce((n,e)=>n+(e.hp??0),0);
+      // A turn needs BOTH ends to be measured: the enemy HP when the turn began and when it ended.
+      // Keeping one reading is not enough, and the single-reading version was caught on live data
+      // within a minute of shipping — a fight went 34 -> 28 and recorded `dealt: 0`, because the
+      // pending reading was overwritten by every subsequent decision inside the same round, so the
+      // fold compared the last two decisions rather than the two ends of a turn. Within a turn the
+      // agent plays several actions and the enemy HP drops in the middle of it; all of that damage
+      // fell between two writes of the same field.
       if(round!==view.fightLastRound){
-        // A new round means the previous turn is complete: fold what was observed at ITS end.
-        if(view.fightPending)view.fightAccum=observeTurn(view.fightAccum,view.fightPending);
+        if(view.fightPending){
+          // The agent's actions execute BETWEEN observations, so there is no reading of the enemy
+          // at the instant a turn ends — the damage from a turn first shows up in the next turn's
+          // opening reading. Comparing the ends of two turns therefore measures nothing: a fight
+          // went 18 -> 12 and recorded `dealt: 0` twice under that rule, because the only reading
+          // inside the turn that dealt the damage was taken before the actions resolved.
+          //
+          // The comparable pair is consecutive TURN STARTS. The enemy's HP when your turn opened
+          // is a real observation, and the drop from one turn's opening to the next is exactly the
+          // damage that turn's actions did.
+          const start=view.fightPending.startEnemyHp;
+          const observed=Number.isFinite(start)&&Number.isFinite(nowEnemyHp)?Math.max(0,start-nowEnemyHp):null;
+          view.fightAccum=observeTurn(view.fightAccum,{hp:(planningState?.player?.hp)??null,dealt:observed,enemyHp:nowEnemyHp});
+        }
         view.fightLastRound=round;
+        view.fightPending={startEnemyHp:nowEnemyHp,endEnemyHp:nowEnemyHp,endHp:(planningState?.player?.hp)??null};
+      } else if(view.fightPending){
+        view.fightPending.endEnemyHp=nowEnemyHp;
+        view.fightPending.endHp=(planningState?.player?.hp)??view.fightPending.endHp;
       }
-      const topForecast=actions.map(a=>a.forecast).find(f=>f&&typeof f.damage==='number'&&f.damage>0)??null;
-      view.fightPending={hp:(planningState?.player?.hp)??view.fightPending?.hp,
-                         dealt:(topForecast?.damage)??view.fightPending?.dealt??0,
-                         enemyHp:liveEnemies.reduce((n,e)=>n+(e.hp??0),0)};
     }
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
     // First match wins. Bound to a name so the decision below can be stamped with the policy that
@@ -288,7 +323,12 @@ async function step(token, preview = false) {
     // `...stamp` on EVERY outcome - executed, preview, cancelled, stale_rejected, game_rejected -
     // so a run log always answers which policy and which guard produced each decision. `policy`
     // stays POLICY_VERSION: it is a planner version, not the policy that ran.
-    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
+    // `attrition` is what the model was TOLD about the fight. It was passed into the policy and
+    // computed fresh every decision, but never written to the record — so the one learning signal
+    // the agent reasons with could not be audited, replayed, or measured after the fact, and a bug
+    // in it would have been invisible forever. The fix that made `dealt` observed in iteration 65
+    // was unfalsifiable until this was logged: there was no way to check it on real data.
+    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
     if (token !== generation) { await log({ ...event, outcome: 'cancelled' }); return; }
     if (preview) { await log({ ...event, outcome: 'preview' }); view.message = `Preview: ${chosen.label}`; return; }
     const fresh = await observe();

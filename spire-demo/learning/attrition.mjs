@@ -32,10 +32,24 @@ const MIN_TURNS = 2;
  */
 export function observeTurn(fight, turn) {
   const hp = Number(turn?.hp);
-  const dealt = Number(turn?.dealt) || 0;
+  // `dealt` is a MEASUREMENT or it is nothing. It used to be a forecast — the first candidate
+  // action that predicted damage, regardless of which action was chosen or what actually landed —
+  // so the attrition rate was arithmetic on a prediction while `taken` beside it was arithmetic on
+  // an observation. Both halves of a rate must come from the same kind of evidence or the ratio
+  // means nothing.
+  //
+  // A turn where the observation is unavailable is NOT a turn where zero damage was dealt. Those
+  // are different claims, and collapsing them silently understates how fast the fight is going:
+  // `Number(null) || 0` turned "we could not measure it" into "nothing was dealt" on every turn
+  // the enemy HP reading was missing.
+  const rawDealt = turn?.dealt;
+  const dealtKnown = rawDealt != null && Number.isFinite(Number(rawDealt));
+  const dealt = dealtKnown ? Number(rawDealt) : 0;
   const enemyHp = Number(turn?.enemyHp);
   if (!Number.isFinite(hp)) return fight;
-  const next = fight ? { ...fight, turns: fight.turns + 1, dealt: fight.dealt + Math.max(0, dealt) } : {turns: 1, dealt: Math.max(0, dealt), startHp: hp, lastHp: hp, startEnemyHp: Number.isFinite(enemyHp) ? enemyHp : null, lastEnemyHp: Number.isFinite(enemyHp) ? enemyHp : null};
+  const next = fight
+    ? { ...fight, turns: fight.turns + 1, dealt: fight.dealt + Math.max(0, dealt), turnsDealtKnown: (fight.turnsDealtKnown ?? 0) + (dealtKnown ? 1 : 0) }
+    : {turns: 1, dealt: Math.max(0, dealt), turnsDealtKnown: dealtKnown ? 1 : 0, startHp: hp, lastHp: hp, startEnemyHp: Number.isFinite(enemyHp) ? enemyHp : null, lastEnemyHp: Number.isFinite(enemyHp) ? enemyHp : null};
   next.lastHp = hp;
   if (Number.isFinite(enemyHp)) next.lastEnemyHp = enemyHp;
   // Damage actually absorbed this fight, from the first reading to now. Observed, never assumed.
@@ -56,7 +70,13 @@ export function attrition(fight) {
   if (!Number.isFinite(enemyHp) || enemyHp <= 0) return unknown('the enemy is already down');
 
   const perTurnTaken = fight.taken / fight.turns;
-  const perTurnDealt = fight.dealt / fight.turns;
+  // The kill rate is only a rate if every turn in it was measured. Dividing total damage dealt by
+  // ALL turns when some turns could not be measured yields a rate that is too low and looks fine,
+  // and it is exactly the case that makes a fight look longer than it is. So the denominator is
+  // the turns actually observed, and a fight with any unmeasured turn says so instead of guessing.
+  const turnsDealtKnown = fight.turnsDealtKnown ?? fight.turns;
+  const allDealtKnown = turnsDealtKnown === fight.turns;
+  const perTurnDealt = turnsDealtKnown > 0 ? fight.dealt / turnsDealtKnown : 0;
 
   // A rate of zero is a FACT worth reporting, not a divide-by-zero to hide behind. If the agent has
   // taken nothing, turnsToLive is unbounded; saying so plainly beats inventing a number.
@@ -64,13 +84,17 @@ export function attrition(fight) {
   const turnsToKill = perTurnDealt > 0 ? enemyHp / perTurnDealt : null;
 
   const base = {
-    hp, enemyHp, perTurnTaken: round(perTurnTaken), perTurnDealt: round(perTurnDealt),
+    hp, enemyHp, perTurnTaken: round(perTurnTaken), perTurnDealt: allDealtKnown ? round(perTurnDealt) : null,
     turnsToLive: turnsToLive === null ? null : round(turnsToLive),
     turnsToKill: turnsToKill === null ? null : round(turnsToKill),
-    turnsObserved: fight.turns,
+    turnsObserved: fight.turns, turnsDealtKnown, allDealtKnown,
   };
   if (turnsToLive === null) return {...base, status: 'unknowable', why: 'no damage has been taken yet, so there is no rate'};
   if (turnsToKill === null) return {...base, status: 'unknowable', why: 'no damage has been dealt yet, so there is no rate'};
+  // Both figures must come from the same evidence. A life estimate from observed turns beside a
+  // kill estimate from partly-observed turns compares a measurement to an extrapolation and calls
+  // the difference a margin.
+  if (!allDealtKnown) return {...base, status: 'unknowable', why: `damage dealt could not be measured on ${fight.turns - turnsDealtKnown} of ${fight.turns} turns, so the rate is not a rate`};
   const margin = turnsToLive - turnsToKill;
   if (turnsToLive < turnsToKill) {
     return {...base, status: 'losing-on-attrition', why: `at the observed rate this fight has ${round(turnsToLive)} turns of life left and needs ${round(turnsToKill)} to finish the enemy`, margin: round(margin)};

@@ -86,3 +86,41 @@ test('the attrition line reaches the combat questions, and stays off a card rewa
   assert.doesNotMatch(unknown.questions.move.instructions, /LOST ON TIME/,
     'an unknown verdict must contribute nothing at all, not a vague worry');
 });
+
+// Both halves of the attrition rate must be OBSERVED. `taken` always was; `dealt` used to be the
+// first candidate action that predicted damage, which is neither the chosen plan nor a number that
+// ever landed. These pin the replacement and the honest handling of a turn that cannot be measured.
+test('an unmeasured turn is not a turn where nothing was dealt', () => {
+  let f = observeTurn(null, { hp: 60, dealt: 12, enemyHp: 100 });
+  f = observeTurn(f, { hp: 60, dealt: null, enemyHp: 88 });      // the reading was missing
+  f = observeTurn(f, { hp: 60, dealt: 8, enemyHp: 80 });
+  assert.equal(f.turns, 3);
+  assert.equal(f.turnsDealtKnown, 2, 'two turns were actually measured');
+  assert.equal(f.dealt, 20, 'the unmeasured turn contributes nothing, and is not counted as a zero');
+  assert.notEqual(f.turns, f.turnsDealtKnown, 'the gap is visible on the accumulator itself');
+});
+
+test('a partly-measured rate reports unknowable rather than a confident number', () => {
+  // Dividing 20 by 3 instead of by 2 yields 6.7/turn instead of 10/turn — a rate that is too low,
+  // looks perfectly clean, and makes the fight read as longer than it is. The margin between
+  // turnsToLive (observed) and turnsToKill (extrapolated) is not a margin.
+  let f = observeTurn(null, { hp: 60, dealt: 12, enemyHp: 100 });
+  f = observeTurn(f, { hp: 50, dealt: null, enemyHp: 88 });
+  f = observeTurn(f, { hp: 40, dealt: 8, enemyHp: 80 });
+  const v = attrition(f);
+  assert.equal(v.status, 'unknowable');
+  assert.equal(v.perTurnDealt, null, 'no rate is reported rather than a wrong one');
+  assert.match(v.why, /could not be measured on 1 of 3 turns/);
+});
+
+test('a fully measured fight still reports a real rate and a real margin', () => {
+  let f = observeTurn(null, { hp: 60, dealt: 10, enemyHp: 100 });
+  f = observeTurn(f, { hp: 50, dealt: 10, enemyHp: 90 });
+  f = observeTurn(f, { hp: 40, dealt: 10, enemyHp: 80 });
+  const v = attrition(f);
+  assert.equal(v.allDealtKnown, true);
+  assert.equal(v.perTurnDealt, 10);
+  assert.equal(v.turnsToKill, 8);
+  assert.equal(v.turnsToLive, 6);
+  assert.equal(v.status, 'losing-on-attrition');
+});
