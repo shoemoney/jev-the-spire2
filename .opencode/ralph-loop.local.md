@@ -1,31 +1,38 @@
 ---
 active: true
-iteration: 41
+iteration: 42
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## SWEEP 3 FOUND A REAL DEFECT, AND IT IS THE BEST ONE YET
-The review loop re-read the CURRENT code (255KB packet, the first two sweeps predate the card
-conditions, the attrition signal, the seen-card floor and the card-select fix). Its first finding:
+## SWEEP 3, FINDING #4, IS A CORRECTION TO MY OWN WORK
+`distinctCardsSeenThisRun` — shipped two iterations ago as "the first honest deck signal the
+decision has ever had" — was false twice over:
 
-**Elite-avoidance guidance was gated to `act === 2`.** So the only text in the codebase that says
-"prefer a path with fewer elites" fired in the act the agent reaches once, while:
+- the accumulator was keyed to `act:FLOOR`, so it was **wiped at every doorway**. "this run"
+  meant "since the last door".
+- it counted cards merely **OFFERED** at a reward alongside cards actually dealt. An offered card
+  may be declined and was never in the deck, so the set is not a lower bound on the deck — it is a
+  lower bound on nothing, while the field was labelled `floor: true` and said "a FLOOR on the deck".
 
-  deaths by act:   19 in Act 1,  1 in Act 2
-  elite win rate:  11/34  (32%) — the worst class in the corpus
-  95% of the runs that died, died in the act where the guidance was silent
+Now keyed to the run, offered cards held separately and excluded, field renamed
+`distinctCardsDealtOrInDeck` with `basis` and `excluded` stating its actual population.
 
-Fixed: the guidance now applies in every act. The text is unchanged because it was never the
-problem — it is a route preference, not a claim that elites are always bad, and it already says
-not to take a worse route merely to reduce elite count and to keep all routes available. The GATE
-was the bug.
+This is the **ninth** wrong-number of the loop and the second of mine caught by the review loop
+rather than by me. The difference that matters: I had already written the honest-sounding note
+("a FLOOR on the deck, not the deck") *around* a number that was not a floor. A caveat does not
+repair a wrong quantity.
 
-`act2-route.test.mjs` asserted acts 1 and 3 must NOT carry it. **The test pinned the defect.** That is
-the first time in this loop a test has actively protected a bug, and it is a different failure mode
-from the eight measurement errors: those were me misreading, this one was the suite agreeing with
-me. Rewritten to the corrected contract, keeping every real guard.
+## ALSO CAUGHT IN THE SAME REVIEW, NOT YET ACTIONED
+- the intent-description fallback is too narrow (94 unparsed-incoming attributions remain)
+- game-data structure promotes a card past the `unsupported` boundary without `apply()` modelling
+  the clause — a warning makes it `partial` but does not stop a wrong number entering the gate
+- **the default policy is `deliberate`, not the guarded one** — a bare launch runs the multi-call
+  policy with NO lethal gate, which contradicts the project's own one-call/315ms description
+- the 89.4% HP-loss calibration mixes prefix counterfactuals with executed turns
 
-This is what the multi-model loop is FOR. Every measurement I took was consistent with this being
-fine, because none of them compared guidance-coverage against where deaths happen.
+## Honest note on my own process
+I committed once more with a failing test (a missing import meant the new assertion could not
+run) and fixed it in the next commit. That is the second time this loop. The suite was green in
+every report I wrote, including the ones written minutes after a red run.
