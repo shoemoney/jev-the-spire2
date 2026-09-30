@@ -546,6 +546,75 @@ const POST_COMBAT_STATES = new Set([
   'rewards', 'card_reward', 'treasure', 'rest', 'map', 'shop', 'char_select', 'game_over',
 ]);
 
+// DOES THE SCORER'S OVERRIDE HELP?
+//
+// `wire.mjs` decides with the scorer alone whenever the factor set is complete
+// (`const best = factorsComplete ? scored[0] : {id: jevMove.choice}`), and `deliberation.changed`
+// records that it replaced the model's own choice. On boss fights the overridden decisions produced
+// 2.17 damage per decision against 4.08 for the ones where model and scorer agreed - which reads as
+// "the override is harmful" and is very probably not that, because `changed` is correlated with how
+// deep into the fight the decision is (25% to 83% override rate by turn index).
+//
+// So the comparison is made WITHIN a fight at a matched depth, the only version of it that is not
+// confounded. Returns nulls rather than zeroes when a comparison is unavailable: no data is not a
+// measurement of zero, and the boss-only version of this question is exactly what could not be
+// answered.
+//
+// Lives here rather than in a script because fightOutcomes and summariseFights already read this log
+// correctly and have tests, and a dozen ad-hoc scripts written against the same data this session each
+// contained at least one bug - including a comma operator that read the literal string "utf8".
+export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
+  const fights = [];
+  let open = null;
+  for (const ev of events) {
+    if (ev?.kind === 'run_end') { if (open) { fights.push(open); open = null; } continue; }
+    // Interleaved non-decision events (`learned`) must NOT close a fight. Treating any non-decision
+    // event as a boundary cut every elite fight down to a single row and produced an empty result
+    // that read as "no data" rather than "broken measurement".
+    if (ev?.kind !== 'decision' || ev.outcome !== 'executed') continue;
+    const state = ev.state ?? {};
+    const live = types.has(state.state_type)
+      ? (state.battle?.enemies ?? []).filter(e => (e.hp ?? 0) > 0)
+      : [];
+    // The Waterfall Giant sentinel (999,999,984) is a real recurring game state that makes any
+    // damage-delta read as a billion-point swing. Excluded from arithmetic and left unexplained,
+    // because a labelled exclusion beats a guessed mechanism.
+    const sane = live.filter(e => (e.hp ?? 0) < 1e6);
+    if (!sane.length) { if (open) { fights.push(open); open = null; } continue; }
+    open ??= { type: state.state_type, rows: [] };
+    const hp = sane.reduce((n, e) => n + e.hp, 0);
+    const prev = open.rows.at(-1)?.hp;
+    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, changed: ev.deliberation?.changed === true });
+  }
+  if (open) fights.push(open);
+
+  const byDepth = new Map();
+  for (const f of fights) for (const r of f.rows) {
+    if (r.dealt == null) continue;
+    if (!byDepth.has(r.depth)) byDepth.set(r.depth, { changed: [], agreed: [] });
+    byDepth.get(r.depth)[r.changed ? 'changed' : 'agreed'].push(r.dealt);
+  }
+  const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  const buckets = [...byDepth.keys()].sort((a, b) => a - b)
+    .filter(d => byDepth.get(d).changed.length && byDepth.get(d).agreed.length)
+    .map(d => {
+      const { changed, agreed } = byDepth.get(d);
+      return { depth: d, changed: mean(changed), agreed: mean(agreed), nChanged: changed.length, nAgreed: agreed.length, delta: mean(changed) - mean(agreed) };
+    });
+  const allChanged = fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.changed)).map(r => r.dealt);
+  const allAgreed = fights.flatMap(f => f.rows.filter(r => r.dealt != null && !r.changed)).map(r => r.dealt);
+  return {
+    fights: fights.length,
+    decisions: allChanged.length + allAgreed.length,
+    // Unmatched, and labelled: this is the number that gets quoted by accident, and it is
+    // confounded with depth, so it must not be read as the answer.
+    unmatched: { changed: mean(allChanged), agreed: mean(allAgreed), nChanged: allChanged.length, nAgreed: allAgreed.length },
+    matched: buckets,
+    // null, not 0: no depth had both kinds, so there is no comparison to report.
+    matchedDelta: buckets.length ? mean(buckets.map(b => b.delta)) : null,
+  };
+}
+
 export function fightOutcomes(events) {
   const fights = [];
   let open = null;
