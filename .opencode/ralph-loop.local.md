@@ -1,39 +1,34 @@
 ---
 active: true
-iteration: 32
+iteration: 34
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE 999,999,999 IS A REAL REPORTED POOL, NOT A GLITCH
-Four boss decisions, all Waterfall Giant: `hp 999999999, max_hp 999999999`. So the bridge is
-reporting the boss's own maximum as a billion — not a display artefact and not a stale field.
+## THE 18 LOST FIGHTS, LOOKED AT PROPERLY
+  108 won · 18 lost   (monster 6, elite 7, boss 5)
+  lost fights entered at **53 HP** average
+  **forecast said survives:false within the first 3 decisions: 0 of 18**
+  decisions spent in a KNOWN-lethal state: 66 of 582 (11%)
+  longest fight among the losses: 67 decisions
 
-What the agent did with it, at 20 HP:
-  End turn                                forecast dmg 0  survives true
-  Defend → Uppercut → Waterfall Giant     forecast dmg 15 survives false
-  Uppercut → Waterfall Giant              forecast dmg 15 survives false
-  End turn                                forecast dmg 0  survives false
+**In every single lost fight the agent was never told, early, that it was losing.** Zero of 18 had a
+lethal verdict in their first three decisions. The forecast is `partial` almost everywhere — its
+warnings are about an unmoded clause, not about accumulating danger — so it says "survives: true"
+right up until the turn it cannot survive, and then it is too late to matter.
 
-It played normally and died. There is no "this fight is unwinnable" concept in the planner, so it
-spends real decisions on a pool it cannot out-damage.
+That is a much more precise statement of the failure than "the deck is weak": the agent loses fights
+it is never warned about, so it plays every turn as though the fight were fine. It is the same class
+as every other bug this loop has found — a number that is technically correct and practically
+misleading, because it is a per-turn verdict and the danger is cumulative.
 
-## NOT FIXING IT, DELIBERATELY
-I cannot verify from here whether a billion-HP second phase is a real mechanic, a sentinel the game
-uses for an invulnerable phase, or a reporting bug. Adding a "give up when the pool looks impossible"
-heuristic on a number I cannot explain is exactly the speculative fix I have been burned by three
-times in this loop — each one either broke three tests or crashed the decision path.
+## NOT FIXING IT THIS ITERATION
+A "danger accumulates" signal is exactly the kind of heuristic I have been burned by building on
+unverified ground, and unlike the billion-HP pool this one I CAN reason about from the data — but
+the right shape of it (per-turn slope? HP-per-turn trend? encounter-relative?) is a real design
+decision, not a patch. It gets its own iteration with a plan, not a rushed edit.
 
-So the finding is recorded and the fix is deferred until the mechanic is known. A guard built on an
-unverified rule would be the same confident-not-supported number this whole project exists to reject,
-just wearing a different hat.
-
-## The boss picture, honestly
-  Lagavulin Matriarch  233 -> 140  40% removed  waste 61%  pre-reorder
-  Ceremonial Beast     252 -> 127  50%          waste 39%
-  Ceremonial Beast     252 ->  73  71%          waste 21%
-  Vantom               173 ->  72  58%          waste 36%
-  Waterfall Giant      240 ->   8   97%          then a billion-HP pool
-Five boss fights, five deaths, no kill. The best run got a boss to 3% and then ran into a number it
-cannot model.
+Also corrected my own analysis twice in one sitting: a first pass reported "126 lost fights" and a
+second "0/18" on a polluted list. Both were my grouping, and both were caught by re-running the
+verified tool rather than by reading the output carefully. Fifth and sixth corrections of this shape.
