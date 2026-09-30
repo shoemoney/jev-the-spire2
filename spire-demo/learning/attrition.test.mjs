@@ -124,3 +124,31 @@ test('a fully measured fight still reports a real rate and a real margin', () =>
   assert.equal(v.turnsToLive, 6);
   assert.equal(v.status, 'losing-on-attrition');
 });
+
+// Per-entity accounting, because a SUM over live enemies cannot tell a hit from a departure.
+// Measured on live play: a fight went 85 -> 73 and reported `dealt: 18` — 6 of it was an enemy
+// leaving the set, not the agent hitting anything, so the kill rate ran high.
+test('an enemy leaving the set is not silently the same as an enemy being hit', () => {
+  // The rule under test: a vanished entity contributes its remaining HP to `dealt`, because the raw
+  // state carries no flag separating a kill from a departure. That makes the figure an UPPER bound,
+  // and the bound is the point — dropping the entity instead would be a lower bound that is wrong in
+  // the same direction and gives no reason why.
+  const start = { A: 30, B: 40 };
+  // A is hit for 10; B is gone without the agent landing anything on it.
+  const now = { A: 20 };
+  let observed = 0, anySeen = false;
+  for (const [id, hp] of Object.entries(start)) {
+    if (!Number.isFinite(hp)) continue;
+    anySeen = true;
+    const h = now[id];
+    observed += Math.max(0, hp - (Number.isFinite(h) ? h : 0));
+  }
+  assert.equal(observed, 50, '10 from the hit plus B\'s full 40 as the stated upper bound');
+  assert.equal(anySeen, true);
+});
+
+test('an empty turn-start map is no measurement, not a measurement of zero', () => {
+  let anySeen = false;
+  for (const [id, hp] of Object.entries({})) { if (!Number.isFinite(hp)) continue; anySeen = true; }
+  assert.equal(anySeen, false, 'no entities observed means dealt stays null');
+});

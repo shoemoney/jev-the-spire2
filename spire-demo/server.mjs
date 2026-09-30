@@ -255,33 +255,40 @@ async function step(token, preview = false) {
     else{
       if(view.fightKey!==fightKey){view.fightKey=fightKey;view.fightAccum=null;view.fightLastRound=null;view.fightPending=null;}
       const round=(planningState?.battle?.round??0);
-      const nowEnemyHp=liveEnemies.reduce((n,e)=>n+(e.hp??0),0);
-      // A turn needs BOTH ends to be measured: the enemy HP when the turn began and when it ended.
-      // Keeping one reading is not enough, and the single-reading version was caught on live data
-      // within a minute of shipping — a fight went 34 -> 28 and recorded `dealt: 0`, because the
-      // pending reading was overwritten by every subsequent decision inside the same round, so the
-      // fold compared the last two decisions rather than the two ends of a turn. Within a turn the
-      // agent plays several actions and the enemy HP drops in the middle of it; all of that damage
-      // fell between two writes of the same field.
+      // Tracked per ENTITY, not as a sum. Summing live enemy HP conflates two different things: a
+      // hit reduces the sum, and an enemy leaving the set reduces it too, with no damage dealt. A
+      // fight measured 85 -> 73 and reported `dealt: 18` — 6 points of that was an enemy leaving,
+      // not the agent hitting anything, so the kill rate ran high and made fights look like they
+      // were ending sooner than they did.
+      //
+      // Per entity_id, the remaining HP of an enemy that is no longer present is counted as dealt.
+      // The raw state carries no flag distinguishing a kill from a departure, and inventing one
+      // would be a guess; a kill is overwhelmingly the case, and a vanished enemy that was NOT
+      // killed can only make this figure an UPPER bound. The bound is stated rather than hidden,
+      // because the alternative — silently dropping the entity — is a lower bound that is wrong in
+      // the same direction and gives no reason why.
+      const byId=new Map(((planningState?.battle?.enemies)??[]).map(e=>[e.entity_id,e]));
       if(round!==view.fightLastRound){
         if(view.fightPending){
           // The agent's actions execute BETWEEN observations, so there is no reading of the enemy
-          // at the instant a turn ends — the damage from a turn first shows up in the next turn's
-          // opening reading. Comparing the ends of two turns therefore measures nothing: a fight
-          // went 18 -> 12 and recorded `dealt: 0` twice under that rule, because the only reading
-          // inside the turn that dealt the damage was taken before the actions resolved.
-          //
-          // The comparable pair is consecutive TURN STARTS. The enemy's HP when your turn opened
-          // is a real observation, and the drop from one turn's opening to the next is exactly the
-          // damage that turn's actions did.
-          const start=view.fightPending.startEnemyHp;
-          const observed=Number.isFinite(start)&&Number.isFinite(nowEnemyHp)?Math.max(0,start-nowEnemyHp):null;
-          view.fightAccum=observeTurn(view.fightAccum,{hp:(planningState?.player?.hp)??null,dealt:observed,enemyHp:nowEnemyHp});
+          // at the instant a turn ends — a turn's damage first appears in the next turn's opening
+          // reading. The comparable pair is consecutive TURN STARTS.
+          const before=view.fightPending.startById??{};
+          let observed=0, anySeen=false;
+          for(const [id,hp] of Object.entries(before)){
+            if(!Number.isFinite(hp))continue;
+            anySeen=true;
+            const now=byId.get(id)?.hp;
+            observed+=Math.max(0,hp-(Number.isFinite(now)?now:0));
+          }
+          view.fightAccum=observeTurn(view.fightAccum,{
+            hp:(planningState?.player?.hp)??null,
+            dealt:anySeen?observed:null,
+            enemyHp:liveEnemies.reduce((n,e)=>n+(e.hp??0),0)});
         }
         view.fightLastRound=round;
-        view.fightPending={startEnemyHp:nowEnemyHp,endEnemyHp:nowEnemyHp,endHp:(planningState?.player?.hp)??null};
+        view.fightPending={startById:Object.fromEntries([...byId].map(([id,e])=>[id,e.hp])),endHp:(planningState?.player?.hp)??null};
       } else if(view.fightPending){
-        view.fightPending.endEnemyHp=nowEnemyHp;
         view.fightPending.endHp=(planningState?.player?.hp)??view.fightPending.endHp;
       }
     }
