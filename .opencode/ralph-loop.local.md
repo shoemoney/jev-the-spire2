@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 11
+iteration: 12
 maxIterations: 100
 ---
 
@@ -16,28 +16,27 @@ keep playing get better every run be bol
 - 9: complete turns lead the menu
 - 10: the run's own seen-card floor reaches the reward decision
 - 11: waste trend measured across sessions
+- 12: potion-timing failure found
 
-## Measured this iteration — TURNS WITH ENERGY IN HAND THAT DEALT NOTHING
-  session (oldest → newest)
-    09-23 20:41   271/637 = 43%     never reached a boss
-    09-30 01:45    20/ 56 = 36%     never reached a boss
-    09-30 02:03    29/ 71 = 41%     20/33 = 61% at the boss, 233 → 140 HP
-    09-30 02:36    43/139 = 31%     never reached a boss
+## NEW FINDING — the belt was empty at the boss
+The floor-17 boss run: **zero potions held during all 43 boss decisions**, and exactly ONE
+potion drunk in the whole run — a Weak Potion on Corpse Slug, a floor-3 trash mob.
 
-All-combat waste is DOWN to 31% in the newest session, from 43% in the oldest, and the
-newest session also spent 139 turns with energy in hand — it fought longest of any run,
-so it is grinding rather than ending turns.
+So the boss was not lost to unused resources; the resources were already spent two thirds of
+the act earlier. This is a TIMING failure, not an availability one, and it is not what the
+iteration-1 potion-step work addressed: that pass only opens the belt when a turn is already
+lost, and a trash mob at floor 3 was never a lost turn.
 
-## THE HONEST GAP
-**There is exactly ONE boss sample in the entire corpus and it is PRE-reorder.** The 61%
-boss figure is the run that died at floor 17, and the reorder landed after it. So there is
-no post-reorder boss measurement at all, and "boss waste improved" is unmeasured.
+This also retires a theory I had been carrying. The memory lesson "`end_turn` with incoming
+above HP+Block, and died to it" has 8 confirmations, and it is real, but on this boss run the
+deaths at 8 HP were against a 233 HP pool the deck could not chew through at ~6/turn. The
+lesson is not wrong; it is not the binding constraint here.
 
-Do not read the 31% all-combat figure as a boss result. The batch now running is what
-will produce a post-reorder boss sample, and until one exists the claim is:
-**waste fell in combat generally; the boss question is open.**
+## Still running
+5-run batch on the iteration-9 reorder. Run 1 was at floor 8, an ELITE, 69/80 — entering the
+elite healthy, which is exactly the behaviour iteration 4 was for.
 
-## Also open: longer fights are not the same as better ones
-The newest session spent 139 energy-bearing turns against 71 in the session before. That
-can mean it is playing fuller turns, or that it is grinding a fight it cannot win. Both
-read the same in this metric, and the run's floor decides which it was.
+## Open, and deliberately not claimed
+- No post-reorder BOSS sample exists yet. The only boss in the corpus is pre-reorder.
+- Longer energy-bearing turns can mean fuller play OR grinding a lost fight. Only the floor
+  settles it.
