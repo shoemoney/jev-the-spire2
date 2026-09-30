@@ -1,49 +1,46 @@
 ---
 active: true
-iteration: 69
+iteration: 70
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## NINE PROSE CHECKS WERE BEING SENT ON EVERY DECISION REGARDLESS OF THE BOARD
-Went one level deeper into the wire (`requestStateBytes`) rather than guessing, and the logged
-state is 4.24 KB while 45 KB is sent — the payload WRAPS it. The composition:
+## candidate_details SCALES WITH CANDIDATE COUNT, AND THE COMPACTOR IS NOT THE PROBLEM
+Across 52 measured decisions on current code:
+  p50 21.6 KB · p90 57.3 KB · max 69.3 KB   (the 82 KB decisions are gone from this batch)
 
-  mechanics_review  2.43 KB  20%   <- nine prose checks, unconditionally
-  state             2.00 KB  16%
-  recalled_experience 1.43 KB 12%
-  mechanics         1.43 KB  12%   <- capped at 2048 bytes, deliberately
-  facts/candidates/potion_timing ...
+  median candidate_details by number of legal candidates:
+     <=10 candidates:  0.8 KB  (n=40)
+     11-20 candidates: 15.0 KB  (n=10)
+     21-40 candidates: 21.2 KB  (n=12)
 
-`mechanics` is capped at 2 KB and its sibling `mechanics_review`, sitting beside it in the same
-object, is not. Eight of the nine checks open with a precondition — "If an intent explicitly
-says the enemy will be destroyed after attacking", "If visible minion rules say they abandon
-combat without their leader" — and a trash mob has neither.
+Roughly 0.8 KB per candidate above the 10 mark, and a cliff between 10 and 11. So a board that
+offers 28 legal actions spends 26.3 KB of a 72.9 KB request on describing them.
 
-Now filtered on their OWN stated preconditions, matched on what each check says rather than on
-array index, so reordering cannot attach a check to the wrong trigger:
+**It is not a formatting problem.** compactRequest() already strips `forecast.assumption`, groups
+identical cards, trims the observation arrays, and interns repeated forecast objects losslessly.
+25 KB is genuinely distinct forecast data. There is nothing left to compress — the size IS the
+number of things the model is being asked to choose between.
 
-  8 checks -> 3 on a trash mob, 4 with two enemies, 5 on a board with a revival rule
+## And I was half-wrong again, in the same way
+Last iteration I said "candidates are not the story" from a 12 KB sample where candidate_details
+was 0.73 KB. It is 26.3 KB in a 73 KB one. The mistake was sampling one decision and generalising;
+the answer was bimodal all along and I read the mode, not the distribution. Percentiles would have
+told me that immediately, and there are now 52 measured decisions to take them over.
 
-**The rule that matters: a check whose precondition cannot be determined is KEPT.** Absence of
-evidence is not evidence of absence, and silently dropping a SAFETY instruction because the
-parser could not see its trigger is the worst available failure mode. Unknown text is never
-dropped; that has its own test.
+## The fix is a POLICY change, and I am not shipping it on this evidence
+Capping which candidates get a full forecast is not a formatting tweak — it can remove the action
+that would have won. That is the same shape as the graded-survival treatment I declined to build
+for changing 5 boards in 2191, and the bar is the same: measure first.
 
-  wire: mechanics_review 2.43 KB (20%) -> 1.18 KB (10%)
+The measurement is available and cheap, because the log already records which candidate was chosen.
+The question that decides it: **for the decisions with 11+ candidates, how deep in the list was the
+one actually chosen?** If the answer is "always near the front", a cap is nearly free. If the agent
+regularly wins with candidate 24 of 28, then those 26 KB are load-bearing and cutting them buys
+1 KB of tokens at the price of the run.
 
-## How much this is actually worth, stated plainly
-About 1.2 KB on a 12 KB payload — roughly 10%. Real, measured, and NOT transformative. The 82 KB
-decisions that made me chase this in the first place have a different profile (a much larger
-`state`), and I have not re-measured those under the new code. I am not going to call this a
-major win because it halved a field; it halved the field that was 10% of a small payload.
-
-## The instrument earned its keep twice more
-Both times I was wrong, the answer came from a number rather than an argument: the wire showed
-candidates were 0% of the request, and the next level down showed which field actually was. The
-cost was two integer fields per decision. That is the cheapest thing I have added to this project
-and it has already falsified more of my claims than any amount of reasoning.
+Not measured yet. Next.
 
 ## Loop state
-562 tests green (7 new) · batch running · state/recalled_experience now the largest parts
+562 tests green · batch running · percentiles now the default, not a single sample
