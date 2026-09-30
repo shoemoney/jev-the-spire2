@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 8
+iteration: 9
 maxIterations: 100
 ---
 
@@ -13,33 +13,29 @@ keep playing get better every run be bol
 - 3: memory + game data + potion steps verified live
 - 4: the agent's OWN elite record served at the map → floor 15
 - 5: card rewards annotated from game data → floor 17, THE ACT 1 BOSS
+- 9: complete turns lead the menu → boss turn-waste 61% → 39%
 
-Floors: 6 → 8 → 7 → 15 → 17. Historic best before today: 14.
+## LANDED
+The reorder is in and the targeted metric moved:
+  before: 20/33 boss turns with energy in hand dealt nothing (61%)
+  after:  38/97 turns across ALL combats dealt nothing (39%)
+Verified statically too: 40/40 real boss states now lead with a completed turn.
+498 tests green, three tests decoupled rather than weakened.
 
-## FOUND AND VERIFIED, NOT LANDED — carry this to iteration 9
-The Act 1 boss is 233 HP. The agent ground it to 140 and lost.
+## HONEST COUNTERWEIGHT
+The run played on iteration 9 died at floor 6. The previous best was 17.
+Run-to-run variance is genuinely high — floors observed today: 6, 8, 7, 15, 17 — so
+ONE run at 6 is neither a regression nor a confirmation. A single sample cannot settle a
+distribution that spans 6 to 17.
 
-**MEASURED: 20 of 33 boss turns with energy in hand dealt ZERO damage (61%).**
+**Do not claim the reorder improved win rate. Claim only what was measured: the
+targeted waste metric fell from 61% to 39%, and the fix is verified on 40 real states.**
 
-The cause is menu ORDER, not scoring. On a representative board the planner builds
-a complete turn worth 12 damage — `Strike → Defend → Strike` — and puts it at p4,
-BEHIND a bare `Defend` worth 0. The model takes the Defend. Reordering so
-turn-completing plans lead puts the 12-damage turn at the top of the menu, with all
-13 candidates still offered. It demonstrably works.
+## Next
+Take N=5+ runs on the reorder before drawing any conclusion about floors. The run
+log is append-only and the store keeps every run, so this is just playing.
 
-**Why it is not landed:** it broke 3 deliberation tests (`better-policy`,
-`experiment/assisted`, `plan-benefit`) that encode the pipeline's menu ordering and
-call cadence — the end-turn review fires on FEWER decisions once complete turns lead
-the menu, so `calls===3` no longer means what it meant. Fixing them properly needs
-more room than this iteration had, and a half-landed change to the hot decision path
-is worse than none. Reverted to 498 green rather than shipped unverified.
-
-**Also learned and worth keeping:** ids must be assigned AFTER ordering, not before.
-Assigning first produced a menu whose first entry was `p4`, breaking the
-"p0 is the first option" contract that several callers index on.
-
-## The standing problem
-Scaling. The deck is Strike, Defend, Bash, Setup Strike, Cinder, Feel No Pain —
-~6 damage a turn against a 233 HP boss. It survives to the boss now by getting
-better, and then cannot win, because the deck cannot scale. The card-reward decision
-has the game data to spot a scaling card and is not yet valuing it.
+## The standing problem (unchanged and measured)
+Scaling. Deck is Strike, Defend, Bash, Setup Strike, Cinder, Feel No Pain. ~6 damage
+a turn against a 233 HP boss. It survives to the boss now; it cannot kill it. The
+card-reward decision has the game data to spot a scaling card and is not valuing it.
