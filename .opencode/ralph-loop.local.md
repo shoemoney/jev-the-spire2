@@ -1,30 +1,35 @@
 ---
 active: true
-iteration: 23
+iteration: 25
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## BOSS FIGHTS — n=2 post-reorder now, and the mechanism holds on both
-  boss                     HP     removed  waste  damage  arm
-  Lagavulin Matriarch      233 -> 140   40%     61%      97  pre-reorder
-  Ceremonial Beast         252 -> 127   50%     39%     221  post
-  Vantom                   173 ->  72   58%     36%     142  post
+## THE SERVER DIED SILENTLY
+Its log ended on the startup lines with no error and no crash report, and the process was gone. It is
+a foreground process started from a tool shell, so it has no supervisor. The batch then sat out its
+full 15-minute timeout waiting for a death that could never arrive.
 
-Post-reorder, both boss fights removed half or more of the health bar and wasted ~37% of
-energy-bearing turns; pre-reorder it was 40% and 61%. Three deaths, no kills — the deck still
-runs out of act. But the direction is consistent across two independent post samples and the
-mechanism (wasted energy) was predicted before either was measured.
+An unattended loop that cannot heal its own agent collects nothing, so the batch now detects a
+non-responding server and restarts it, logging that it did. Same resilience shape as the auto-pause
+fix: every bug that stops a run silently consumes the data I would need to notice it.
 
-Still n=2 vs n=1. This is NOT a win-rate claim and I will not make one.
+## A SCREEN THAT ATE 22 DECISIONS
+"Choose a card to Upgrade" — an `upgrade` screen, 13 cards, `can_confirm: true`. The bridge answers
+`select_card` with "Toggling card selection: Strike" and never echoes `is_selected`, exactly like the
+Deck Enchant screen. The agent selected, selected, selected: **22 decisions, `confirm_selection`
+offered 12 times, never taken.**
 
-## Batch harness fix — auto-paused runs were eating samples
-The server auto-pauses on a stall and NOTHING resumed it, so the batch waited out a 45s timeout on
-runs that would never move. That cost at least two samples this session. The batch now detects
-`mode: paused` with a live game and resumes it, logging that it did.
+Tested by hand against the bridge: `confirm_selection` on that screen advances it to `map`,
+immediately, with no selection at all. So confirming was the entire task and the agent spent 22
+decisions toggling instead.
 
-## Where the sample stands
-126 logged fights · 111 won · 15 lost (88%) · 16 runs · best floor 17 (three times)
-Runs logged while the server was crashed still count as deaths and carry no data — so read every
-figure as "per LOGGED fight", never "per run".
+Not yet fixed. The honest statement is that on a card_select screen where confirm alone advances,
+the agent has no reason to prefer it, and `selectionState` reconstructing a phantom selection across
+13 identical "Strike" entries gives it more to think about rather than less. Two candidate fixes,
+neither tried: make confirm strictly preferred when the reconstructed selection already satisfies the
+prompt, and deduplicate identical card names in the selection reconstruction.
+
+## Sample
+Boss fights still n=2 post-reorder. Batch restarted (8 runs) with both resilience fixes in.
