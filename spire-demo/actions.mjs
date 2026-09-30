@@ -227,6 +227,15 @@ export function makeQuestion(state, actions) {
   const facts = factsFor(state);
   // A null the request never explains is indistinguishable from a zero the request
   // invented, so an unread board says so in words as well as in the field.
+  // NO ATTACK IS COMING. Measured: the agent blocked on 10 turns where the enemy had no attack
+  // intent at all, incoming 0 - including one with 3 energy and a 7-damage plan on the menu, where
+  // it chose a 0-damage Defend. The planner's ranking was RIGHT on those boards; the model was
+  // choosing defence because the request only ever framed survival as worth having, and never said
+  // that block against nothing prevents nothing. That is a derived fact from the visible intents, not
+  // advice, so it belongs in the request rather than in the ranking.
+  const idleNotice = facts.displayed_incoming_attack_total === 0 && (state?.battle?.is_play_phase ?? false)
+    ? ' No enemy is attacking this turn, so Block prevents nothing here and its energy is better spent on damage or setup. Prefer a plan that deals damage; reserve Block for a turn that actually has an attack coming.'
+    : '';
   const unreadNotice = facts.displayed_incoming_attack_total === null
     ? ' This board\'s incoming attack damage could not be read, so displayed_incoming_attack_total and displayed_block_gap are null: that is unknown, not zero. Compare protection by what each card actually blocks, and do not treat the missing total as licence to ignore the turn.'
     : '';
@@ -246,7 +255,8 @@ export function makeQuestion(state, actions) {
       type: 'choice',
       instructions: 'Choose the next legal action that best advances winning the run. Infer how cards and relics interact from their visible rules. Compare each choice, including skip when offered, using current capabilities, costs, consistency and needs. Follow the actual selection prompt. No fixed archetype or encounter strategy is prescribed. Choose only a supplied ID. '
         + deckNote
-        + unreadNotice,
+        + unreadNotice
+        + idleNotice,
       criteria: Object.fromEntries(actions.map(a => [a.id, JSON.stringify({ action: a.command, label: a.label, details: a.details })])),
     } },
   };
