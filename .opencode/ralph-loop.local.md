@@ -1,40 +1,44 @@
 ---
 active: true
-iteration: 47
+iteration: 48
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## SWEEP 4 (74-file packet) CAUGHT THE GAP IN MY OWN LAST FIX
-I published `displayed_incoming_attack_lower_bound` last iteration. It went into the request text and
-nowhere else. `forecast.survives` still returned null, so `refuseLethalChoice` saw null and stayed
-silent. **The number decorated the request and did no work** — the same "honest note around a
-quantity that does nothing" mistake, one iteration on.
+## THIRD SIGNAL BUILT CORRECTLY AND CONNECTED TO NOTHING
+Sweep 4's opening finding: "the attrition warning is never delivered." Twelve iterations.
 
-    12 HP, 12 readable incoming, 1 UNREAD intent
-      incoming (total)   : null      <- genuinely unknown
-      incomingLowerBound : 12
-      boundedLethal      : true
-      SURVIVES           : false     <- was null; the gate could not see this
-      statedSurvival()   : false
+server.mjs computed the verdict and passed it in the options object. `recallingDeliberate`
+did not destructure the parameter and called `factoredQuestion(state, candidates)` with no
+third argument. The value died at the boundary.
 
-The arithmetic is not in doubt: if the readable intents already exceed HP plus block, the turn is
-lethal whatever the unread ones are, because they can only add. That is where the missing early
-verdict in 18 lost fights comes from.
+Every unit test passed throughout, because every unit test called
+`perspectiveQuestion` directly. **The tested seam was not the broken one.**
 
-## SCOPED TO `!parsed`, AND THAT IS A KNOWN LIMITATION
-A floor exceeding HP plus block proves death under ANY uncertainty — a facing multiplier only
-raises the damage. So the narrow gate leaves a real improvement on the table. But four existing
-tests pin `survives: null` when the cause is POSITIONING, and overturning four deliberate safety
-rules on the strength of my own reasoning is exactly the over-reach that has broken this codebase
-repeatedly. So it fires for the case it was built for, and positioning is untouched. Widening it is
-a separate, argued change.
+And there are TWO builders: `deliberation.perspectiveQuestion` and
+`factored.factoredQuestion`. I attached the signal to the first; the shipped recall policy
+uses the second. So it reached the unflagged policy and nothing else.
 
-## The admission cannot be made symmetric by accident
-A floor is admitted for `false` only. A plan is never called a survivor on a lower bound, because
-a lower bound cannot prove safety. `statedSurvival({unknown, survives:true, boundedLethal:true})`
-returns `null`, not `true` — pinned by a test.
+    now, through the real shipped path:
+      losing on time -> reaches the request? true
+      no verdict     -> reaches the request? false
+
+**Fixed at the base.** `decisionQuestion` takes the verdict and attaches it; `factoredQuestion`
+forwards it. A new policy cannot forget it because there is nowhere else for it to be.
+
+## The pattern across all three
+1. the seen-card floor, labelled a floor, was a floor on nothing
+2. the lower bound, published correctly, went into the request and nowhere else
+3. the attrition verdict, computed correctly, was dropped at a function boundary
+
+All three are the same mistake: a value that exists, is correct, is described in a comment, and
+is never observed leaving the building. None was caught by a unit test, because a unit test
+calls the function directly. All three were caught by something that READS THE SYSTEM —
+a reviewer quoting the code, or a loop log.
+
+**A signal is not a signal until a test proves it survives the real path.** That is what
+`signal-delivery.test.mjs` now does, hop by hop, including the absent case.
 
 ## Loop state
-522 tests green · sweep 4 running with full coverage · server restarted · both batches going
+525 tests green · sweep 4 running with 74-file coverage · both batches going · server restarted
