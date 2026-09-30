@@ -1,34 +1,28 @@
 ---
 active: true
-iteration: 19
+iteration: 20
 maxIterations: 100
-
 ---
 
 keep playing get better every run be bol
 
-## TWO REAL BUGS, BOTH MINE, BOTH FOUND BY READING THE ERROR NOT THE DASHBOARD
+## LANDED — the selections buffer walked backwards
+`server.mjs` stores events newest-first (`unshift`), but `selectionState` walked them in order and
+`break`ed on the first non-`select_card` — which is the newest event, so it bailed immediately and
+ALWAYS returned the state untouched. The bridge never echoes `is_selected` on a Deck Enchant screen
+(key absent), so the agent could select forever and never satisfy "Choose 3 cards to Enchant".
 
-**1. `seenCards` killed the decision loop on every restart.** `view` is persisted to
-session.json and restored verbatim; JSON has no Set, so a restored Set comes back as `{}` and
-`[...view.seenCards]` threw "(view.seenCards ?? []) is not iterable". That aborted the step and left
-the server PAUSED with the exception as its message. It had been happening on every restart since
-iteration 10 — including the one that made a run look "stuck" when the server was simply dead.
-Seen cards is now an ARRAY, which round-trips through JSON intact.
+That run then advanced from the overlay to **floor 17, Ceremonial Beast — the first POST-reorder
+boss sample.** It died there. So the boss question is no longer unmeasured.
 
-**2. A card-selection overlay was a dead end.** A run sat on "Choose 3 cards to Enchant" with nine
-confirms executed and the screen never advancing. `actionsFor` offered `select_card` only for cards
-NOT already selected, so a wrong selection could only ever be confirmed, never undone — while the
-vendor api-reference says `select_card` TOGGLES on a grid screen. Every card is now offered,
-selected ones labelled `Deselect <name>`. Confirmed live: the agent now gets real options there.
+## LANDED — card CONDITIONS, from the user's eye
+Colossus: "Gain 12 Block. You receive 50% less damage from VULNERABLE enemies this turn." The
+classifier read only keywords, recorded `block`, and dropped the second sentence — which IS the card.
+Measured: **6 of 9 Colossus plays had no Vulnerable enemy.** Cards now carry `requires`, and when the
+board visibly fails it the offer says `conditionUnmet`. 186 entities have a condition.
 
-Three tests pinned the old no-toggle rule. Their real guards were kept — confirm still requires the
-prompted count, and `selectionState` still never marks a card selected twice — and only the menu
-assertions moved.
-
-## Why this mattered more than it looks
-Both bugs make a run STOP. A stopped run produces no data, and every conclusion this session is
-already sample-starved. The measurement work and the play work are the same work here.
-
-## Measurements unchanged
-fights 106 · won 94 · lost 12 (89%) · best floor 17 · 502 tests green
+## Where this points
+Three of the last four fixes came from someone looking at the screen or the cards rather than from
+my metrics. The metrics were not wrong, they were SHALLOW: they counted decisions, not whether the
+decision was any good. A classifier that records "block" and drops "only while Vulnerable" produces
+confident nonsense, and no win-rate number detects it.
