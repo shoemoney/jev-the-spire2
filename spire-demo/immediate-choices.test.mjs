@@ -3,7 +3,14 @@ const s=JSON.parse(readFileSync(new URL('./fixtures/slippery.json',import.meta.u
 test('all distinct immediate commands remain selectable, with every continuation as evidence',()=>{
  const history={turnHistory:[{round:2}],unfinishedPlan:{label:'test'}};const p=perspectiveQuestion(s,cs,history),original=JSON.stringify(p),q=immediateChoiceQuestion(p,cs);
  assert.equal(JSON.stringify(p),original);assert.deepEqual(q.state.recent_observations,history);
- const roots=cs.filter(c=>c.plan.length===1);assert.deepEqual(Object.keys(q.questions.move.criteria),roots.map(c=>c.id));
+ const roots=cs.filter(c=>c.plan.length===1);
+ // SET equality, not sequence. The planner now orders the menu deliberately - turn-completing plans
+ // lead, because a 12-damage full turn at p4 behind a bare 0-damage Defend is a plan the model does
+ // not take - and 20 of 33 boss turns with energy in hand dealt nothing as a result. What this test
+ // protects is that every immediate command stays selectable exactly once, not an incidental order.
+ // `pNN` ids are menu POSITIONS, not identities.
+ assert.deepEqual([...Object.keys(q.questions.move.criteria)].sort(),roots.map(c=>c.id).sort());
+ assert.equal(Object.keys(q.questions.move.criteria).length,roots.length,'and none is duplicated or dropped');
  assert.deepEqual(Object.keys(q.state.supporting_plan_details),cs.map(c=>c.id));
  for(const root of roots){const d=JSON.parse(q.state.candidate_details[root.id]);for(const id of d.possible_continuations)assert.deepEqual(cs.find(c=>c.id===id).command,root.command);}
  assert.deepEqual(compactRequest(q).state.recent_observations,compactRequest(p).state.recent_observations);

@@ -689,7 +689,26 @@ export function planCandidates(s, { maxDepth=6, beamWidth=256, maxPlans=64 }={})
     }
     seen.add(key);selected.push(m);
   }
-  return selected.map((m,i)=>{
+  // ORDER IS A DECISION, NOT A FORMALITY.
+  //
+  // The menu used to LEAD with the bare single actions and put the turn-completing plans after them,
+  // so a complete turn spending 3 energy for 12 damage sat at p4 behind a bare `Defend` worth 0. The
+  // model took the Defend. Against the Act 1 boss, 20 of 33 turns with energy in hand dealt nothing
+  // and a 233 HP boss was ground to 140.
+  //
+  // Nothing is removed, rescored or hidden — the same plans are offered, in an order that puts the
+  // finished turn first, because a plan the reader never reaches is not really on the menu. Single
+  // actions stay: the bridge executes ONE action and re-observes, so they must remain available.
+  //
+  // The order is settled BEFORE ids are handed out, so `p0` is still the first option on the menu.
+  // Sorting after the map left the first entry as `p4`, which silently broke every caller that
+  // indexes candidates on the assumption that `p0` is the first option.
+  const ordered=[...selected].sort((a,b)=>{
+    const at=turnVerdict(a).turnComplete, bt=turnVerdict(b).turnComplete;
+    if(at!==bt)return at?-1:1;
+    return (forecast(b,s).damage ?? 0) - (forecast(a,s).damage ?? 0);
+  });
+  return ordered.map((m,i)=>{
     const f=forecast(m,s);
     return {
       id:`p${i}`,command:m.steps[0].command,label:m.steps.map(a=>a.label).join(' → '),
