@@ -90,9 +90,15 @@ export function seenCardEvidence(seen, offered) {
   if (!names.length) return undefined;
   const at = offered ?? names.length;
   return {
-    distinctCardsSeenThisRun: names.length,
+    // The name is the claim. This used to be `distinctCardsSeenThisRun`, which was false twice over:
+    // the accumulator was keyed to act+FLOOR so it reset every room, and it mixed cards merely
+    // OFFERED at a reward in with cards actually dealt. Offered cards may be declined and were
+    // never in the deck, so the result was not a lower bound on anything.
+    distinctCardsDealtOrInDeck: names.length,
     floor: true,
-    note: 'a FLOOR on the deck, not the deck: cards never drawn do not appear here. It cannot show bloat.',
+    basis: 'cards the game dealt into a hand, or that the bridge reported in the permanent deck',
+    excluded: 'cards only OFFERED at a reward are NOT counted - they may be declined',
+    note: 'a FLOOR on the deck, not the deck: cards never drawn do not appear here, so it cannot show bloat.',
     names: names.slice(0, 40),
     ...(names.length > 40 ? {namesOmitted: names.length - 40} : {}),
   };

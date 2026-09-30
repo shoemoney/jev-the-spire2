@@ -187,16 +187,29 @@ async function step(token, preview = false) {
     // card the agent played or was offered. The bridge sends no deck and no pile counts at a card
     // reward, so this is the only deck evidence that exists - and it is a FLOOR, not a census. Skip
     // was taken in 18 of 49 rewards because Skip is the option that looks safe when you know nothing.
-    const runKey=(planningState?.run?.act??'a')+':'+(planningState?.run?.floor??0);
+    // KEYED TO THE RUN, NOT THE FLOOR. This was act+floor, so the set was wiped on every room
+    // change and "distinctCardsSeenThisRun" was really "distinct cards seen since the last door".
+    // The bridge gives no run id on the singleplayer path, so a run is approximated by its opening
+    // position: act 1 floor 0-3 is a run start, and anything after is the same run continuing.
+    const _act=planningState?.run?.act??1, _floor=planningState?.run?.floor??0;
+    const runKey = (_act===1 && _floor<=3) ? 'r:1' : `r:${_act}`;
     // An ARRAY, not a Set. `view` is persisted to session.json and restored verbatim, and JSON has no
     // Set — a restored Set comes back as `{}`, which is not iterable, and `[...view.seenCards]` threw
     // "is not iterable" and killed the decision loop on every restart after this feature landed. An
     // array round-trips through JSON intact, and the dedupe is what the Set was for anyway.
-    if(view.runKey!==runKey||!Array.isArray(view.seenCards)){view.runKey=runKey;view.seenCards=[];}
+    if(view.runKey!==runKey||!Array.isArray(view.seenCards)){view.runKey=runKey;view.seenCards=[];view.offeredCards=[];}
     const seen = new Set(view.seenCards);
-    for(const c of [...(planningState?.player?.hand??[]), ...(planningState?.player?.deck??[]), ...(planningState?.card_reward?.cards??[])])
+    const offered = new Set(Array.isArray(view.offeredCards)?view.offeredCards:[]);
+    // SEEN IS NOT OFFERED. Cards dealt into a hand, and cards the bridge actually reports in the
+    // permanent deck, are evidence of deck membership. A card merely OFFERED at a reward is not —
+    // it may be declined, and it never was in the deck. Merging the two made the number a lower
+    // bound on nothing, which is how a field labelled `floor:true` ended up not being a floor.
+    for(const c of [...(planningState?.player?.hand??[]), ...(planningState?.player?.deck??[])])
       if(c?.name) seen.add(String(c.name).replace(/\+$/,''));
+    for(const c of (planningState?.card_reward?.cards??[]))
+      if(c?.name) offered.add(String(c.name).replace(/\+$/,''));
     view.seenCards=[...seen];
+    view.offeredCards=[...offered];
     // ATTRITION, accumulated PER TURN and reset per FIGHT. Keyed on the fight (act, floor, enemy
     // names) because a turn is the unit a fight is measured in - the mistake of reading "61
     // decisions" as a war of attrition when it was 11 turns.

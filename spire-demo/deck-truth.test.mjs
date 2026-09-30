@@ -128,3 +128,19 @@ test('a condition the visible state cannot settle is left unclaimed, not assumed
   assert.notEqual(c.conditionUnmet, true,
     'a condition this state cannot see must not be reported as satisfied or as failed');
 });
+
+// Caught by a reviewer, not by a metric. The field was `distinctCardsSeenThisRun` and was false
+// twice: the accumulator was keyed to act+FLOOR, so it reset at every doorway, and it counted cards
+// merely OFFERED at a reward alongside cards actually dealt. An offered card may be declined and was
+// never in the deck, so a set containing them is not a lower bound on the deck — it is a lower bound
+// on nothing, while claiming to be one.
+test('the seen-card floor counts dealt cards and excludes offered ones', () => {
+  const seen = seenCardEvidence(['Strike', 'Strike+', 'Bash', 'Defend'], 3);
+  assert.equal(seen.distinctCardsDealtOrInDeck, 3, 'Strike+ normalises to Strike, so three distinct cards');
+  assert.equal(seen.floor, true);
+  assert.match(seen.basis, /dealt into a hand|permanent deck/);
+  assert.match(seen.excluded, /OFFERED at a reward are NOT counted/,
+    'and it says plainly which population it leaves out');
+  assert.doesNotMatch(JSON.stringify(seen), /distinctCardsSeenThisRun/,
+    'the old field name asserted a run scope this never had');
+});
