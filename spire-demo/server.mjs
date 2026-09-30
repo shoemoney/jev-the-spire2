@@ -182,6 +182,16 @@ async function step(token, preview = false) {
     view.pending = { startedAt: Date.now(), options: actions.length };
     const start = performance.now();
     const memory=encounterMemory(s,view.events);
+    // What this run has actually SHOWN: every distinct card the game dealt into a hand, plus every
+    // card the agent played or was offered. The bridge sends no deck and no pile counts at a card
+    // reward, so this is the only deck evidence that exists - and it is a FLOOR, not a census. Skip
+    // was taken in 18 of 49 rewards because Skip is the option that looks safe when you know nothing.
+    const runKey=(planningState?.run?.act??'a')+':'+(planningState?.run?.floor??0);
+    if(view.runKey!==runKey){view.runKey=runKey;view.seenCards=new Set();}
+    view.seenCards??=new Set();
+    for(const c of planningState?.player?.hand??[]) if(c?.name) view.seenCards.add(String(c.name).replace(/\+$/,''));
+    for(const c of planningState?.player?.deck??[]) if(c?.name) view.seenCards.add(String(c.name).replace(/\+$/,''));
+    for(const c of (planningState?.card_reward?.cards??[])) if(c?.name) view.seenCards.add(String(c.name).replace(/\+$/,''));
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
     // First match wins. Bound to a name so the decision below can be stamped with the policy that
     // actually produced it, named by FUNCTION IDENTITY rather than by re-reading the env.
@@ -190,6 +200,7 @@ async function step(token, preview = false) {
     const result = await policy({state:planningState,candidates:actions,
       recent:memory,
       memory:memoryStore,
+      seenCards:[...(view.seenCards??[])],
       onStage:stage=>{view.message=stage;view.pending.stage=stage;},
       ask:async payload=>{
         if(token!==generation)throw Error('Decision cancelled.');
