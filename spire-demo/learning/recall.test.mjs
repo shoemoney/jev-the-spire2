@@ -50,7 +50,10 @@ test('run-level stats describe the recorded history and nothing beyond it', () =
   assert.equal(context.history.runs, 3);
   assert.equal(context.history.deaths, 2);
   assert.equal(context.history.deepestFloor, 31);
-  assert.equal(context.historyLine, '3 runs recorded, 2 deaths, deepest floor 31');
+  // The run prefix is unchanged; the per-class record now follows it, and on an empty store it says
+  // so rather than reading as a 0% win rate.
+  assert.match(context.historyLine, /^3 runs recorded, 2 deaths, deepest floor 31\./);
+  assert.match(context.historyLine, /no encounter has been fought yet/);
 });
 
 test('a matching lesson arrives with its evidence count and the basis that earned it', () => {
@@ -150,4 +153,40 @@ test('the context survives a real save/load round trip on disk', () => {
   assert.equal(loaded.history.runs, 1);
   assert.equal(loaded.history.deaths, 1);
   rmSync(dir, {recursive: true, force: true});
+});
+
+// The class record is the one part of the request that exists ONLY because earlier runs are
+// remembered. Measured over 8 Ascension-10 runs: elites won 9 of 25, normals 111 of 121 — and the
+// route label already said "Elite next, no rest before" and was walked past anyway.
+test('the recall payload carries the agent\'s own win rate by fight class', () => {
+  const store = {
+    version: 1,
+    runs: [{runId: 'r1', result: 'death', finalFloor: 12}, {runId: 'r2', result: 'death', finalFloor: 9}],
+    lessons: [],
+    encounters: {
+      'monster:Nibbit': {seen: 10, wins: 10, losses: 0, avgHpLostBefore: 15},
+      'elite:Byrdonis': {seen: 4, wins: 0, losses: 4, avgHpLostBefore: 17},
+    },
+  };
+  const c = buildRecallContext(store, {state_type: 'map', run: {act: 1, floor: 6}, player: {hp: 20, max_hp: 91}});
+  const byClass = Object.fromEntries(c.encounterRecord.map(r => [r.class, r]));
+  assert.equal(byClass.monster.wins, 10, 'the record is counted, not asserted');
+  assert.equal(byClass.monster.winRate, 100);
+  assert.equal(byClass.elite.winRate, 0, 'a 0-for-4 record must not be smoothed away');
+  assert.equal(byClass.elite.losses, 4);
+  assert.match(c.recordLine, /elite 0\/4 won \(0%\)/, 'and it is stated in the line the model reads');
+  assert.match(c.historyLine, /Own record:/);
+});
+
+test('no encounters means no record, and it says so rather than claiming 0%', () => {
+  const c = buildRecallContext({version: 1, runs: [{runId: 'r1', result: 'death', finalFloor: 3}], lessons: [], encounters: {}}, {state_type: 'map'});
+  assert.deepEqual(c.encounterRecord, [], 'nothing fought, nothing claimed');
+  assert.match(c.recordLine, /no encounter has been fought yet/);
+  assert.doesNotMatch(c.historyLine, /0%/, 'an empty record must never read as a 0% win rate');
+});
+
+test('an encounter with no wins and no losses seen is not counted', () => {
+  const c = buildRecallContext({version: 1, runs: [{runId: 'r1', result: 'death', finalFloor: 3}], lessons: [],
+    encounters: {'elite:Ghost': {seen: 0, wins: 0, losses: 0, avgHpLostBefore: null}}}, {state_type: 'map'});
+  assert.deepEqual(c.encounterRecord, [], 'a zero-sample encounter carries no information');
 });

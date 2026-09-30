@@ -51,8 +51,48 @@ export function buildRecallContext(store, state, {limit = RECALL_LESSON_LIMIT, m
     lessonsStored: lessons.length,
     encountersSeen: Object.keys(encounters).length,
   };
+
+  // THE AGENT'S OWN RECORD BY FIGHT CLASS. Not a prior and not a guide's opinion - the arithmetic of
+  // every fight this exact policy has actually played, from the store. Measured across 8 Ascension-10
+  // runs: normals 121 seen / 111 won at ~20 HP; ELITES 25 seen / 9 WON at ~30 HP. Elites are won 36% of
+  // the time, and four of eight runs died to one.
+  //
+  // This exists because the route LABEL was not enough. The map already said "Elite next, no rest
+  // before" and the agent walked in at 20 HP anyway, because knowing a thing is not the same as
+  // weighing it. This is the one piece of the decision that only exists because earlier runs are
+  // remembered, and it is the strongest evidence available about what is actually killing the run.
+  //
+  // Reported as a RECORD and not a verdict. A 0-for-4 against one elite is four observations, and a
+  // class total of 25 is not a law - act-1 elite relics are a real source of scaling, and no run in
+  // this corpus has ever reached a boss, so nothing here can say elites should be skipped outright.
+  const classRecord = {};
+  for (const [key, entry] of Object.entries(encounters)) {
+    const cls = String(key).split(':')[0];
+    const seen = isNum(entry?.seen) ? entry.seen : 0;
+    if (seen <= 0) continue;
+    const bucket = classRecord[cls] ??= {seen: 0, wins: 0, losses: 0, hpCostSum: 0, hpCostSamples: 0, distinct: 0};
+    bucket.seen += seen;
+    bucket.wins += isNum(entry?.wins) ? entry.wins : 0;
+    bucket.losses += isNum(entry?.losses) ? entry.losses : 0;
+    bucket.distinct += 1;
+    if (isNum(entry?.avgHpLostBefore)) { bucket.hpCostSum += entry.avgHpLostBefore * seen; bucket.hpCostSamples += seen; }
+  }
+  const encounterRecord = Object.entries(classRecord)
+    .map(([cls, b]) => ({
+      class: cls,
+      seen: b.seen,
+      wins: b.wins,
+      losses: b.losses,
+      winRate: b.seen ? Math.round((b.wins / b.seen) * 100) : null,
+      avgHpCost: b.hpCostSamples ? Number((b.hpCostSum / b.hpCostSamples).toFixed(1)) : null,
+      distinctEncounters: b.distinct,
+    }))
+    .sort((a, b) => b.seen - a.seen);
+  const recordLine = encounterRecord.length
+    ? encounterRecord.map(r => `${r.class} ${r.wins}/${r.seen} won (${r.winRate}%)${r.avgHpCost === null ? '' : `, ${r.avgHpCost} HP average cost`}`).join('; ')
+    : 'no encounter has been fought yet, so there is no record to weigh';
   const historyLine = runs.length
-    ? `${plural(history.runs, 'run')} recorded, ${history.deaths} death${history.deaths === 1 ? '' : 's'}, deepest floor ${history.deepestFloor ?? 'unknown'}`
+    ? `${plural(history.runs, 'run')} recorded, ${history.deaths} death${history.deaths === 1 ? '' : 's'}, deepest floor ${history.deepestFloor ?? 'unknown'}. Own record: ${recordLine}`
     : 'no run has been ingested yet, so there is no history to draw on';
 
   const retrieval = readable
@@ -94,6 +134,11 @@ export function buildRecallContext(store, state, {limit = RECALL_LESSON_LIMIT, m
     present: readable,
     lessons: chosen,
     history,
+    // The class record travels with the payload so a decision can weigh it. It is small, it is
+    // always true of the store it came from, and it is the one thing in the request that exists ONLY
+    // because earlier runs are remembered.
+    encounterRecord,
+    recordLine,
     historyLine,
     considered: retrieval.considered,
     skipped: retrieval.skipped,
