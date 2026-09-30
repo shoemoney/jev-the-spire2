@@ -1,49 +1,51 @@
 ---
 active: true
-iteration: 85
+iteration: 86
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## FOUND THE CODE PATH, AND IT IS THE ARCHITECTURE RATHER THAN A BUG
-`spire-demo/learning/wire.mjs`:
+## THE CONFOUND CANNOT BE REMOVED WITH THE DATA I HAVE
+I said a within-fight comparison at matched turn index would settle the 2.17-vs-4.08 question. Two
+attempts, and the second is the honest one.
 
-    const best = factorsComplete ? scored[0] : {id: jevMove.choice};
+**Attempt 1 was impossible by construction.** I tried to pair a changed and an unchanged decision
+at the same fight AND the same turn index. There is exactly one decision at each turn index, so it
+can never be both. Zero pairs. That was a design error, not a finding.
 
-**The model's own choice is used only when the factor set is incomplete.** When factors are complete
-— 426 of 461 boss decisions — the scorer decides alone, and `deliberation.changed` records that it
-overrode the model. So the 24 substitutions were working as designed, not a lost decision.
+**Attempt 2, matched on depth across fights: also zero.** Bucketing every decision by its index
+within its own fight and requiring >=3 of each kind per bucket produced no usable bucket at all.
 
-## AND THE OVERRIDE IS MEASURABLY WORSE, WHICH IS THE FINDING
-  boss decisions with a measurable outcome : 461
-    scorer AGREED with the model : n=208   848 damage   4.08 per decision   attack-chosen  13%
-    scorer OVERRODE the model    : n=253   549 damage   2.17 per decision   attack-chosen  56%
+The reason, and it is a real property of the data rather than a bug:
 
-**The scorer's overrides pick an attack far more often (56% against 13%) and produce less than half
-the damage per decision.** So it is not choosing the wrong card — it is choosing attacks that do not
-land damage, which is a sharper and stranger failure than picking defence.
+  turn index: how often the scorer overrode, across all boss fights
+     0   73%     4   83%     8   58%
+     1   71%     5   83%     9   67%
+     2   57%     6   25%    10   50%
+     3   46%     7   75%    11   50%
 
-**The confound I am not hiding.** This is association, not causation. The scorer may override on
-intrinsically worse moments — after a big telegraph, late in a long fight, when energy is gone — and
-any of those would produce low damage per decision with no defect involved. Overrides are 253 of 461
-decisions, far too many to be a rare event, so "it only overrides in good situations" is not available
-as an explanation either. What settles it is a within-fight comparison at matched turn index, and
-that is the next measurement.
+`changed` **is** correlated with how deep into the fight the decision is — it ranges from 25% to 83%
+by turn index. So the confound I named is real, not a hedge. But each index holds only 2 to 15
+decisions across the whole corpus, and that is not enough to match on depth with any usable n.
 
-## Where the Ceremonial Beast work now stands
-The 3.0 damage-per-decision arithmetic is still why 0/3. The explanation has now moved three times:
-ordering (refuted — surviving attacks are ranked first, top 4 of 112), scorer bias toward defence
-(refuted — it prefers attacks on every percentile), and now the scorer's overrides themselves, which
-are associated with less than half the damage. **Each was measured before any code was written, and
-two of the three died on contact with the data.** That is the process working, not the process
-failing.
+**So: 2.17 versus 4.08 damage per decision stays uninterpreted.** It is not evidence that the
+overrides are harmful and it is not evidence that they are harmless. With 15 boss fights in the
+entire corpus and a per-index n of 2-15, the question is underpowered, and no amount of clever
+analysis of this data will fix that.
 
-Also: the Waterfall Giant sentinel (999,999,984) corrupted this measurement on the first pass, the
-fifth time it has done so. It is excluded from arithmetic and left unexplained, which is the correct
-order — a measured exclusion rather than a guess at a mechanism.
+## What this actually costs, and what it buys
+Two of the three candidate explanations for the Ceremonial Beast losses are now refuted by
+measurement (ordering, scorer bias toward defence), and the third is real, located in
+`wire.mjs`, and cannot be evaluated on the evidence available. **That is a legitimate place to stop
+and it is not a place to ship anything.** Every change in this session that survived contact with
+data did so because a measurement came first; the temptation right now is to make one that does not,
+and the whole record of the last twenty iterations is a list of what that produces.
+
+The resolution is not more analysis. It is **more boss fights** — which is the thing the loop is
+already doing, and the only genuinely scarce input in this system.
 
 ## Loop state
-565 tests green - architecture located (scorer overrides the model on 426/461) - overrides associated
-with 2.17 vs 4.08 damage per decision - confound named, next measurement is within-fight at matched
-turn index
+565 tests green - override question UNDERPOWERED (15 fights, 2-15 decisions per turn index) - `changed`
+is genuinely correlated with depth (25-83% by index), so the confound is real - no change shipped, and
+the correct next action is play, not analysis
