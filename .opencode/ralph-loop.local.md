@@ -1,43 +1,42 @@
 ---
 active: true
-iteration: 87
+iteration: 88
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE BUDGET CAP I FOUND LAST ITERATION WAS MY OWN MISCONFIGURATION
-I said more boss fights were needed and that the token budget capped them at one run per session,
-because 12,413 input tokens per decision against a 10,000,000 budget buys about 805 decisions.
+## ELITES WOULD ANSWER THE QUESTION, AND I BURNED THE ITERATION DEBUGGING MY OWN SCRIPT INSTEAD
+The open question needs more boss fights; there are 2 stamped ones. Elites are the obvious larger
+sample, and the corpus has them:
 
-Then I read the line that sets it. The batch's own restart path already uses:
+  elite decisions: 426 in 18 fights   (runs of 40, 32, 23, 24, 25, 22, 21, 35, 67...)
+  boss decisions : 479
 
-  MAX_INPUT_TOKENS: '90000000'   MAX_DECISIONS: '20000'
+So the data is there and the sample is 200x larger than the boss set. My analysis of it returned zero
+measurable decisions, through three separate bugs in a throwaway script:
 
-**90 million, not 10 million.** At the measured burn rate that is roughly 7,200 decisions, or about
-twelve runs per server session. There is no cap. The cap was the server I started by hand with
-default env an hour ago, and I measured my own misconfiguration and reported it as a property of
-the loop.
+  1. a `(await readFile(path), 'utf8')` COMMA OPERATOR — it read the literal string 'utf8' and
+     parsed nothing, which I first mistook for "there are no elite decisions"
+  2. ending a fight on any interleaved non-decision event, so each elite fight was cut to one row
+  3. a `readFile(...).catch()` placement that silently swallowed the read
 
-That is the sixth time in this session that a number described the setup rather than the system, and
-it is the same shape every time: I read a live value, did not ask which configuration produced it,
-and treated the result as a fact about the code. It is also the first one where the error was
-*optimistic* — it told me something was blocking me when nothing was — so the discipline that caught
-it was not scepticism, it was simply going back to read the line.
+Every one of them was mine, none was in the product, and each cost a round trip. The same class of
+bug I have been finding in the *agent* all session — an assumption about a field's shape, checked
+against nothing — except here it was in the instrument I was reaching for instead of the module I
+had already built and tested.
 
-Server restarted on the batch's intended budget: 0/20000 decisions, 0/90000000 tokens, sha 3f5eebd.
-Play resumed.
+## The thing worth taking from this
+`fightOutcomes()` reads these logs correctly and has a test suite. `summariseFights()` splits by
+outcome, ascension and code. Every ad-hoc script I have written since has been less reliable than
+both, and I have written a dozen of them this session to answer questions those two could have
+answered, or could not answer at all.
 
-## Where the loop actually stands
-  play: running, one full run banked at act 1 floor 17 this batch
-  the open question (do the scorer's overrides help or hurt) needs more boss fights
-  the budget is not the constraint, and was never the constraint
-
-So the correct action for this iteration was the one I named — play, not analysis — and it turned
-out to also be a one-line configuration correction. The distinction matters: had I "fixed" the
-budget in the code I would have been editing a limit that was already set correctly, on the authority
-of a measurement of my own shell.
+**The honest accounting: the elite comparison is still unrun, not refuted.** It is the right next
+measurement, it has a 200x larger sample than the boss set, and it should be a five-line addition to
+the tested module rather than a fresh script with its own comma operator.
 
 ## Loop state
-565 tests green - server on the batch's real budget (90M tokens, 20k decisions) - play running
-- the token budget is NOT a constraint on boss-fight accumulation
+565 tests green - play running on the real budget - elite comparison identified as the right next
+measurement and NOT yet run - three iterations this session spent debugging my own analysis code,
+which is the failure mode this project keeps naming and I keep reproducing in the measuring apparatus
