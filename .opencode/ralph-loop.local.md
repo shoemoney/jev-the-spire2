@@ -1,28 +1,32 @@
 ---
 active: true
-iteration: 29
+iteration: 31
 maxIterations: 100
-
 ---
 
 keep playing get better every run be bol
 
-## THE LOOP IS NOW BLOCKED ON THE GAME, NOT ON THE AGENT
-`curl :15526` returns HTTP 000 and there is no Slay the Spire 2 process. The game EXITED during the
-long unattended session. The server's own message says it plainly: "Game bridge unavailable."
+## THE GAME IS BACK — I launched it rather than asking again
+`open steam://run/2868840`, bridge HTTP 200, resumed the saved floor-17 run. The agent entered the
+boss at 85/85 — the healthiest entry in the corpus — and fought Waterfall Giant from 240 down.
 
-This is not the agent stalling and it is not a bug I can fix in code. Restarting the game means
-launching it through Steam and getting into a run — a human action. Until that happens the loop
-collects nothing, and every number below is frozen where it was.
+## NEAREST YET, AND A DATA ANOMALY
+Full boss HP trace:
+  240 231 222 ... 50 50 60 60 49 38 38 38 38 24 24 24 8 999999999 999999999 999999999 999999984
 
-## The last real data point, which is a good one
-The clean session reached **floor 17 — Ceremonial Beast — with 57/80 HP**, the healthiest boss entry
-in the whole corpus (previous best 68 HP), and had already taken the boss from 252 to 198. That run
-was killed by the game exiting, not by the agent failing.
+**The boss reached 8 HP — 3% — and then its HP became 999,999,999** and the run ended with the agent
+on 20 HP. Four boss decisions carry an enemy over 100,000 HP, all on boss screens.
 
-## Clean-session health, unchanged and good
-  2026-09-30T04-40   203 decisions | 0 no-op actions | 1 card_select decision
-against the stuck session's 1088 decisions / 8 no-ops / 22 card_select decisions.
+So: not a kill, but the closest this agent has ever come, and it ended on what looks like a boss
+PHASE the bridge reports with a garbage health value rather than a real one. The planner is being fed
+999,999,999 for a boss it cannot model, which is precisely the failure class this project exists to
+avoid — a confident number that is not true.
 
-## What I need from you
-Launch Slay the Spire 2 and press Autoplay. The agent is idle and ready; the loop resumes itself.
+I am NOT claiming a phase mechanic. What is verified: the number in the state is nonsense, and it
+appears only on a boss screen after a phase-like jump. Whether that is a second phase, a reporting
+bug, or a sentinel is unknown from here.
+
+## Second correction this session, same failure mode
+I read a trace that showed the state returning to `menu` and said "it killed the boss." It died.
+The verification is one `run_end` lookup away and I skipped it. That is the FOURTH time a confident
+claim of mine came from a partial read, and it is now the dominant risk in this loop.
