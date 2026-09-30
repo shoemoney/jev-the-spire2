@@ -1,32 +1,37 @@
 ---
 active: true
-iteration: 44
+iteration: 45
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## MORE BOSS DATA — SIX FIGHTS, SIX DEATHS, BUT TWO GOT BELOW 20%
-  Lagavulin Matriarch  233 -> 140   40%   waste 61%  dmg  97
-  Ceremonial Beast     252 -> 127   50%   waste 39%  dmg 221
-  Vantom               173 ->  72   58%   waste 36%  dmg 142
-  Ceremonial Beast     252 ->  73   71%   waste 21%  dmg 593
-  Waterfall Giant      240 -> 1e9   ---   waste 26%  dmg 393   (sentinel pool)
-  Vantom               172 ->  27   84%   waste 18%  dmg 215
-  Waterfall Giant      240 ->  45   81%   waste 38%  dmg 248
+## LANDED — the lower bound, which is the signal I had been describing for four iterations
+Sweep 3's Opus review found it concretely. When any attack intent is unread,
+`displayed_incoming_attack_total` is null, and a null incoming makes the forecast say
+"you survive." Technically true — an unread attack is not a KNOWN attack — and
+practically the opposite, because the readable ones are still coming.
 
-Two of these left the boss under 20% of its health. Still no kill. The waste rate on the
-close ones is 18% and 21% — the menu work is holding — and the fight still runs out of act.
+    both readable   total=21   lower bound=21
+    ONE unread      total=null lower bound=12   <-- the case that matters
+    all unread      total=null lower bound=0    <-- nothing readable, no guess
 
-## A DISPLAY BUG IN MY OWN SCRIPT
-The percentage printed `-416666560% removed` for the billion-HP sentinel, because the arithmetic
-ran against a value that is not a health pool. A percentage computed on a placeholder is exactly
-the confident-not-supported number this project exists to reject — and this one was in MY tool,
-not the agent. The throwaway script is fixed; the committed tool does not compute that percentage,
-which is the right way to avoid it.
+`low` was already computed and thrown away whenever anything was unread. It is a floor
+on the damage this turn takes, it is exact when everything reads, and when the floor alone
+exceeds HP plus block the unread intents cannot rescue the turn — they can only add.
 
-## ELITE RECORD HAS MOVED
-  before this iteration:  11/34  (32%)
-  now:                    17/40  (43%)
-Six more fights, six more wins. That is 6-for-6, which is not credible as a rate on its own and I am
-not claiming the act-gate fix caused it. It is the best the elite number has looked in the project.
+This is the arithmetic behind "0 of 18 lost fights were warned early." The bound is
+published in `factsFor` and carried as `displayed_block_gap_lower_bound`; the exact
+`displayed_block_gap` stays null where it is unknown, because the bound is ADDITIONAL
+evidence and must not replace the whole thing dressed up as it.
+
+## Also from the same review, banked and not yet actioned
+- model Thorns in `retaliationRule` (the module already exists to apply it)
+- a kill removes the attacker's intent, so a lethal-on-paper plan that kills the only
+  attacker should be reclassified as a survivor rather than pushed down the loss path
+- `refuseLethalChoice` should prefer a `draw`-boundary plan over a stated-death plan:
+  unknown is strictly better than stated death
+- the 89.4% calibration still mixes prefix counterfactuals with executed turns
+
+## Live
+518 tests green · 5/14 sweep-3 reviews · server restarted with the bound · ascension-0 run going
