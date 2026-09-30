@@ -1,46 +1,52 @@
 ---
 active: true
-iteration: 70
+iteration: 71
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## candidate_details SCALES WITH CANDIDATE COUNT, AND THE COMPACTOR IS NOT THE PROBLEM
-Across 52 measured decisions on current code:
-  p50 21.6 KB · p90 57.3 KB · max 69.3 KB   (the 82 KB decisions are gone from this batch)
+## THE CAP IS DEAD, AND THE REASON IS MEASURED, NOT GUESSED
+For 1741 executed decisions with 11+ candidates, the depth of the CHOSEN candidate (1 = first):
+  min 1 · p50 6 · p90 18 · max 63
+  beyond position 10: 484/1741 (28%)
 
-  median candidate_details by number of legal candidates:
-     <=10 candidates:  0.8 KB  (n=40)
-     11-20 candidates: 15.0 KB  (n=10)
-     21-40 candidates: 21.2 KB  (n=12)
+**A cap at 10 breaks 28% of these decisions.** The 26 KB of candidate_details is load-bearing. Not
+shipping the cap, on the same standard that stopped the graded-survival treatment.
 
-Roughly 0.8 KB per candidate above the 10 mark, and a cliff between 10 and 11. So a board that
-offers 28 legal actions spends 26.3 KB of a 72.9 KB request on describing them.
+## WHY THE AGENT PICKS DEEP: THE LIST IS 63% DUPLICATES
+  39,504 candidates across 2,336 decisions
+  exact command duplicates : 24,716  (63%)
+  full-descriptor duplicates: 24,716  (62.6%)   <- 0.0% share a command but differ elsewhere
 
-**It is not a formatting problem.** compactRequest() already strips `forecast.assumption`, groups
-identical cards, trims the observation arrays, and interns repeated forecast objects losslessly.
-25 KB is genuinely distinct forecast data. There is nothing left to compress — the size IS the
-number of things the model is being asked to choose between.
+One 64-candidate board held 19 distinct commands and **13 distinct labels** — "Strike -> Wriggler ->
+Setup Strike" appeared about sixty times, and the chosen action was "Defend" at position 63. The
+model was not finding a hidden gem; it was reading past sixty copies of one plan to reach an option
+that should have been at the top.
 
-## And I was half-wrong again, in the same way
-Last iteration I said "candidates are not the story" from a 12 KB sample where candidate_details
-was 0.73 KB. It is 26.3 KB in a 73 KB one. The mistake was sampling one decision and generalising;
-the answer was bimodal all along and I read the mode, not the distribution. Percentiles would have
-told me that immediately, and there are now 52 measured decisions to take them over.
+**That reframes the whole thing.** The 26 KB is sixty copies of one forecast, and the deep picks are
+a symptom of burying distinct options among identical ones. Dedup is safe where a cap is not —
+identical descriptors carry identical information — and the numbers say the duplicates really are
+identical (0.0% differ outside the command).
 
-## The fix is a POLICY change, and I am not shipping it on this evidence
-Capping which candidates get a full forecast is not a formatting tweak — it can remove the action
-that would have won. That is the same shape as the graded-survival treatment I declined to build
-for changing 5 boards in 2191, and the bar is the same: measure first.
+## BUILT IT, AND AN EXISTING GUARD SAYS NO — SO IT IS REVERTED
+Implemented full-descriptor dedup in compact-request.mjs with four tests. Two of my own tests
+caught a real over-collapse first (keying on `String(parsedObject)`, which is `[object Object]`, and
+keying on the command alone, which merges candidates that carry no command at all — that one was
+caught by a PRE-EXISTING test, which is exactly what it was written for).
 
-The measurement is available and cheap, because the log already records which candidate was chosen.
-The question that decides it: **for the decisions with 11+ candidates, how deep in the list was the
-one actually chosen?** If the answer is "always near the front", a cap is nearly free. If the agent
-regularly wins with candidate 24 of 28, then those 26 KB are load-bearing and cutting them buys
-1 KB of tokens at the price of the run.
+Then `deliberation.test.mjs` failed: "kill-versus-block review ... without removing defense"
+expected both candidates and dedup removed one. The fixture builds `kill` and `block` with identical
+descriptors, differing only by id and label.
 
-Not measured yet. Next.
+**That is evidence dedup can remove a distinguishable option, and I cannot tell from here whether
+the real corpus has that shape.** In the corpus labels DO differ (13 distinct labels), so the real
+duplicates may be safe — but "may be" is the standard I have refused to ship against five times now.
+Reverted. 562 green.
+
+The remaining question is specific and cheap: **do any two candidates in the real corpus share a
+descriptor AND differ in label?** If none do, dedup is provably lossless and the change is a
+straight 63% cut in the largest field on the wire. That is one query and it decides it.
 
 ## Loop state
-562 tests green · batch running · percentiles now the default, not a single sample
+562 tests green · dedup reverted pending one query
