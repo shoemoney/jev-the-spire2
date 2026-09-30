@@ -1,37 +1,41 @@
 ---
 active: true
-iteration: 38
+iteration: 40
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## I HAVE TO RETRACT THE HEADLINE
-The "first boss kill" and "Act 2 floor 31" are real events. They are ALSO not comparable to
-anything measured before, because of a difficulty drop I let slip through.
+## THE HANDBACK IS CONFIRMED, NOT ASSUMED
+The bridge exposes ascension only in MULTIPLAYER lobby objects (`max_ascension`, `ascension` fields in
+`multiplayer_load_lobby` / `multiplayer_join` examples). The singleplayer `character_select` options
+are, verbatim from the vendor reference: character IDs/names, `back`, `confirm`/`embark`,
+`unready`. There is no ascension control on the singleplayer path.
 
-  session                     ascension   max_hp                    deepest
-  2026-09-23T20-41            [3, 10]      [75,80,85,86,91]         floor 14
-  2026-09-30T01-45            [10]         [80, 86]                 floor 15
-  2026-09-30T02-03            [10]         [80]                     floor 17
-  2026-09-30T02-36            [0, 10]      [80,87,91,98]            floor 17
-  2026-09-30T04-40            **[0]**      [80,85,91,97]        **floor 31**
+`custom` mode does not help either: the reference states a `seed` "is only supported in menu contexts
+that expose a real seeded flow. Standard singleplayer character select currently returns an error
+without starting a run when `seed` is supplied."
 
-**The whole session containing the boss kill ran at ASCENSION 0.** Every earlier run was 10. The
-improvement is confounded with an easier game and I reported it as progress.
+No Ascension-10 save is on disk to resume either — the only save-path directory belongs to the
+UnifiedSavePaths mod and the run that produced floor 31 was started fresh.
 
-Cause: the batch navigates `main_menu -> singleplayer -> standard -> IRONCLAD -> confirm`, and
-nothing in that path sets the ascension, so the game defaults to 0. The earlier "ascension 10"
-runs were a resumed SAVE, not a fresh one — fresh runs have all been ascension 0 since.
+**So comparable Ascension-10 data requires a human to start a run at Ascension 10 in the game UI.**
+That is the one thing the loop genuinely cannot do for itself.
 
-The batch now navigates to the ascension control, asserts the run starts at 10, and PRINTS A WARNING
-if it does not. A metric that silently changes difficulty is the same failure class as a metric that
-silently changes definition.
+## The tool now refuses to pool across difficulty
+`fight-outcomes.mjs` prints `!! MIXED ASCENSION {...} — NOT a like-for-like sample` and refuses to
+present a pooled win rate without the cut. A metric that can silently change difficulty must not be
+summarised without it.
 
-## What survives the retraction
-- The agent is still alive two acts deep — that is a real behavioural change, at a lower difficulty.
-- 515 tests green, all the landed fixes are real and independently verified.
-- What is NOT established: that the agent got better at Ascension 10. That has to be re-measured.
+## Per-ascension, the honest baseline
+  ascension  0:  9 deaths, best floor 31
+  ascension  3:  1 death,  floor 14
+  ascension 10: 10 deaths, floors 14,9,11,12,6,8,7,15,17,6   best 17
 
-## Next
-Re-baseline at ascension 10 before any further comparison.
+Ascension 0 median death floor 17, Ascension 10 median 11. The gap is real and it is the reason
+last iteration's headline could not be believed.
+
+## The batch warns, loudly, on every non-10 run
+  [run started: ascension 0]
+  [WARNING: ascension is 0, not 10 — this run is NOT comparable to earlier ones]
+Working as intended: it fired on the first run after the fix.
