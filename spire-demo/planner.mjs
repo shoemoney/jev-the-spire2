@@ -563,11 +563,27 @@ function forecast(m, s) {
     delayedDeathEffects:m.enemies.filter(e=>!e.departedWithLeader).flatMap(e=>(e.status??[]).filter(p=>/when killed|upon dying|on death|when this dies|would be defeated|revives?/i.test(p.description??'')).map(p=>({enemy:e.name,rule:p.description,note:'Not included in current-turn attack total; death may not end combat.'}))),
     hpLoss: uncertain ? null : loss,
     hpAfter: uncertain ? null : Math.max(0,s.player.hp-loss),
-    survives: uncertain ? null : m.hp > projectedLoss,
+    // A BOUND CAN STILL PROVE DEATH. `uncertain` blanks the verdict, which is right when nothing is
+    // known — but when an intent could not be READ, the intents that WERE read are still coming, and
+    // they are a floor. If the floor alone exceeds HP plus block, this turn is lethal whatever the
+    // unread ones turn out to be, because they can only add. That is arithmetic over printed numbers,
+    // not a guess, and it is the only way a plan can be told it dies on a turn the parser could not
+    // fully read. 18 lost fights carried no early lethal verdict, and this is where that came from.
+    // Scoped to `!parsed` ONLY, deliberately. A bound that exceeds HP plus block does prove death
+    // under ANY source of uncertainty — a facing multiplier only raises the damage — but four
+    // existing tests pin `survives: null` when the cause is positioning, and overturning four
+    // deliberate safety rules on the strength of my own reasoning is exactly the over-reach that has
+    // broken this codebase repeatedly. So the bounded verdict fires for the case it was built for:
+    // an attack the PARSER could not read, where the readable ones are provably still coming.
+    survives: uncertain ? (!parsed && boundMin !== null && m.hp <= unblocked(boundMin) ? false : null) : m.hp > projectedLoss,
     // The pessimistic end of the bound, for ranking a plan whose survival cannot
     // be stated outright. Null whenever there is no ceiling to test against.
     hpLossUpper: lossUpper,
     survivesUpper: boundMax === null ? null : m.hp > unblocked(boundMax),
+    // A stated death PROVEN by a floor. Distinct from a stated death proven by a total, and distinct
+    // from `unknown` — the gate may act on this, and must never act on an unknown as if it were this.
+    boundedLethal: uncertain && !parsed && boundMin !== null && m.hp <= unblocked(boundMin),
+    incomingLowerBound: boundMin,
     bossStunned:m.stunned.length>0, bossThresholds:m.enemies.flatMap(e=>(e.status??[]).filter(p=>p.name.toLowerCase()==='plow').map(p=>({enemy:e.name,damageToStun:Math.max(0,e.hp-p.amount)}))),
     energyLeft:m.unsupported ? null : m.energy, slipperyRemoved:m.removedCharges, strengthGained:m.extraStrength,
     quality:uncertain?'unknown':warnings.length?'partial':'calculated',

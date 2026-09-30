@@ -50,10 +50,26 @@
 // known about it would be an invented safety claim, which is worse than no gate at all.
 const STATED_QUALITIES = new Set(['calculated', 'exact', 'partial']);
 
+// A BOUNDED LETHAL VERDICT COUNTS AS STATED — FOR `false` ONLY.
+//
+// When an attack intent could not be read, the forecast reports `boundedLethal`: the intents that
+// WERE read already exceed HP plus block, so the turn is dead whatever the unread ones are, because
+// they can only add. That is arithmetic, and the gate has to be able to act on it: 18 lost fights
+// carried no early lethal verdict at all, and this is where the verdict now comes from.
+//
+// ASYMMETRIC ON PURPOSE. `boundedLethal` is admitted for the `false` direction only and is never
+// added to `STATED_QUALITIES`, so it can never license a claim that a plan SURVIVES. A floor
+// proves death; it never proves safety.
+const statesLethal = f => STATED_QUALITIES.has(f?.quality) || f?.boundedLethal === true;
+
 /** `true`/`false` when the forecast states a survival verdict, `null` when it states nothing. */
 export function statedSurvival(candidate) {
   const forecast = candidate?.forecast;
   if (!forecast || typeof forecast !== 'object') return null;
+  // A bounded verdict is admitted for `false` and NOT for `true`: the floor can only ever prove
+  // death, so `statesLethal` is checked first and the `true` direction still requires a fully
+  // stated quality. A plan is never called a survivor on the strength of a bound.
+  if (statesLethal(forecast) && forecast.survives === false) return false;
   if (!STATED_QUALITIES.has(forecast.quality)) return null;
   return typeof forecast.survives === 'boolean' ? forecast.survives : null;
 }
