@@ -67,7 +67,8 @@ test('a dead player and a dead enemy are both unknown, not verdicts', () => {
 // card-reward branch — where it can never fire, because attrition is a combat idea and card rewards
 // are not combat. Caught by building the probe before committing to the wiring.
 test('the attrition line reaches the combat questions, and stays off a card reward', async () => {
-  const {perspectiveQuestion} = await import('../deliberation.mjs');
+  const {decisionQuestion} = await import('../planner.mjs');
+  const {factoredQuestion} = await import('../factored.mjs');
   const combat = {state_type: 'monster', run: {act: 1, floor: 6},
     player: {hp: 20, max_hp: 80, gold: 0, status: [], relics: [], potions: []},
     battle: {round: 3, turn: 'player', is_play_phase: true,
@@ -75,11 +76,13 @@ test('the attrition line reaches the combat questions, and stays off a card rewa
   const cands = [{id: 'a0', label: 'Strike', command: {action: 'play_card', card_index: 0}, details: {}}];
   const losing = {status: 'losing-on-attrition', turnsToLive: 4, turnsToKill: 33, why: '4 turns of life, 33 to finish the enemy'};
 
-  const q = perspectiveQuestion(combat, cands, [], [], losing);
-  assert.match(q.questions.move.instructions, /LOST ON TIME/, 'the move question must carry it');
-  assert.match(q.questions.survival.instructions, /LOST ON TIME/, 'and the survival question');
+  const q = decisionQuestion(combat, cands, losing);
+  assert.match(q.questions.move.instructions, /LOST ON TIME/, 'the base question must carry it');
+  // and through the SHIPPED policy's builder, which is the hop that dropped it for 12 iterations
+  const f = factoredQuestion(combat, cands, {}, losing);
+  assert.match(f.questions.move.instructions, /LOST ON TIME/, 'factored must forward it to the base');
 
-  const unknown = perspectiveQuestion(combat, cands, [], [], {status: 'unknown'});
+  const unknown = decisionQuestion(combat, cands, {status: 'unknown'});
   assert.doesNotMatch(unknown.questions.move.instructions, /LOST ON TIME/,
     'an unknown verdict must contribute nothing at all, not a vague worry');
 });

@@ -7,6 +7,7 @@ import {setupLinks} from './setup-links.mjs';
 import {encounterBrief,deckSnapshot,visibleState} from './encounters.mjs';
 import { actionsFor, factsFor, makeQuestion } from './actions.mjs';
 import { byName as gameDataByName } from './gamedata/game-data.mjs';
+import { attritionLine } from './learning/attrition.mjs';
 import {retrieveMechanics, lookup} from './mechanics/retrieve.mjs';
 
 export const POLICY_VERSION = 'jev-visible-v23-retaliation';
@@ -888,16 +889,31 @@ export function mechanicsContext(state, cap = MECHANICS_BYTE_CAP) {
   return kept.length ? context : null;
 }
 
-export function decisionQuestion(s,candidates) {
+// CUMULATIVE DANGER, ATTACHED AT THE BASE.
+//
+// A per-turn `survives` verdict says nothing about whether the FIGHT is winnable, and that is why 18
+// lost fights in the corpus carried no early lethal forecast. The verdict is two observed rates
+// compared as counts — turnsToLive < turnsToKill — and it is attached HERE, in the base every
+// policy builds on.
+//
+// It was previously attached in `deliberation.perspectiveQuestion`, which is one of TWO builders:
+// `factored.factoredQuestion` is the other, and the shipped recall policy uses that one. So the
+// signal reached the unflagged policy's requests and nothing else — built, unit-tested, described in
+// the run state, printed in the loop log, and delivered to ZERO requests for twelve iterations. Its
+// unit tests passed throughout, because they called the builder that had it.
+//
+// At the base, a new policy cannot forget it.
+export function decisionQuestion(s,candidates,fightAttrition) {
   s=visibleState(s);
   if(!isCombat(s)){const q=makeQuestion(s,candidates);q.state.encounter=encounterBrief(s);q.state.deck=deckSnapshot(s);q.state.spending_routes=spendingRoutes(s);return q;}
   const mechanics = mechanicsContext(s);
+  const attritionNote = attritionLine(fightAttrition);
   return {
     model:'typesafe/jev-1.13',
     state:{game:'Slay the Spire 2',objective:'Win the run. Survive the current turn and preserve useful resources.',state:s,encounter:encounterBrief(s),deck:deckSnapshot(s),facts:factsFor(s),policy:POLICY_VERSION,setup_dependencies:setupLinks(s),mechanics_review:mechanicsReview(s),...(mechanics?{[MECHANICS_STATE_KEY]:mechanics}:{}),potion_timing:potionTiming(s),
       forecast_scope:'Plans are short prefixes, not complete optimal turns. Forecasts assume ending after the prefix. Null means unknown, not zero. Partial outcomes have explicit caveats. Do not treat displayed card damage as actual damage through enemy powers. When incomingExact is false, incomingMin and incomingMax bracket the turn\'s damage: prefer a plan that survives incomingMax, and do not read the single incoming figure as what will land. A bounded plan is a usable plan — rank it on its bound instead of setting it aside.'},
     questions:{move:{type:'choice',
-      instructions:'Choose the next action or short plan that best advances winning the run. Derive tactics from visible rules, intents, cards and observations. Calculations are aids, not guaranteed outcomes; partial estimates omit stated effects and null means unknown. Evaluate tradeoffs over the encounter, not only the current turn. Only the FIRST action executes, followed by a fresh observation. Choose only among supplied IDs.',
+      instructions:'Choose the next action or short plan that best advances winning the run. Derive tactics from visible rules, intents, cards and observations. Calculations are aids, not guaranteed outcomes; partial estimates omit stated effects and null means unknown. Evaluate tradeoffs over the encounter, not only the current turn. Only the FIRST action executes, followed by a fresh observation. Choose only among supplied IDs.'+(attritionNote?' '+attritionNote:''),
       criteria:Object.fromEntries(candidates.map(c=>[c.id,JSON.stringify({sequence:c.plan,forecast:c.forecast,first_action_rules:c.details.description})])),
     }},
   };

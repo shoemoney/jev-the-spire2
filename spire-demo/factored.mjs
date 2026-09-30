@@ -166,8 +166,8 @@ const isMapBoard = state => state?.state_type === 'map';
 
 export const isCombat = state => ['monster', 'elite', 'boss'].includes(state?.state_type);
 
-export function factoredQuestion(state, candidates, { maxFactored = MAX_FACTORED_CANDIDATES, waste = true } = {}) {
-  const base = decisionQuestion(state, candidates);
+export function factoredQuestion(state, candidates, { maxFactored = MAX_FACTORED_CANDIDATES, waste = true } = {}, fightAttrition) {
+  const base = decisionQuestion(state, candidates, fightAttrition);
   const factored = candidates.slice(0, maxFactored);
   const questions = { ...base.questions };
   // The broad `move` question carries the screen's own criteria. decisionFocus holds

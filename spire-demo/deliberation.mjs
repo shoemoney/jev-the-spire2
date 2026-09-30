@@ -54,12 +54,6 @@ export function perspectiveQuestion(state,candidates,recent=[],seenCards=null,fi
   for(const role of ['move','synergy','resources'])payload.questions[role].instructions+=' '+instruction+effectNote;
   return payload;
  }
- // CUMULATIVE danger, stated as arithmetic, on EVERY screen. A per-turn `survives` verdict says
- // nothing about whether the FIGHT is winnable, which is why 18 lost fights contained no early
- // lethal forecast at all. It only says something once turns have been observed, so it is inert
- // outside combat and on a fight's first turn — `attritionLine` returns '' for both.
- const line=attritionLine(fightAttrition);
- if(line)for(const role of ['move','survival','resources','pressure'])if(payload.questions[role])payload.questions[role].instructions+=' '+line;
  const focusReview=targetFocusReview(state);
  if(focusReview)for(const role of ['move','pressure','encounter','survival','tempo'])payload.questions[role].instructions+=' '+focusReview;
  const deadline=deadlineReview(state);

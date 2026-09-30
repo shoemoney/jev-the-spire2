@@ -83,7 +83,11 @@ function memoryEffect(recall, gate) {
     : `${memory}; the safety gate did not fire: ${gate.reason}.`;
 }
 
-export async function recallingDeliberate({state, candidates, ask, onStage = () => {}, memory, limit = RECALL_LESSON_LIMIT}) {
+// `fightAttrition` was being handed to this function by server.mjs and silently dropped: the
+// parameter did not exist, so the whole loss-on-time signal — built, tested, and shipped as the
+// answer to "0 of 18 lost fights were warned early" — never reached a single request. It is the
+// third signal in this project to be built correctly and connected to nothing.
+export async function recallingDeliberate({state, candidates, ask, onStage = () => {}, memory, fightAttrition, limit = RECALL_LESSON_LIMIT}) {
   if (!candidates.length) throw new Error('No decision candidates');
   // `memory` arrives either as a bare store or as loadMemory()'s envelope, which is the same thing to read
   // but not the same thing to destructure - guessing wrong would silently discard every lesson.
@@ -94,7 +98,7 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
   const summary = recallSummary(recall);
   // Attach AFTER compacting: the compactor rewrites candidate descriptors and interning tables, and a
   // context it knows nothing about has no business in that path.
-  const question = compactRequest(factoredQuestion(state, candidates));
+  const question = compactRequest(factoredQuestion(state, candidates, {}, fightAttrition));
   question.state[RECALL_STATE_KEY] = recall;
   onStage(summary.lessons
     ? `Jev is scoring every option in one pass, with ${pluralish(summary.lessons, 'stored lesson')} in view`
