@@ -1,43 +1,49 @@
 ---
 active: true
-iteration: 67
+iteration: 68
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## PLAY DIED, AND THE CAUSE IS THE PROMPT SIZE
-The batch failed with "The operation was aborted due to timeout". Not the API — it is healthy and
-fast: p50 270ms, p90 480ms, p95 649ms over 4154 decisions. A 30s timeout is ~100x the median, and
-the only historical 30s decisions were the ones with 30k input tokens. So this was never a network
-problem; it is payload size.
+## MEASURED ON THE WIRE: BOTH OF LAST ITERATION'S CLAIMS WERE WRONG
+Added `requestBytes` and per-part `requestPartBytes` to every decision — the byte count of the
+body actually sent, plus each part of the payload. It takes one field and settles the question.
 
-Today's ordinary monster decisions, in input tokens:
-  6,977   7,062   8,821   15,246   15,871   20,783   21,189   23,557   23,883   26,471
-and the timeouts begin immediately after the 26,471-token decision. 291 decisions in all history
-exceeded 20k tokens.
+  monster  wire=82.3 KB  in=24241 tok  lat=529 ms
+      state          45.1 KB   55%
+      questions      37.1 KB   45%
+  monster  wire=73.1 KB  in=21763 tok  lat=546 ms
+  monster  wire=70.3 KB  in=20976 tok  lat=406 ms
 
-What is actually IN the payload, measured on a 23,557-token monster decision:
-  candidates      71.7 KB   81%
-  memory           8.3 KB    9%
-  state            4.0 KB    5%
-  deliberation     2.8 KB    3%
-  factors          1.4 KB    2%
+**Claim 1 was wrong.** I said 71.7 KB of candidates was 81% of the payload. The logged candidate
+list is not what gets sent; `state` is 55% and `questions` 45%, and candidates are not the story.
 
-**81% is the candidate action list, to choose between Strike and Defend.** 71.7 KB of candidates
-for one turn in a trash mob is the whole problem, and it is also the bill.
+**Claim 2 was worse.** I said timeouts followed the 26,471-token decision. The last SUCCESSFUL
+decision before the three timeouts was 7,062 tokens at 07:04:25 — the smallest in that stretch, not
+the largest. And these measurements run 20-24k tokens at 406-546 ms with no trouble at all. So
+payload size does not explain the timeouts, and the batch is running again now without any change
+to prompt size.
 
-## What I have NOT established, stated plainly
-That is the size of the LOGGED candidates, not the size of the request SENT. The planner may
-already trim them into a compact prompt, in which case the 26k tokens come from somewhere I have
-not measured and this analysis is pointing at the wrong thing. The next step is to log the actual
-request body size next to the logged payload and compare, because guessing which one it is would
-be the same mistake as the last two: reasoning about the code instead of measuring the wire.
+The correlation I saw was an artefact of listing token counts and then assuming the failures came
+after the big ones. I never checked where the failures actually sat in the sequence. That is the
+same failure as the two before it — a plausible story built on numbers I had not lined up against
+the thing I was explaining.
 
-## Also worth knowing
-`/tmp/srv.log` is NOT the agent server — something else on this machine owns that path and its
-output is a different HTTP service. I spent a diagnostic cycle reading it. The agent is `node
-server.mjs` (pid 34330) and `/api/status` answers 200.
+## What is still true, and worth doing for its own sake
+20-24k input tokens to choose a card in a trash mob is genuinely wasteful — it is 55% `state` and
+45% `questions`, and it is the bill. Latency is fine (p50 270ms) so this is a COST and context-
+window problem, not a reliability one. Worth trimming on those grounds alone, and the measurement
+above says where to look: `state`, not candidates.
+
+## The lesson, and it is the third time
+I have now told a tidy causal story three iterations running and been wrong three times. Each time
+the instrument existed and I reached for reasoning instead. The one thing that worked — logging
+attrition — worked because it put a number on live data that contradicted me within a minute.
+
+The timeouts themselves remain unexplained. Three consecutive, now recovered, with no code change
+and no size correlation. Most likely transient upstream. **Not diagnosed, and I am not going to
+write a story about it.**
 
 ## Loop state
-555 tests green · batch restarted · this is a measurement, not yet a fix
+555 tests green · wire measurement shipped · batch running

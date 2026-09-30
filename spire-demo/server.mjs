@@ -309,6 +309,15 @@ async function step(token, preview = false) {
         // Decision calls compute an answer and change nothing, so a duplicate
         // in flight is safe. Game commands below are NOT hedged.
         const body=JSON.stringify(payload);
+        // MEASURE THE WIRE, not the objects. A 26k-input-token decision was traced to a 71.7 KB
+        // LOGGED candidate list, and the logged list is not the request — the planner may trim it
+        // into something far smaller, in which case that whole analysis pointed at the wrong
+        // thing. Reasoning about which of the two it is would repeat the error; the byte count of
+        // the actual body settles it, and costs one field.
+        //
+        // Per-part, because a single total cannot say WHICH part to cut.
+        const partBytes=Object.fromEntries(Object.entries(payload).map(([k,v])=>[k,v==null?0:JSON.stringify(v).length]));
+        view.requestBytes=body.length; view.requestPartBytes=partBytes;
         const attempt=async signal=>{
           view.hedgeAttempts=(view.hedgeAttempts??0)+1;
           const r=await fetch('https://openrouter.ai/api/alpha/decisions',{
@@ -335,7 +344,7 @@ async function step(token, preview = false) {
     // the agent reasons with could not be audited, replayed, or measured after the fact, and a bug
     // in it would have been invisible forever. The fix that made `dealt` observed in iteration 65
     // was unfalsifiable until this was logged: there was no way to check it on real data.
-    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
+    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
     if (token !== generation) { await log({ ...event, outcome: 'cancelled' }); return; }
     if (preview) { await log({ ...event, outcome: 'preview' }); view.message = `Preview: ${chosen.label}`; return; }
     const fresh = await observe();
