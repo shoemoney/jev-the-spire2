@@ -1,34 +1,34 @@
 ---
 active: true
-iteration: 18
+iteration: 19
 maxIterations: 100
+
 ---
 
 keep playing get better every run be bol
 
-## Built the thing that would have prevented three of my own bugs
-`.private/loop/fight-outcomes.mjs`. This session produced THREE wrong headline numbers, all
-measurement mistakes, not code mistakes:
+## TWO REAL BUGS, BOTH MINE, BOTH FOUND BY READING THE ERROR NOT THE DASHBOARD
 
-  1. "the agent never skips"  — parsed a field that is not the field. It skips 37%.
-  2. "potion spent on a floor-3 mob" — read the wrong run's log file. It was floor 14, full HP.
-  3. "90 fights, 50 lost — half die" — matched deaths by FLOOR. Floors repeat: one death at
-     floor 6 had ELEVEN distinct fights sharing it.
+**1. `seenCards` killed the decision loop on every restart.** `view` is persisted to
+session.json and restored verbatim; JSON has no Set, so a restored Set comes back as `{}` and
+`[...view.seenCards]` threw "(view.seenCards ?? []) is not iterable". That aborted the step and left
+the server PAUSED with the exception as its message. It had been happening on every restart since
+iteration 10 — including the one that made a run look "stuck" when the server was simply dead.
+Seen cards is now an ARRAY, which round-trips through JSON intact.
 
-The floor bug was the dangerous one: wrong in the direction that LOOKS alarming, and it also
-hid a real pattern. Outcomes derived by ORDERING instead show blocking streaks at 95% -> 87% ->
-81% won, which is what was spotted by eye before it was measurable.
+**2. A card-selection overlay was a dead end.** A run sat on "Choose 3 cards to Enchant" with nine
+confirms executed and the screen never advancing. `actionsFor` offered `select_card` only for cards
+NOT already selected, so a wrong selection could only ever be confirmed, never undone — while the
+vendor api-reference says `select_card` TOGGLES on a grid screen. Every card is now offered,
+selected ones labelled `Deselect <name>`. Confirmed live: the agent now gets real options there.
 
-THE RULE now encoded in the tool: a fight is lost iff the run ENDS during it. An ordering
-fact about the log and nothing else. Never infer it from a floor, an encounter name, or a
-heuristic. It reproduces the corrected figures independently: 106 fights, 94 won, 12 lost, 89%.
+Three tests pinned the old no-toggle rule. Their real guards were kept — confirm still requires the
+prompted count, and `selectionState` still never marks a card selected twice — and only the menu
+assertions moved.
 
-## Current measurements
-  fights 106 · won 94 · lost 12 (89%)
-  floors at death: 14, 9, 14, 11, 12, 6, 8, 7, 15, 17, 6, 8 — best 17
-  batch run 2 reached floor 15, the deepest since the boss run, then stalled on a card_select
-  screen and had to be resumed.
+## Why this mattered more than it looks
+Both bugs make a run STOP. A stopped run produces no data, and every conclusion this session is
+already sample-starved. The measurement work and the play work are the same work here.
 
-## Still not claimed
-- n=26 on the 3+ blocking bucket. 95% -> 81% is suggestive, not significant.
-- No post-reorder BOSS sample. The one boss in the corpus predates the reorder.
+## Measurements unchanged
+fights 106 · won 94 · lost 12 (89%) · best floor 17 · 502 tests green
