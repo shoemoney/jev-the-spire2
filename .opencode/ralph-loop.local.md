@@ -1,42 +1,38 @@
 ---
 active: true
-iteration: 12
+iteration: 17
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## Progress
-- 0: game data from the pack — 1,784 entities (was 159)
-- 1: potions reachable as a plan STEP
-- 2: runs at floors 6, 8, 7
-- 3: memory + game data + potion steps verified live
-- 4: the agent's OWN elite record at the map → floor 15
-- 5: card rewards annotated from game data → floor 17, THE ACT 1 BOSS
-- 9: complete turns lead the menu
-- 10: the run's own seen-card floor reaches the reward decision
-- 11: waste trend measured across sessions
-- 12: potion-timing failure found
+## MY OWN BUG, AND IT WAS AN ALARMING ONE
+Iteration 16 reported "90 fights: 50 lost, 40 won — half of all fights die". **That was my
+measurement bug, not a finding.** I marked a fight lost by matching the death FLOOR, and floors
+repeat: one death at floor 6 had ELEVEN distinct fights sharing that floor across the log.
 
-## NEW FINDING — the belt was empty at the boss
-The floor-17 boss run: **zero potions held during all 43 boss decisions**, and exactly ONE
-potion drunk in the whole run — a Weak Potion on Corpse Slug, a floor-3 trash mob.
+**The truth: 102 fights, 90 won, 12 lost — 88% won.** Not 44%. I reported a crisis that did not
+exist, and it was mine.
 
-So the boss was not lost to unused resources; the resources were already spent two thirds of
-the act earlier. This is a TIMING failure, not an availability one, and it is not what the
-iteration-1 potion-step work addressed: that pass only opens the belt when a turn is already
-lost, and a trash mob at floor 3 was never a lost turn.
+## Fixing the bug surfaced the pattern the user saw
+With the loss detection done by ORDERING rather than floor-matching:
 
-This also retires a theory I had been carrying. The memory lesson "`end_turn` with incoming
-above HP+Block, and died to it" has 8 confirmations, and it is real, but on this boss run the
-deaths at 8 HP were against a 233 HP pool the deck could not chew through at ~6/turn. The
-lesson is not wrong; it is not the binding constraint here.
+  longest blocking streak   won   lost   win rate
+  1 or none                  37     2      95%   (n=39)
+  2 consecutive              33     5      87%   (n=38)
+  3+ consecutive             20     5      80%   (n=25)
 
-## Still running
-5-run batch on the iteration-9 reorder. Run 1 was at floor 8, an ELITE, 69/80 — entering the
-elite healthy, which is exactly the behaviour iteration 4 was for.
+**Monotonic: 95% → 87% → 80%.** The observation that consecutive blocking correlates with losing
+is SUPPORTED once the measurement is correct. It was invisible behind my own bad arithmetic.
 
-## Open, and deliberately not claimed
-- No post-reorder BOSS sample exists yet. The only boss in the corpus is pre-reorder.
-- Longer energy-bearing turns can mean fuller play OR grinding a lost fight. Only the floor
-  settles it.
+Caveat, stated plainly: n=25 on the 3+ bucket. 95% vs 80% on those samples is SUGGESTIVE, not
+significant. Do not build a policy on it yet — take more runs first.
+
+## Also true and unchanged
+79% of blocks were against a real incoming attack; only 13% were against nothing, which is what
+the idle-turn fix addresses. Blocking is mostly justified; the STREAK is the signal, not the block.
+
+## Where that actually points
+Blocking three turns running means the fight is not being won on offence. That is the same
+scaling problem as the boss, seen mid-fight: the deck cannot end things, so the fight degenerates
+into attrition. The streak is a SYMPTOM of the deck, not a separate cause.
