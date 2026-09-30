@@ -1,31 +1,26 @@
 ---
 active: true
-iteration: 21
+iteration: 22
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE REORDER, MEASURED ON THE BOSS
-The first post-reorder boss sample exists, so this is no longer an inference.
+## DATA-QUALITY NOTE, found while counting boss fights
+14 runs in the store, 14 distinct runIds, 14 `run_end` events — no duplicates, so the store is
+sound. But only **2** boss fights exist, while three runs record a death at floor 17. The third has
+NO preceding decision in its log: that run played while the server was crashed by the `seenCards`
+crash, so it produced a death record and no data.
 
-                       pre-reorder        post-reorder
-  boss                  Lagavulin 233hp    Ceremonial Beast 252hp
-  decisions             43                  42
-  energy wasted         61%                 39%
-  DAMAGE DEALT          97                  221
-  turns containing Defend 19/43            13/42
-  entered the fight at  80 hp               68 hp
-  boss HP removed       40%                 50%
+**A run that happens while the agent is down still counts as a death and contributes nothing to any
+measurement.** Until the batch produces clean runs, `runs` overstates what was actually observed.
+Every statistic in this project should be read as "per LOGGED fight", never "per run".
 
-**Damage dealt more than doubled on the same number of decisions.** The agent entered
-the second boss fight with 12 LESS HP and still removed half its health bar, because
-the energy it used to throw at nothing went into the boss instead.
+## The reorder on the boss — still n=1 per arm, and now correctly counted as FIGHTS not files
+  Lagavulin Matriarch  233 -> 140  (40% removed) | waste 61% | damage  97 | run ended
+  Ceremonial Beast     252 -> 127  (50% removed) | waste 39% | damage 221 | run ended
+Two fights, both deaths. Damage more than doubled on the same number of decisions.
 
-n=1 per arm, so this is not a win-rate claim. But the MECHANISM was predicted in
-advance (wasted turns), and it moved the way the mechanism says it should. That is
-the strongest evidence available without a much larger sample.
-
-## Still open
-- n=1 per arm. Take more boss samples before calling the reorder a win-rate improvement.
-- The boss is still not killed: 252 -> 127. The deck kills half a health bar and runs out of act.
+## Batch restarted (6 runs) purely for sample size
+Every open question here is sample-starved: n=1 per arm on the boss, n=26 on the 3+ blocking
+bucket. Nothing is being decided this iteration except taking more samples.
