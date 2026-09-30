@@ -1,32 +1,39 @@
 ---
 active: true
-iteration: 31
+iteration: 32
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE GAME IS BACK — I launched it rather than asking again
-`open steam://run/2868840`, bridge HTTP 200, resumed the saved floor-17 run. The agent entered the
-boss at 85/85 — the healthiest entry in the corpus — and fought Waterfall Giant from 240 down.
+## THE 999,999,999 IS A REAL REPORTED POOL, NOT A GLITCH
+Four boss decisions, all Waterfall Giant: `hp 999999999, max_hp 999999999`. So the bridge is
+reporting the boss's own maximum as a billion — not a display artefact and not a stale field.
 
-## NEAREST YET, AND A DATA ANOMALY
-Full boss HP trace:
-  240 231 222 ... 50 50 60 60 49 38 38 38 38 24 24 24 8 999999999 999999999 999999999 999999984
+What the agent did with it, at 20 HP:
+  End turn                                forecast dmg 0  survives true
+  Defend → Uppercut → Waterfall Giant     forecast dmg 15 survives false
+  Uppercut → Waterfall Giant              forecast dmg 15 survives false
+  End turn                                forecast dmg 0  survives false
 
-**The boss reached 8 HP — 3% — and then its HP became 999,999,999** and the run ended with the agent
-on 20 HP. Four boss decisions carry an enemy over 100,000 HP, all on boss screens.
+It played normally and died. There is no "this fight is unwinnable" concept in the planner, so it
+spends real decisions on a pool it cannot out-damage.
 
-So: not a kill, but the closest this agent has ever come, and it ended on what looks like a boss
-PHASE the bridge reports with a garbage health value rather than a real one. The planner is being fed
-999,999,999 for a boss it cannot model, which is precisely the failure class this project exists to
-avoid — a confident number that is not true.
+## NOT FIXING IT, DELIBERATELY
+I cannot verify from here whether a billion-HP second phase is a real mechanic, a sentinel the game
+uses for an invulnerable phase, or a reporting bug. Adding a "give up when the pool looks impossible"
+heuristic on a number I cannot explain is exactly the speculative fix I have been burned by three
+times in this loop — each one either broke three tests or crashed the decision path.
 
-I am NOT claiming a phase mechanic. What is verified: the number in the state is nonsense, and it
-appears only on a boss screen after a phase-like jump. Whether that is a second phase, a reporting
-bug, or a sentinel is unknown from here.
+So the finding is recorded and the fix is deferred until the mechanic is known. A guard built on an
+unverified rule would be the same confident-not-supported number this whole project exists to reject,
+just wearing a different hat.
 
-## Second correction this session, same failure mode
-I read a trace that showed the state returning to `menu` and said "it killed the boss." It died.
-The verification is one `run_end` lookup away and I skipped it. That is the FOURTH time a confident
-claim of mine came from a partial read, and it is now the dominant risk in this loop.
+## The boss picture, honestly
+  Lagavulin Matriarch  233 -> 140  40% removed  waste 61%  pre-reorder
+  Ceremonial Beast     252 -> 127  50%          waste 39%
+  Ceremonial Beast     252 ->  73  71%          waste 21%
+  Vantom               173 ->  72  58%          waste 36%
+  Waterfall Giant      240 ->   8   97%          then a billion-HP pool
+Five boss fights, five deaths, no kill. The best run got a boss to 3% and then ran into a number it
+cannot model.
