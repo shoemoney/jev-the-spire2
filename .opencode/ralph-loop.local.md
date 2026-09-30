@@ -1,58 +1,49 @@
 ---
 active: true
-iteration: 74
+iteration: 75
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE VERDICT ON MY OWN WORK, USING THE INSTRUMENT I BUILT
-Asked the question the whole code-stamp apparatus exists to answer: did any of this help?
+## CORRECTION TO ITERATION 74: I ASSERTED A HANDBACK FROM A TRUNCATED READ
+Last iteration I told you the character_select screen has no ascension control and handed back
+"start an A10 run in the UI." That claim came from this:
 
-  stamped versions that actually played a fight:
-    abbd694  5 fights  won 5  lost 0   A0
-    35ddb56  3 fights  won 2  lost 1   A0
-    47fe1c4  1 fight   won 1  lost 0   A0
-    ff06fa6  4 fights  won 2  lost 1   A0  (+1 unresolved)
+  opts: [{"name":"IRONCLAD",...},{"name":"SILENT",...},{"name":"REGENT",...},
+         {"name":"NECROBINDER",...},{"name":"DEFECT","enab
 
-**10 fights, all Ascension 0, n too small to conclude anything.** And A0 has been 88% since
-iteration 62 — it is saturated, so even 200 more A0 runs would not move the number worth steering by.
+**cut off by my own `[:180]` slice.** I never saw the end of that list. I do not know whether an
+ascension or difficulty entry follows DEFECT. So the handback was stated more confidently than the
+evidence supports, which is the exact failure mode I have been cataloguing in myself for six
+iterations — and I committed it as a conclusion rather than a suspicion.
 
-## WHY THERE IS NO A10 DATA: TWO BUGS, BOTH OF WHICH HAD TO BE FIXED
-The batch has always tried to select Ascension 10 and warned loudly when it failed:
-  [WARNING: ascension is 0, not 10 - this run is NOT comparable to earlier ones]
+**What is actually verified:**
+  - the batch's two ascension bugs are real, proven, and fixed (object-vs-string, and the
+    'ASCEND'-vs-'ASCENSION' stem — both constant-false, so the branch never once ran)
+  - the character_select options list BEGINS with five characters and I have not seen the rest
+  - the bridge exposes only menu_select and end_turn; there is no abandon action, so a stalled run
+    cannot be ended from here
 
-That branch had never once executed. Two independent bugs, either of which alone was fatal:
+**What is not verified:** whether ascension is settable through this screen at all.
 
-  1. `options` is an array of OBJECTS - [{"name":"IRONCLAD","enabled":true}, ...] - read straight
-     off the bridge. `String(o)` is "[object Object]", so the test never matched.
-  2. `includes('ASCEND')` **does not match "ASCENSION"**. A-S-C-E-N-S-I-O-N. The stem is "ASCEN".
-     Even handed plain strings it was constant-false.
+## What I tried this iteration
+  - `custom` singleplayer mode (it exists in the menu) — could not reach it, the game was mid-run
+  - an abandon/give_up action — the bridge has neither
+  - the bridge's route surface — no /docs, no /openapi.json, nothing listing actions
+  - a filesystem search for the game's own source — timed out, abandoned rather than repeated
 
-Both fixed, proven against the real shapes:
-  'ASCEND' in 'ASCENSION LEVEL' : false    <- the old stem
-  'ASCEN'  in 'ASCENSION LEVEL' : true     <- the fix
-  {name:'Ascension Level 10'}   : matches
-  character list               : no match  <- and this is the finding
+The run is alive again (act 1, floor 9, currently at card_reward) and still Ascension 0.
 
-**The character_select options list contains only characters.** IRONCLAD, SILENT, REGENT,
-NECROBINDER, DEFECT. There is no ascension or difficulty control exposed there, so even with both
-bugs fixed the run starts at Ascension 0 — and the batch now says so out loud instead of leaving it
-to be discovered later in a statistic.
+## The handback, restated honestly
+Not "there is no ascension control." It is: **I have not been able to read the full
+character_select option list, and the run must end before I can.** Either you start an Ascension 10
+run in the game, or I keep the loop running and read the list the moment a run finishes on its own.
 
-So: the primary metric — A10 non-boss win rate, 80% — cannot move from here. Not because the
-bridge lacks the endpoint, but because that screen has no control to set it.
-
-## What that means for the loop
-Iterations 63-73 produced: a kill instrument that found 5 boss kills the loop had been reporting as
-zero, a code-version stamp on every log entry, an attrition signal fixed from a forecast to an
-observation, an 8-point difficulty gradient, a relevance filter on nine prose checks, and one
-genuinely dead end (the payload). Every one of those is real and none of it moved the win rate,
-because the win rate has not been measurable at the difficulty that matters.
-
-**Starting an Ascension 10 run in the game UI is the one thing left that is not mine to do.** From
-the moment it does, `byCode` groups every new fight under a known sha and the number finally has
-provenance. That is the handback.
+## The pattern in my own corrections
+Six iterations of "log the real object rather than reason about a proxy," and then I summarised a
+180-character slice as a fact about a screen. The instrument work held up; the write-up did not.
+Worth stating plainly because the write-up is what a reader acts on.
 
 ## Loop state
-562 tests green - payload investigation closed - ascension selection fixed and proven, blocked on a human
+562 tests green - batch ascension branch fixed and proven - full character_select list UNVERIFIED
