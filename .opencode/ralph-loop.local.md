@@ -1,27 +1,33 @@
 ---
 active: true
-iteration: 27
+iteration: 28
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE UNEXPLAINED AUTO-PAUSE IS SOLVED
-Traced it by hashing consecutive states in every session file rather than guessing:
+## THE CARD-SELECT FIX IS CONFIRMED ON A CLEAN SESSION
+  session                    decisions | no-op actions | card_select decisions
+  02-36 (stuck, pre-fix)          1088 |       8        |        22
+  04-40 (clean, post-fix)         203 |       0        |         1
+The class of bug that produced four different symptoms is gone: zero actions the game ignored, and
+one card-select decision where there were twenty-two.
 
-  2026-09-23T20-41  1158 decisions |   0 actions that changed nothing
-  2026-09-30T01-45   128 decisions |   0
-  2026-09-30T02-03   145 decisions |   0
-  2026-09-30T02-36  1088 decisions |   8   <- all `card_select`
+## My resume fix was fighting the server
+Adding auto-resume last iteration created a new one. The server DELIBERATELY stops at `menu`,
+`overlay` and `game_over` with "resolve this screen in the game" — and the batch dutifully resumed
+those forever, burning its clock re-resuming a menu that needs navigating, not resuming. Resume is
+now gated on the state being none of those three.
 
-Every action the game ignored was on a card-select screen, and every one of them was
-`confirm_selection` or `select_card`. Nothing else in the corpus has ever issued a no-op. So the
-mystery was not a second bug — it was the screen I fixed last iteration, seen from its other side.
+That is the third harness bug I have introduced by fixing a symptom one layer above where it lived.
+The pattern is consistent enough to name: **each fix was correct in isolation and wrong in
+composition**, and none of them would have been caught without running the loop afterwards.
 
-That is the whole shape of this loop's recent failures: one screen, seen through four different
-symptoms (stall, 22 decisions, auto-pause, silent server death from the batch giving up).
+## Boss sample now n=3 post-reorder, still no kill
+  Lagavulin 233 -> 140  40% removed  waste 61%  dmg  97   pre-reorder
+  Ceremonial 252 -> 127  50% removed  waste 39%  dmg 221   post
+  Vantom    173 ->  72  58% removed  waste 36%  dmg 142   post
+  Ceremonial 252 -> 198  (in progress)                     post
 
-## Fresh session file, deliberately
-The stuck session also carried the pre-card-select-fix decisions, so post-fix data could not be told
-from the run that produced the symptom. `session.json` is moved aside and a new session started, so
-every future measurement is on a build where that class of bug cannot occur.
+## Sample
+134+ logged fights · best floor 17 · 508 tests green · batch 6 running
