@@ -528,6 +528,15 @@ export function fatalDecisions(events, n = 5) {
 // while still in combat, and UNRESOLVED when neither is observed. A kill is the easiest kind of
 // fact in this whole log to read and we were inferring it.
 //
+// An intent that telegraphs no damage is not an unreadable intent. In the corpus 1589 of 4592
+// intents are Buff/Defend/Debuff/Summon/Stun, all with an empty label, and 895 of THOSE are Buffs.
+// A first draft counted every non-numeric label as unparseable and reported the agent as blind on
+// 47% of all decisions, loss and win alike. Both halves of that were wrong: an empty label on a
+// Buff is correct, and blindness uncorrelated with losing is not blindness worth fixing. Only
+// intent types that actually telegraph damage are counted, and among those the corpus contains
+// exactly two label shapes — a plain integer and `NxM` — with zero prose anywhere.
+const DAMAGE_INTENT_TYPES = new Set(['Attack', 'AttackDebuff', 'AttackDefend', 'AttackBuff']);
+
 // `unresolved` is a real bucket, not a hedge, but it is now narrow on purpose. It means the log
 // did not observe how the fight ended: the file ended mid-combat, or a combat room was replaced
 // by another combat room with no non-combat screen between them (suspicious data). It does NOT
@@ -574,11 +583,59 @@ export function fightOutcomes(events) {
           // is where it has never won.
           ascension: Number.isFinite(state.run?.ascension) ? state.run.ascension : null,
           decisions: 0,
+          endHp: null,
+          blockAtEnd: null,
+          intentLabels: [],
+          multiHitIntents: 0,
+          intentsSeen: 0,
+          unknownForecasts: 0,
           outcome: 'unresolved',
           closedBy: null,
         };
       }
       open.decisions += 1;
+      // Facts about HOW the fight went, captured while the state is in hand. The outcome alone
+      // says the fight was lost; these say what the agent was facing when it was, which is the
+      // difference between "10 losses" and "10 losses for these five reasons".
+      //
+      // Written on EVERY decision so the surviving value is the LAST one — the board at the
+      // moment of death. A first draft captured only when `decisions === 1`, which recorded the
+      // opening board and labelled it `endHp`; the name would have been a lie.
+      const p = state.player ?? {};
+      open.endHp = Number.isFinite(p.hp) ? p.hp : null;
+      open.blockAtEnd = Number.isFinite(p.block) ? p.block : null;
+      // Incoming damage is NOT a number anywhere in the state. `battle.enemies[].intents[]` holds
+      // `{type, label, title, description}` and the damage lives in `label` as a STRING ("12"),
+      // with the same number repeated in prose. A first draft read `battle.intents` — which does
+      // not exist — and so recorded an empty incoming list on every single loss and called it a
+      // measurement. An always-empty array is the most convincing wrong number there is.
+      //
+      // Recording the RAW label alongside the parsed number is the point: the gap between them is
+      // exactly the parser's coverage, which is what decides whether the agent can see the turn
+      // coming at all. An intent whose label is not a plain integer is a turn the planner had to
+      // guess about or refuse.
+      const intents = (Array.isArray(state.battle?.enemies) ? state.battle.enemies : [])
+        .flatMap(e => (Array.isArray(e?.intents) ? e.intents : []));
+      // Two different quantities, deliberately not the same field:
+      //   intentLabels   the board at the moment of death — overwritten each turn, so the value
+      //                   that survives is the LAST one. What the agent faced as it died.
+      //   multiHitIntents how many of those telegraphs were NOT a plain integer — accumulated,
+      //                   because "could the planner read the telegraph in this fight" is a
+      //                   property of the fight, not of its final turn. Keeping only the last
+      //                   turn's value reports 0 or 1 for a 30-turn fight and looks like a clean
+      //                   read.
+      open.intentLabels = intents.map(i => (typeof i?.label === 'string' ? i.label : null));
+      open.multiHitIntents += intents.filter(i => {
+        if (!DAMAGE_INTENT_TYPES.has(i?.type)) return false;   // Buff/Defend/Summon telegraph no damage
+        return !/^\d+$/.test(typeof i?.label === 'string' ? i.label : '');
+      }).length;
+      open.intentsSeen += intents.length;
+      // How often the agent was flying blind in this fight. `quality: 'unknown'` is the planner
+      // saying it could not compute a forecast — not a near-miss and not a bad guess, a refusal.
+      // A fight the agent was blind through is a fight whose outcome cannot fairly be blamed on
+      // the policy, so the count belongs next to the outcome.
+      const q = ev.chosen?.forecast?.quality;
+      open.unknownForecasts += q === 'unknown' ? 1 : 0;
       continue;
     }
 

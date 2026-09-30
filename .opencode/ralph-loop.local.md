@@ -1,36 +1,48 @@
 ---
 active: true
-iteration: 61
+iteration: 62
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## SPLIT THE WIN RATE BY ASCENSION AND THE USELESS NUMBER BECOMES A GRADIENT
-Yesterday's 86.3% pooled rate is true and useless: it moves for reasons unrelated to the policy.
-Ascension now rides ON each fight, so the split is computed from the same events, not a side script.
+## NAMED THE 9 A10 NON-BOSS LOSSES AND FOUND THE PATTERN — THEN CAUGHT MYSELF WRONG TWICE
+Got the loss list into the module (board at death + per-fight parser coverage) instead of another
+throwaway script, and broke my own analysis twice on the way, which is the argument for the module:
 
-  asc     fights  won  lost  unres   rate   boss won/lost
-  A0         89    78    10      1    89%    5/10 (+1 unres)
-  A3         11    10     1      0    91%    0/0
-  A10        54    44    10      0    81%    0/1
+  1. Captured `state.battle.intents`, which does not exist. Recorded `inc=[]` on all 9 losses and
+     called it a measurement. An always-empty array is the most convincing wrong number there is.
+  2. Counted every non-numeric intent label as unparsed. Reported **"the agent is blind on 47% of
+     all decisions, losses and wins alike"** — and it was false. 1589 of 4592 intents are
+     Buff/Defend/Debuff/Summon/Stun whose label is empty BECAUSE they telegraph no damage. 895 of
+     those are Buffs. Counting them made a correct screen look like a failed parse.
+     Also the corpus has ZERO prose labels: every one of 4592 is a plain integer or `NxM`.
 
-**Two facts that were invisible one iteration ago and both are actionable:**
-  1. A10 ORDINARY fights are 8 points worse than A0 (81% vs 89%) on monsters and elites. This is
-     not a boss problem. The policy loses ~1 fight in 5 at A10 that it wins at A0, and 54 A10
-     fights is a real sample — this is the single best-powered signal in the whole corpus.
-  2. A10 BOSS is 0/1. Every one of the 5 boss kills is A0. There is also an A3 band I had stopped
-     tracking: 11 fights at 91%, better than A0, which is worth explaining before it is dismissed.
+## THE REAL SIGNAL
+  A10 non-boss, plain-integer Attack telegraphs the parser can read:
+    losses  215/302   71.2%
+    wins   1088/1251  87.0%
+  multi-hit telegraph involved in a loss: 7 of 9
 
-`unknown` is its own ascension bucket, not folded into 0. A missing reading is not the easiest
-difficulty, and an absent band reports a null rate rather than 0% so an empty cell can read as
-either a failure or a success depending on which way you lean.
+And the signature is exact on four of them — blindTurns == multiHit to the turn:
+    Inklet                multiHit 4   blind 4/4
+    Phantasmal Gardener   multiHit 22  blind 22/22
+    Skulking Colony       multiHit 8   blind 8/32
+    Byrdonis              multiHit 11  blind 11/24
 
-## What this is for
-The loop now has a number that means something: **A10 non-boss win rate, currently 81%.** It moves
-only when the policy changes, it is computed from transitions rather than inference, and it splits
-by difficulty so an easy-mode win cannot flatter it. 8 points of headroom on 54 samples is the
-first number here I would actually steer by.
+**So the planner goes `unknown` on precisely the turns where the enemy telegraphs a multi-hit
+attack** — the case where the total is `NxM (total)` and is frequently much larger than the number
+on the card. The agent has been reading ~71% of A10 attack telegraphs and blind to the rest, and it
+loses disproportionately on exactly those fights.
+
+One honest exception: Gremlin Merc died with multiHit=22 and blind 0/30, so the NxM form IS parsed
+sometimes. The gap is not "NxM unhandled" but "NxM handled inconsistently" — which is a narrower
+and more fixable bug than the one I was about to describe. Fossil Stalker died facing a plain `14`
+with no multi-hit and no blindness, so not every loss is a parse failure either.
+
+## Next
+Make the enemy-intent path parse `NxM (total)` deterministically, then re-measure this same table.
+The target is wins and losses converging on one coverage number.
 
 ## Loop state
-544 tests green (9 fight-outcome) · sweep 4: 11/14 · game batch running
+547 tests green · sweep 4: 11/14 · game batch running

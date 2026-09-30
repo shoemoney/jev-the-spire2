@@ -123,3 +123,56 @@ test('an absent difficulty reports null rather than a 0% rate', () => {
   const only = summariseFights(fightOutcomes([dec('boss', { hp: 9 })]));
   assert.equal(only.atAscension.unknown.boss.winRate, null, 'no closed boss fight -> no rate');
 });
+
+test('a fight records the board at the moment it was lost, and how blind the agent was', () => {
+  // The outcome says the fight was lost. These say what the agent was looking at, which is the
+  // difference between "10 losses" and "10 losses for these five reasons".
+  const enemy = (hp, intents) => ({ name: 'Waterfall Giant', hp, intents });
+  const at = (hp, ph, intents) => ({
+    kind: 'decision', outcome: 'executed',
+    chosen: { forecast: { quality: 'unknown' } },
+    state: { state_type: 'boss', battle: { enemies: [enemy(hp, intents)] }, player: { hp: ph, block: 0 } },
+  });
+  const events = [
+    { ...at(240, 60, [{ type: 'Attack', label: '42' }]), chosen: { forecast: { quality: 'calculated' } } },
+    at(20, 11, [{ type: 'Attack', label: '42' }]),
+    runEnd(17),
+  ];
+  const [f] = fightOutcomes(events);
+  assert.equal(f.outcome, 'lost');
+  assert.equal(f.name, 'Waterfall Giant');
+  assert.equal(f.startHp, 240);
+  assert.equal(f.endHp, 11, 'the board is captured at the LAST decision, not the first');
+  assert.deepEqual(f.intentLabels, ['42'], 'incoming damage is a string in intents[].label');
+  assert.equal(f.multiHitIntents, 0);
+  assert.equal(f.unknownForecasts, 1, 'exactly the decisions the planner refused to forecast');
+});
+
+test('a multi-hit Attack counts against parser coverage; a Buff with no label does not', () => {
+  // This is the parser's coverage, measured on the real field. Reading `battle.intents` (which
+  // does not exist) made this an empty array on every loss and it looked like a measurement.
+  //
+  // The distinction is not cosmetic. Counting every non-numeric label reported the agent as blind
+  // on 47% of all decisions — but 1589 of 4592 corpus intents are Buff/Defend/Summon/Stun whose
+  // label is empty BECAUSE they telegraph no damage. Counting those made a correct screen look
+  // like a failed parse.
+  const at = (type, label) => ({
+    kind: 'decision', outcome: 'executed', chosen: { forecast: { quality: 'unknown' } },
+    state: { state_type: 'monster', battle: { enemies: [{ name: 'Nibbit', hp: 40, intents: [{ type, label }] }] }, player: { hp: 20, block: 0 } },
+  });
+  const f = fightOutcomes([
+    at('Attack', '12'), at('Buff', ''), at('Attack', '3x3 (9)'), at('Defend', ''), runEnd(3),
+  ])[0];
+  assert.deepEqual(f.intentLabels, [''], 'intentLabels is the board at death: the LAST turn');
+  assert.equal(f.multiHitIntents, 1, 'only the 3x3 Attack counts; the two empty non-damage telegraphs do not');
+  assert.equal(f.intentsSeen, 4);
+  assert.equal(f.unknownForecasts, 4);
+});
+
+test('an empty intent list is distinguishable from an unparsed one', () => {
+  // Otherwise "the enemy telegraphed nothing" and "we failed to read the telegraph" print the same.
+  const bare = { kind: 'decision', outcome: 'executed', chosen: {}, state: { state_type: 'monster', battle: { enemies: [{ name: 'X', hp: 1, intents: [] }] }, player: { hp: 5 } } };
+  const [f] = fightOutcomes([bare, runEnd(2)]);
+  assert.deepEqual(f.intentLabels, []);
+  assert.equal(f.multiHitIntents, 0, 'no intent is not an unreadable intent');
+});
