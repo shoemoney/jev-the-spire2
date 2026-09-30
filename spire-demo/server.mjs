@@ -187,11 +187,15 @@ async function step(token, preview = false) {
     // reward, so this is the only deck evidence that exists - and it is a FLOOR, not a census. Skip
     // was taken in 18 of 49 rewards because Skip is the option that looks safe when you know nothing.
     const runKey=(planningState?.run?.act??'a')+':'+(planningState?.run?.floor??0);
-    if(view.runKey!==runKey){view.runKey=runKey;view.seenCards=new Set();}
-    view.seenCards??=new Set();
-    for(const c of planningState?.player?.hand??[]) if(c?.name) view.seenCards.add(String(c.name).replace(/\+$/,''));
-    for(const c of planningState?.player?.deck??[]) if(c?.name) view.seenCards.add(String(c.name).replace(/\+$/,''));
-    for(const c of (planningState?.card_reward?.cards??[])) if(c?.name) view.seenCards.add(String(c.name).replace(/\+$/,''));
+    // An ARRAY, not a Set. `view` is persisted to session.json and restored verbatim, and JSON has no
+    // Set — a restored Set comes back as `{}`, which is not iterable, and `[...view.seenCards]` threw
+    // "is not iterable" and killed the decision loop on every restart after this feature landed. An
+    // array round-trips through JSON intact, and the dedupe is what the Set was for anyway.
+    if(view.runKey!==runKey||!Array.isArray(view.seenCards)){view.runKey=runKey;view.seenCards=[];}
+    const seen = new Set(view.seenCards);
+    for(const c of [...(planningState?.player?.hand??[]), ...(planningState?.player?.deck??[]), ...(planningState?.card_reward?.cards??[])])
+      if(c?.name) seen.add(String(c.name).replace(/\+$/,''));
+    view.seenCards=[...seen];
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
     // First match wins. Bound to a name so the decision below can be stamped with the policy that
     // actually produced it, named by FUNCTION IDENTITY rather than by re-reading the env.
@@ -200,7 +204,7 @@ async function step(token, preview = false) {
     const result = await policy({state:planningState,candidates:actions,
       recent:memory,
       memory:memoryStore,
-      seenCards:[...(view.seenCards??[])],
+      seenCards:view.seenCards,
       onStage:stage=>{view.message=stage;view.pending.stage=stage;},
       ask:async payload=>{
         if(token!==generation)throw Error('Decision cancelled.');
