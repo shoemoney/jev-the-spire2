@@ -1,35 +1,36 @@
 ---
 active: true
-iteration: 25
+iteration: 26
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE SERVER DIED SILENTLY
-Its log ended on the startup lines with no error and no crash report, and the process was gone. It is
-a foreground process started from a tool shell, so it has no supervisor. The batch then sat out its
-full 15-minute timeout waiting for a death that could never arrive.
+## LANDED — the card-select screen, the one I said I'd stop rushing
+Two defects, both measured live on the same screen.
 
-An unattended loop that cannot heal its own agent collects nothing, so the batch now detects a
-non-responding server and restarts it, logging that it did. Same resilience shape as the auto-pause
-fix: every bug that stops a run silently consumes the data I would need to notice it.
+**The count was never enforced.** The pattern matched only `Choose (\d+) cards? to Enchant.`, so an
+UPGRADE screen — "Choose a card to Upgrade." — matched nothing, `required` was null, and confirm was
+offered whenever the bridge's `can_confirm` flag happened to be set. Now generalised to any
+"Choose N card(s)", with a single-card screen wanting exactly one.
 
-## A SCREEN THAT ATE 22 DECISIONS
-"Choose a card to Upgrade" — an `upgrade` screen, 13 cards, `can_confirm: true`. The bridge answers
-`select_card` with "Toggling card selection: Strike" and never echoes `is_selected`, exactly like the
-Deck Enchant screen. The agent selected, selected, selected: **22 decisions, `confirm_selection`
-offered 12 times, never taken.**
+**Confirm sat at the bottom of thirteen identical-looking cards.** The agent toggled for 22
+decisions while `confirm_selection` was available and never took it. Verified by hand: confirming
+alone advances the screen instantly. Confirm now LEADS once the screen is satisfied — the same lesson
+as the combat menu. Every card stays offered, because the choice must stay revisable.
 
-Tested by hand against the bridge: `confirm_selection` on that screen advances it to `map`,
-immediately, with no selection at all. So confirming was the entire task and the agent spent 22
-decisions toggling instead.
+**And confirm is no longer offered on an UNSATISFIED screen.** The bridge accepts it and advances,
+but on "Choose a card to Upgrade" with nothing chosen that advances by SKIPPING the upgrade. A
+silent no-op, which is precisely what the agent walked into. My own first test asserted the opposite
+and failed; the code was right and the test was wrong.
 
-Not yet fixed. The honest statement is that on a card_select screen where confirm alone advances,
-the agent has no reason to prefer it, and `selectionState` reconstructing a phantom selection across
-13 identical "Strike" entries gives it more to think about rather than less. Two candidate fixes,
-neither tried: make confirm strictly preferred when the reconstructed selection already satisfies the
-prompt, and deduplicate identical card names in the selection reconstruction.
+508 tests green.
+
+## The auto-pause message is NOT the screen bug
+`grep -c "not iterable"` on the CURRENT server log is 0 — the seenCards crash is fixed, and the hits
+in the append-only session log are historical. The last ten executed actions are ordinary combat
+moves with no repetition, so "the game did not change after the last action" is coming from somewhere
+else and is still unexplained.
 
 ## Sample
-Boss fights still n=2 post-reorder. Batch restarted (8 runs) with both resilience fixes in.
+132 logged fights · 116 won · 16 lost (88%) · 17 runs · best floor 17 (four times)
