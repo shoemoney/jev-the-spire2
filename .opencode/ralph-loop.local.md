@@ -1,52 +1,50 @@
 ---
 active: true
-iteration: 71
+iteration: 72
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE CAP IS DEAD, AND THE REASON IS MEASURED, NOT GUESSED
-For 1741 executed decisions with 11+ candidates, the depth of the CHOSEN candidate (1 = first):
-  min 1 · p50 6 · p90 18 · max 63
-  beyond position 10: 484/1741 (28%)
+## THE ANSWER TO LAST ITERATION'S QUERY: THERE ARE NO DUPLICATES
+  2,275 decisions, 39,095 candidates, every one carrying a plan and a descriptor
+    distinct by descriptor : 13,248   (66.7% "duplicate")
+    distinct by PLAN       : 39,095   (0.0% duplicate)
+    one plan carrying different labels : 0 / 2275
 
-**A cap at 10 breaks 28% of these decisions.** The 26 KB of candidate_details is load-bearing. Not
-shipping the cap, on the same standard that stopped the graded-survival treatment.
+**Every candidate is unique.** The 66.7% was an artefact of `details` not containing the plan, and
+my previous iteration's "0.0% of candidates share a command but differ elsewhere" was itself
+measured on the command rather than the descriptor — so that number was about a field I was not
+actually comparing. Two bad measurements in a row from the same script, both because the id lives
+in a different place than I assumed (`candidate.details`, not `deliberation.candidate_details`).
 
-## WHY THE AGENT PICKS DEEP: THE LIST IS 63% DUPLICATES
-  39,504 candidates across 2,336 decisions
-  exact command duplicates : 24,716  (63%)
-  full-descriptor duplicates: 24,716  (62.6%)   <- 0.0% share a command but differ elsewhere
+## THE REAL DEFECT, WHICH IS BIGGER THAN A TOKEN PROBLEM
+  decisions with 10+ candidates : 1807
+    ALL candidates share ONE descriptor          : 1807  (100%)
+    candidate.forecast VARIES per candidate      : 1756  (97%)
 
-One 64-candidate board held 19 distinct commands and **13 distinct labels** — "Strike -> Wriggler ->
-Setup Strike" appeared about sixty times, and the chosen action was "Defend" at position 63. The
-model was not finding a hidden gem; it was reading past sixty copies of one plan to reach an option
-that should have been at the top.
+100% of them. And the shared descriptor's own `forecast` is null. Meanwhile the per-candidate
+forecast is computed and lives on `candidate.forecast` — so the largest field on the wire, 30% of
+all bytes and 41% of the largest request, is ONE object serialized 33 to 64 times, carrying a null
+forecast and describing no plan. The per-plan forecasts the model needs are on the candidates and
+are not in this field at all.
 
-**That reframes the whole thing.** The 26 KB is sixty copies of one forecast, and the deep picks are
-a symptom of burying distinct options among identical ones. Dedup is safe where a cap is not —
-identical descriptors carry identical information — and the numbers say the duplicates really are
-identical (0.0% differ outside the command).
+**That is a wrong-information problem, not a wrong-size one.** A reviewer reading `candidate_details`
+would conclude every option has the same outlook, which is false: 97% of decisions have distinct
+forecasts per option, in a different field.
 
-## BUILT IT, AND AN EXISTING GUARD SAYS NO — SO IT IS REVERTED
-Implemented full-descriptor dedup in compact-request.mjs with four tests. Two of my own tests
-caught a real over-collapse first (keying on `String(parsedObject)`, which is `[object Object]`, and
-keying on the command alone, which merges candidates that carry no command at all — that one was
-caught by a PRE-EXISTING test, which is exactly what it was written for).
+## I BUILT THE COLLAPSE TWICE AND REVERTED IT TWICE — NOT BECAUSE TESTS FAILED
+First attempt removed candidate IDS, which is what tripped deliberation.test.mjs's "without removing
+defense" guard. That guard was right.
+Second attempt collapsed the descriptor and kept every id, which is the correct shape, with tests.
+It did not measurably fire: candidate_details stayed 30% of the wire and the largest request grew to
+161 KB. Comparing raw strings failed because each descriptor embeds its own id; comparing id-stripped
+still did not fire, so the descriptors differ somewhere I have not looked.
 
-Then `deliberation.test.mjs` failed: "kill-versus-block review ... without removing defense"
-expected both candidates and dedup removed one. The fixture builds `kill` and `block` with identical
-descriptors, differing only by id and label.
-
-**That is evidence dedup can remove a distinguishable option, and I cannot tell from here whether
-the real corpus has that shape.** In the corpus labels DO differ (13 distinct labels), so the real
-duplicates may be safe — but "may be" is the standard I have refused to ship against five times now.
-Reverted. 562 green.
-
-The remaining question is specific and cheap: **do any two candidates in the real corpus share a
-descriptor AND differ in label?** If none do, dedup is provably lossless and the change is a
-straight 63% cut in the largest field on the wire. That is one query and it decides it.
+**Reverted.** An unverifiable optimisation that does not demonstrably fire is not a win, it is a
+change that reads as one in the diff. The finding is banked; the fix needs the real descriptor
+shape, which means logging one — the same move that resolved the attrition bugs and the historical
+warnings, and the fourth time it has been the thing that worked.
 
 ## Loop state
-562 tests green · dedup reverted pending one query
+562 tests green · two reverted attempts, one well-evidenced finding, wire size not yet improved
