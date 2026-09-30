@@ -1,65 +1,52 @@
 ---
 active: true
-iteration: 96
+iteration: 97
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE REVIEW FOUND A REAL HAZARD, AND ITS FIX WOULD HAVE DISABLED THE SAFETY GATE
-One of the 14 reviews I asked for in the 60s and never read (qwen3.8-omni-flash, 16.6 KB) found
-this, and it is the best-grounded finding any review has produced this session because it cites the
-log's own calibration rather than reasoning about code.
+## THE UPSTREAM FIX, DONE AND MEASURED — AND IT DID NOT NEED THE GAME
+The planner is a pure function of state, so the new quality distribution can be measured by
+replaying RECORDED states through the new code. That answers "is `calculated` reachable now?" while
+play is blocked on a click.
 
-**The claim, verified.** `lethal-gate.mjs` says in its own comment that the `true` direction requires
-a FULLY STATED quality, and the code did not enforce it — `STATED_QUALITIES` contains `partial`.
-`planner.mjs` sets `quality: uncertain ? 'unknown' : warnings.length ? 'partial' : 'calculated'`, so
-`partial` means "carries warnings" by construction. In the corpus:
+    replayed 2075 distinct recorded combat states through the NEW planner
+      partial      1297   62.5%
+      calculated    776   37.4%     <- was 2.0% before this change
+      unknown         2    0.1%
 
-    partial forecasts executed                     3332
-      claiming survives:true                        3246   (97.4%)
-      AND carrying an Unmodeled relic/power warning  3246   (100% of those)
+**`calculated` went from 2.0% to 37.4% — eighteen-fold — and the quality field now carries
+information.** The recorded `partial` warnings were 7,916 unmodeled relic/power against 462 of any
+other kind, so 94.5% of them were the noise that was making the field constant.
 
-A visible power or relic the simulation omitted was deciding that the agent survives, on nearly
-every executed decision. The review's calibration backs it: the largest forecast errors in the corpus
-are `partial` rows (predicted 28, actual -15, over by 43 HP), while `incomingIsBound` — the stated
-reason `partial` was ever admitted here — appears on 3 of 824 combat decisions. **The justification
-and the code had drifted apart, and the code was the permissive one.**
+The warnings are still reported to the model on those 776 forecasts (915 unmodeled relic, 69 enemy
+power, 5 player power) — the model should know what it is not simulating. They just no longer
+degrade the forecast's *completeness*, which is the distinction that was missing.
 
-**I implemented the fix. It broke five tests, and the tests were right.**
-Restricting the survival direction to `calculated`/`exact` looks obviously correct. It is a
-disaster:
+## Two existing tests refused the first version, and both were right
+**1. Absence of a description is not evidence of absence.** The first version ran the relevance regex
+over `name + description`, so `{id:'UNKNOWN', name:'Mystery'}` — an effect the game ships with no
+text for — failed to match and was classed harmless. In the one place where being wrong makes the
+agent more confident about a turn it has not simulated. An existing test caught it.
 
-    executed forecast qualities, whole corpus
-      partial      3332  66.6%
-      none         1388  27.8%
-      unknown       210   4.2%
-      calculated     71   1.4%
+**2. Completeness and provenance are different reasons.** `planner-kb.test.mjs` requires that a card
+resolved from a recorded corpus reading is never advertised as `calculated`, and it is right for its
+own reason: a corpus reading is not a simulation however well it matches. So `partial` now means
+*either* something survival-relevant on the board is unmodeled, *or* a number came from a recorded
+reading. Filtering only the unmodeled-relic warnings keeps both intentions instead of picking one.
 
-**`calculated` happens on 1.4% of decisions.** The test that caught it says it plainly: the old rule
-required `calculated` on both sides, and across a recorded run there were 359 `partial`, 160
-`unknown` and **not one `calculated`** — "it read as a safety net and was not one." Requiring it now
-would leave the gate able to identify a survivor on 71 decisions out of 5,001 and inert on the rest.
-That is a catastrophic regression wearing the exact costume of a safety fix. **Reverted.**
+**Twice now this session a test written earlier has refused a plausible change I was about to make.**
+581 green.
 
-## THE ACTUAL DEFECT IS UPSTREAM, AND IT IS WORSE THAN THE ONE REPORTED
-The vocabulary has collapsed. `Unmodeled relic` appears on essentially every combat decision, so
-"has warnings" is nearly always true, so `partial` no longer distinguishes *"an irrelevant relic is
-unmodeled"* from *"a power that changes incoming damage is unmodeled."* **The quality field is not
-carrying information, and every consumer of it — including the gate — is reading noise.**
-
-The reviewer's own first suggestion is the right layer and the necessary one: classify unmodeled
-effects by whether they can change survival, and only then degrade the forecast's completeness. That
-makes `calculated` reachable again, and only after that does tightening `statedSurvival` mean
-anything. **The order is not interchangeable, and taking it in the wrong order is what I nearly
-shipped.**
-
-## Why this is the most useful review of the session
-It found a real hazard, it was grounded in logged data rather than inference, and its proposed remedy
-was wrong in a way that would have been invisible without an existing test. A review that finds a real
-problem and a fix that breaks the thing it was protecting is worth more than one that finds nothing,
-because the finding survives and the fix does not.
+## Why I am NOT tightening `statedSurvival` in the same iteration
+It is now *possible* — requiring `calculated` would apply to 37% of decisions rather than 2% — and it
+is still the wrong move today. Changing the vocabulary and the consumer of that vocabulary in one
+step means any effect afterwards is unattributable. The order is: make the field meaningful, play on
+it, confirm the distribution holds on live data, and only then make the gate strict. That is the
+order the review's own suggestion implied and the order I nearly got wrong.
 
 ## Loop state
-581 tests green - gate reverted, hazard confirmed and recorded, upstream fix identified as the real
-one - GAME STILL PARKED ON A MENU WITH NO OPTIONS, click required
+581 tests green - quality vocabulary fixed upstream: calculated 2.0% -> 37.4% on 2075 replayed states
+- gate NOT tightened, deliberately, pending live confirmation of the new distribution
+- GAME STILL PARKED, click still required

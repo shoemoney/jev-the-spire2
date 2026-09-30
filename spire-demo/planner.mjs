@@ -70,11 +70,43 @@ export function readIntentDamage(intent) {
   return null;
 }
 
+// A warning is not a fact about the TURN. `Unmodeled relic: Ornamental Fan` tells the model one
+// effect it cannot simulate; it does not tell it the turn's damage is wrong. Using warning COUNT to
+// decide `quality` therefore made `partial` mean "the build has a relic this parser has never seen",
+// which is true of essentially every deck — `calculated` occurred on 1.4% of executed forecasts — and
+// so `partial` stopped distinguishing an irrelevant omission from a power that changes incoming
+// damage. Every consumer of `quality`, including the lethal gate, was reading a constant.
+//
+// So warnings are still ALL reported to the model, because the model should know what it is not
+// simulating. But only the SURVIVAL-RELEVANT ones degrade the forecast's completeness. That is what
+// makes `calculated` reachable again, which is the precondition for tightening `statedSurvival` at
+// all: doing that first, while `calculated` was 1.4%, would have left the gate inert rather than
+// strict.
+const SURVIVAL_RELEVANT = /damage|strength|dexterity|weak|vulnerable|frail|block|thorns|ritual|regen|lifesteal|energy|draw|when\s+(?:you|an?)\s|start of (?:your|the) turn|end of (?:your|the) turn|each turn|per turn|unplayable|exhaust/i;
+
+// NO description means RELEVANT, not irrelevant. The first version of this ran the regex over
+// `name + description`, so an effect the game ships with no text for — `{id:'UNKNOWN',
+// name:'Mystery'}` — failed to match and was classed as harmless. That is absence of evidence being
+// read as evidence of absence, in the one place where being wrong makes the agent more confident
+// about a turn it has not actually simulated. An existing test caught it, which is the fourth time
+// this session that a test written earlier refused a plausible-sounding change.
+const bearsOnSurvival = (name, description) => {
+  const text = `${name ?? ''} ${description ?? ''}`.trim();
+  if (!description || !String(description).trim()) return true;   // unreadable: cannot be ruled out
+  return SURVIVAL_RELEVANT.test(text);
+};
+
 function initial(s) {
   const warnings = [];
-  for (const p of s.player.status ?? []) if (!knownPlayerPowers.has(p.name.toLowerCase())) warnings.push(`Unmodeled player power: ${p.name}`);
-  for (const e of s.battle.enemies) for (const p of e.status ?? []) if (!knownEnemyPowers.has(p.name.toLowerCase()) && retaliationRule(p)?.damage==null) warnings.push(`Unmodeled enemy power: ${p.name}`);
-  for (const r of s.player.relics ?? []) if (!knownRelics.has(r.id)) warnings.push(`Unmodeled relic: ${r.name}`);
+  // Warnings that bear on whether this turn's numbers are right, kept separate from the full list.
+  const survivalWarnings = [];
+  const note = (text, relevant) => { warnings.push(text); if (relevant) survivalWarnings.push(text); };
+  for (const p of s.player.status ?? []) if (!knownPlayerPowers.has(p.name.toLowerCase()))
+    note(`Unmodeled player power: ${p.name}`, bearsOnSurvival(p.name, p.description));
+  for (const e of s.battle.enemies) for (const p of e.status ?? []) if (!knownEnemyPowers.has(p.name.toLowerCase()) && retaliationRule(p)?.damage==null)
+    note(`Unmodeled enemy power: ${p.name}`, bearsOnSurvival(p.name, p.description));
+  for (const r of s.player.relics ?? []) if (!knownRelics.has(r.id))
+    note(`Unmodeled relic: ${r.name}`, bearsOnSurvival(r.name, r.description));
   const fan = (s.player.relics ?? []).find(r => r.id === 'ORNAMENTAL_FAN');
   const fanProgress = Number.isInteger(fan?.counter) ? fan.counter : null;
   if (fan && fanProgress === null) warnings.push('Ornamental Fan counter unavailable: forecast omits its extra block.');
@@ -87,6 +119,7 @@ function initial(s) {
     noDraw:amount(s.player.status,'No Draw')>0,
     unmovable:amount(s.player.status,'Unmovable')>0,
     ringing: (s.player.status??[]).some(p=>p.name==='Ringing' || /cannot play more than \d+ cards each turn/i.test(p.description??'')),
+    survivalWarnings: survivalWarnings.length,
     energy: s.player.energy, hp: s.player.hp, block: s.player.block ?? 0,
     hand: structuredClone(s.player.hand).map(c => ({ ...c, sourceIndex: c.index })),
     potions: structuredClone(s.player.potions ?? []), enemies: structuredClone(s.battle.enemies),
@@ -603,7 +636,20 @@ function forecast(m, s) {
     incomingLowerBound: boundMin,
     bossStunned:m.stunned.length>0, bossThresholds:m.enemies.flatMap(e=>(e.status??[]).filter(p=>p.name.toLowerCase()==='plow').map(p=>({enemy:e.name,damageToStun:Math.max(0,e.hp-p.amount)}))),
     energyLeft:m.unsupported ? null : m.energy, slipperyRemoved:m.removedCharges, strengthGained:m.extraStrength,
-    quality:uncertain?'unknown':warnings.length?'partial':'calculated',
+    // `partial` now means "something that could change THIS TURN's numbers is unmodeled", not "the
+    // build contains a relic this parser has never seen". `calculated` means the turn's arithmetic
+    // accounts for everything visible that bears on it. That distinction is what makes the quality
+    // field worth reading, and it is the precondition for the gate's survival rule being strict
+    // rather than inert.
+    // `partial` means EITHER something survival-relevant on the board is unmodeled, OR a number in
+    // this forecast came from a recorded reading rather than a first-principles simulation. Both
+    // are reasons not to advertise `calculated`, and they are different reasons: the first is
+    // completeness, the second is provenance. An existing test pins the second ("a recorded reading,
+    // so never advertised as 'calculated'") and it is right for its own reason — a corpus reading is
+    // not a simulation, however well it matches. Filtering only the unmodeled-relic warnings keeps
+    // both: every other warning (a recorded reading, an omitted interaction) bears on the turn's
+    // arithmetic by construction, because it was raised while computing it.
+    quality:uncertain?'unknown':((m.survivalWarnings??0)>0||(m.warnings??[]).some(w=>!/^Unmodeled (?:relic|player power|enemy power):/i.test(w)))?'partial':'calculated',
     boundary:m.boundary, warnings,
     turnComplete:turn.turnComplete, completionReason:turn.completionReason,
     assumption:`${scope} Known-effects estimate; unmodeled interactions are omitted when marked partial. Displayed damage intents and explicit end-of-turn damage from remaining hand; no prediction of hidden draws or future turns. Extra block from an unavailable Fan counter is omitted. incomingMin/incomingMax bracket the turn\'s attack damage; when incomingExact is true they are equal and incoming is the total. Otherwise incoming is one end of that range (the provable floor, or a facing review\'s conservative ceiling) and incomingMax is the ceiling: compare plans on surviving it, never on the single incoming figure. hpLossUpper and survivesUpper are the same pessimistic reading taken through to HP. A null bound means the damage could not be read at all, not zero.`,
