@@ -26,22 +26,48 @@ const excludedRelic = x => [x.name,x.relic_name,x.id,x.relic_id].some(v => /^(?:
 // never describe a room the game has not shown.
 const ROUTE_MAX_DEPTH = 4;
 export function routeAhead(node) {
-  let eliteDepth = Infinity, restDepth = Infinity;
   const immediate = [];
-  const visit = (nodes, depth) => {
+  let eliteAhead = false, restAhead = false;
+  // `rest_before_elite` is a claim about a PATH, not about two depths that happen to exist somewhere
+  // in the subtree. Taking the minimum depth of each type across all branches compares a campfire on
+  // one branch against an Elite on another, and reports a heal that is not on the Elite's path:
+  //
+  //   branch A: RestSite -> Monster
+  //   branch B: Monster -> Elite
+  //
+  // min-depth gives restDepth 1 and eliteDepth 2, so the old code claimed "rest first" while the
+  // branch that actually leads to the Elite contains no campfire at all. A same-row sibling case was
+  // already covered by a test; this is the same defect one level deeper, and it survived because
+  // only the shallower shape was pinned.
+  //
+  // The claim is therefore only made when EVERY path that reaches an Elite passes a RestSite first.
+  // One Elite path without a campfire is enough to withhold it, because the agent chooses a path and
+  // the prompt cannot say which.
+  let elitePaths = 0, elitePathsWithPriorRest = 0;
+  const visit = (nodes, depth, seenRest) => {
     if (depth > ROUTE_MAX_DEPTH) return;
     for (const n of Array.isArray(nodes) ? nodes : []) {
       if (!n || typeof n !== 'object' || typeof n.type !== 'string') continue;
-      if (n.type === 'Elite') eliteDepth = Math.min(eliteDepth, depth);
-      if (n.type === 'RestSite') restDepth = Math.min(restDepth, depth);
+      // The rest flag is a property of the PATH BELOW this node, never of its siblings. Assigning
+      // `seenRest = true` in place leaked a RestSite into whatever came after it in the same array,
+      // so the same board answered differently depending on the order the children were listed —
+      // and a RestSite listed before an Elite manufactured a heal on the Elite's path. That is the
+      // defect this whole function is about, reintroduced one line down.
+      const belowSawRest = seenRest || n.type === 'RestSite';
+      if (n.type === 'Elite') {
+        eliteAhead = true;
+        elitePaths++;
+        if (belowSawRest) elitePathsWithPriorRest++;
+      }
+      if (n.type === 'RestSite') restAhead = true;
       if (depth === 0 && !immediate.includes(n.type)) immediate.push(n.type);
-      visit(n.leads_to, depth + 1);
+      visit(n.leads_to, depth + 1, belowSawRest);
     }
   };
-  visit(node?.leads_to, 0);
-  return { ahead: immediate, elite_ahead: eliteDepth < Infinity, rest_ahead: restDepth < Infinity,
-           // Infinity < Infinity is false, so a board with neither never claims a rest precedes anything.
-           rest_before_elite: restDepth < eliteDepth };
+  visit(node?.leads_to, 0, false);
+  return { ahead: immediate, elite_ahead: eliteAhead, rest_ahead: restAhead,
+           // Zero elite paths means nothing to precede, so this is false and never vacuously true.
+           rest_before_elite: elitePaths > 0 && elitePathsWithPriorRest === elitePaths };
 }
 
 // A rest and an elite at the SAME depth are alternatives, not a heal-then-fight order. Saying

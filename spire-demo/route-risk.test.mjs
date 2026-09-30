@@ -121,3 +121,28 @@ test('a plain Monster with nothing ahead still gets a usable label', () => {
   assert.doesNotMatch(bare, /HP/);
   assert.equal(actionsFor(map([{index: 0, col: 0, type: 'Monster'}], {hp: 5, max_hp: 0}))[0].details.hp_fraction, null);
 });
+
+test('a rest on a DIFFERENT branch never claims to precede an elite', () => {
+  // The same defect as the same-row sibling case, one level deeper, and it survived because only
+  // the shallower shape had a test. Comparing the minimum depth of each type across the subtree says
+  // a campfire at depth 1 on one branch precedes an Elite at depth 2 on ANOTHER, and the branch the
+  // agent takes to the Elite has no campfire on it.
+  const divergent = one({ index: 0, col: 0, type: 'Monster', leads_to: [
+    { col: 0, row: 13, type: 'RestSite', leads_to: [{ col: 0, row: 14, type: 'Monster' }] },
+    { col: 1, row: 13, type: 'Monster', leads_to: [{ col: 1, row: 14, type: 'Elite' }] },
+  ] });
+  const risk = actionsFor(divergent)[0].details.route_risk;
+  assert.equal(risk.rest_ahead, true, 'a rest does exist on the map');
+  assert.equal(risk.elite_ahead, true, 'and so does an elite');
+  assert.equal(risk.rest_before_elite, false, 'but not on the same path, so no heal may be claimed');
+  assert.doesNotMatch(actionsFor(divergent)[0].label, /rest first/i);
+});
+
+test('a rest still precedes an elite when EVERY elite path passes one', () => {
+  // The true case must survive the stricter rule, or the fix has simply disabled the guidance.
+  const both = one({ index: 0, col: 0, type: 'Monster', leads_to: [
+    { col: 0, row: 13, type: 'RestSite', leads_to: [{ col: 0, row: 14, type: 'Elite' }] },
+    { col: 1, row: 13, type: 'RestSite', leads_to: [{ col: 1, row: 14, type: 'Elite' }] },
+  ] });
+  assert.equal(actionsFor(both)[0].details.route_risk.rest_before_elite, true);
+});
