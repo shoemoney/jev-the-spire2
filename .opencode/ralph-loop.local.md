@@ -1,55 +1,42 @@
 ---
 active: true
-iteration: 90
+iteration: 91
 maxIterations: 100
-sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 keep playing get better every run be bol
 
-## THE OVERRIDE QUESTION, ANSWERED WITH 200x THE SAMPLE
-`overrideImpact()` now lives in `replay/metrics.mjs` beside the two functions that already read this
-log correctly, with six tests written from the bugs the throwaway scripts actually had.
+## THE EXPERIMENT IS LIVE AND IT ACTUALLY CHANGES BEHAVIOUR
+Armed in two places, because an experiment that only runs until the next crash produces a sample
+too small to read and no way to know it stopped:
+  - the batch's self-restart path now sets `SPIRE_AB_MODEL`, so it survives every restart
+  - the running server, restarted on the batch's real budget with the flag on, sha ed4e395
 
-  186 combat fights, 3319 measurable decisions
+First armed decisions, and the check that matters — does the arm change what is PLAYED, or only
+what is logged:
 
-    UNMATCHED (confounded with depth - the number that gets quoted by accident)
-      overridden  1.89 dmg/decision  (n=1551)
-      agreed      3.43 dmg/decision  (n=1768)
+  MODEL  (plays the model's own choice)   jevMove=a1  executed=a1   <- the arm took effect
 
-    MATCHED on turn depth: 55 depths where both kinds occurred
-      depth 1   3.05 vs 5.47   -2.43   (104/78)
-      depth 4   0.91 vs 2.83   -1.92   (104/66)
-      depth 9   1.37 vs 4.11   -2.75   (90/53)
-      depth 12  0.48 vs 2.92   -2.44   (67/60)
-      ... 13 of the first 14 depths negative, one at +0.11
-      pooled matched delta: -1.501 damage per decision
+That is the difference between an experiment and a label. An arm that recorded `abArm: 'model'` and
+then executed the scorer's choice anyway would have produced a clean, confident, meaningless result,
+and the read-out would have shown it.
 
-**The scorer's override is associated with about 1.5 less damage per decision once depth is
-matched.** The confound I could not remove on bosses alone is removed here, and the effect persists
-with the same sign across 55 depths and 3,319 decisions. On bosses it was underpowered; on the full
-combat corpus it is not.
+  decisions carrying an arm : 7   (model 4 / scorer 3)
+  depths with both arms    : 0
+  modelDelta               : null — not enough yet
 
-## What this is and is not
-It is a well-powered ASSOCIATION. Depth is matched; the fight, the enemy, the player's HP and the
-incoming damage are not, and the override may be *responding* to worse positions rather than
-creating them. Consistent sign across 55 independent depth buckets is hard to explain by confounding
-alone, but "hard to explain" is not "ruled out".
+Seven decisions and a 4/3 split is the hash doing roughly what a hash should. **No reading yet, and
+the read-out says so rather than producing a number from seven samples.**
 
-**So the next step is a controlled A/B, not a change.** Use the model's own choice even when the
-scorer disagrees, on a subset of decisions, and measure the same depth-matched damage rate. That is
-the only way to convert this into evidence about causation, and it is cheap because the metric and
-the module now both exist.
+## Where the experiment stands
+`abImpact` compares the arm PLAYED, depth-matched. `overrideImpact` compares `changed`, which is the
+confounded question and is kept because the association is real and worth re-checking. Two different
+questions, two different functions, and the summary says which is which.
 
-I am deliberately not shipping "stop overriding the model" on the strength of an association, having
-spent this session refusing to ship four changes on weaker grounds. But this is the first finding in
-a long while that is strong enough to justify the experiment rather than merely motivate it.
-
-## The process note, because it is the actual lesson
-This question was unanswerable on the data I had and answerable on data I already owned. Three
-iterations went into debugging scripts instead of adding five lines to a tested module. The module
-took the same measurement, got it right first time, and produced the answer in one call.
+The thing to watch is not the first result — it is the sample size. At 3,319 decisions the
+observational estimate was well-powered; the randomised one needs comparable depth coverage, and until
+`depthsWithBothArms` is in the dozens the honest read is "not yet".
 
 ## Loop state
-571 tests green (6 new) - override costs ~1.5 damage/decision, depth-matched, 55 depths, 3319 decisions -
-next step is a controlled A/B, explicitly not a policy change
+580 tests green - A/B live, interleaved, both arms firing, arm effect VERIFIED on real play
+- 7 armed decisions, 4 model / 3 scorer - no result claimed
