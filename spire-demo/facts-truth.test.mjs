@@ -106,3 +106,40 @@ test('a null total is explained in the request text, so it is not read as zero',
   assert.equal(q1.state.facts.displayed_incoming_attack_total,null);
   assert.equal(q2.state.facts.displayed_incoming_attack_total,12);
 });
+
+// THE LOWER BOUND. A reviewer's finding, and it is the concrete form of the signal this project
+// has been describing for several iterations without building.
+//
+// 18 lost fights in the corpus contained NO early lethal forecast, and the reason is visible here:
+// when any attack intent is unread, `displayed_incoming_attack_total` is null, and a null incoming
+// makes the forecast say "you survive" — technically true (an unread attack is not a KNOWN attack)
+// and practically the exact opposite, because the readable ones are still coming.
+test('the incoming lower bound survives an unread intent, where the total is null', () => {
+  const mk = intents => ({state_type: 'monster', player: {block: 0},
+    battle: {is_play_phase: true, round: 1, turn: 'player',
+      enemies: [{entity_id: 'e1', name: 'X', hp: 99, block: 0, status: [], intents}]}});
+  const both = factsFor(mk([
+    {type: 'attack', label: '4x3 (12)', description: 'Deal 12 damage.'},
+    {type: 'attack', label: '9', description: 'Deal 9 damage.'}]));
+  assert.equal(both.displayed_incoming_attack_total, 21);
+  assert.equal(both.displayed_incoming_attack_lower_bound, 21, 'exact when every intent reads');
+
+  const one = factsFor(mk([
+    {type: 'attack', label: '4x3 (12)', description: 'Deal 12 damage.'},
+    {type: 'attack', label: '?%^&', description: ''}]));
+  assert.equal(one.displayed_incoming_attack_total, null, 'the total is genuinely unknown here');
+  assert.equal(one.displayed_incoming_attack_lower_bound, 12,
+    'and 12 damage is STILL definitely coming — the unread intent can only add to it');
+  assert.equal(one.attack_intents_unread, 1, 'and the count of what is missing is still reported');
+
+  const none = factsFor(mk([{type: 'attack', label: '?%^&', description: ''}]));
+  assert.equal(none.displayed_incoming_attack_lower_bound, 0, 'nothing readable means a bound of zero, not a guess');
+});
+
+test('the bound is a floor against block, not a replacement for the exact gap', () => {
+  const f = factsFor({state_type: 'monster', player: {block: 5},
+    battle: {is_play_phase: true, round: 1, turn: 'player', enemies: [{entity_id: 'e1', name: 'X', hp: 99, block: 0, status: [],
+      intents: [{type: 'attack', label: '4x3 (12)', description: 'Deal 12 damage.'}, {type: 'attack', label: '?', description: ''}]}]}});
+  assert.equal(f.displayed_block_gap_lower_bound, 7, '12 less 5 block of damage that gets through for certain');
+  assert.equal(f.displayed_block_gap, null, 'the exact gap stays unknown — the bound is additional, not a replacement');
+});

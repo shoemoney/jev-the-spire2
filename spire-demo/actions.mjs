@@ -234,12 +234,24 @@ export function factsFor(s) {
     displayed_incoming_attack_total: single,
     displayed_incoming_attack_min: known ? low : null,
     displayed_incoming_attack_max: known ? high : null,
+    // THE LOWER BOUND, ALWAYS. `low` sums the intents we COULD read. It is a floor on the damage
+    // this turn will actually take, and it is exact whenever every intent read (where it equals the
+    // total). It is published even when something is unread, because "we know at least this much is
+    // coming" is strictly more useful than the null it used to be buried under — and it is enough to
+    // prove a turn lethal on its own: if the floor alone exceeds HP plus block, the unread intents
+    // cannot rescue it, because they can only add.
+    //
+    // 18 lost fights in the corpus contained no early lethal forecast at all, and this is the number
+    // that would have supplied one. It is arithmetic over printed numbers, not a guess.
+    displayed_incoming_attack_lower_bound: Math.max(0, low),
     attack_intents_read: intents.length - unread.length,
     attack_intents_unread: unread.length,
     contradictory_attack_labels: contradictory,
     unread_attack_labels: unread.slice(0, UNREAD_LABEL_CAP),
     all_attack_labels_parsed: labelsParsed,
     displayed_block_gap: single === null ? null : Math.max(0, single - block),
+    // The same idea against block: a floor on the damage that will get through.
+    displayed_block_gap_lower_bound: Math.max(0, low - block),
     note: 'Arithmetic over displayed attack intents only, not a combat simulation. Powers, redirection, and actions can change damage. Card descriptions are supplied by the game. Never assume hidden draw order.'
       + ' A null total means the damage could not be read, not that there is none: read attack_intents_unread and unread_attack_labels for what is missing, and unread_attack_labels is capped at ' + UNREAD_LABEL_CAP + ' so the count is the authority.'
       + ' Where min and max differ, two printed numbers disagree and the truth lies between them.',
