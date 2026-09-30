@@ -26,6 +26,7 @@ import {buildRecallContext, RECALL_LESSON_LIMIT} from './recall.mjs';
 // factored.mjs - the default policy - needs the same two, and importing them back from
 // here would close a cycle. Re-exported so this module's callers and its tests are
 // unaffected by where the implementation now sits.
+import {abExperiment} from './ab-experiment.mjs';
 import {refuseLethalChoice, statedSurvival, completeFactors, rankingByProbability, FACTOR_PREFIXES} from './lethal-gate.mjs';
 export {refuseLethalChoice, statedSurvival, completeFactors};
 
@@ -136,7 +137,29 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
   const {scored, probabilities, margin, unmeasured} = factorsComplete
     ? combine(candidates, answers, WEIGHTS)
     : {scored: null, probabilities: jevMove.probabilities ?? null, margin: jevMove.confidence ?? null, unmeasured: null};
-  const best = factorsComplete ? scored[0] : {id: jevMove.choice};
+
+  // CONTROLLED A/B, interleaved within a single run.
+  //
+  // Measured on 3,319 combat decisions across 186 fights, depth-matched: when the scorer overrode
+  // the model it was associated with ~1.5 less damage per decision, same sign across 55 depth
+  // buckets. That is an association, not a cause — the override may be RESPONDING to worse positions
+  // rather than creating them — so the only way to know is to run both arms on the same boards.
+  //
+  // Interleaved by a deterministic hash of the fight and turn rather than switched by a flag between
+  // runs, for two reasons. A flag would compare different runs, which differ in deck, ascension and
+  // map — the exact confounding this is meant to remove. And interleaving puts both arms on the SAME
+  // board within the SAME fight, so deck, relics, HP and the enemy's telegraph are shared, and the
+  // only difference is which of two choices is taken.
+  //
+  // `changed` alone cannot carry this: it means "the scorer differed from the model", which is true
+  // in both arms. `abArm` is what the experiment needs — which side was actually played.
+  //
+  // The lethal gate runs on BOTH arms afterwards and is never bypassed. An experiment that turned
+  // off safety to measure an effect would be measuring two things at once, and the gate is the one
+  // component in this file with a body of tests behind it.
+  const abArm = abExperiment.enabled ? (abExperiment.armFor(candidates, scored, jevMove) ?? 'scorer') : null;
+  const scorerBest = factorsComplete ? scored[0] : {id: jevMove.choice};
+  const best = abArm === 'model' && factorsComplete ? {id: jevMove.choice} : scorerBest;
   if (!candidates.some(candidate => candidate.id === best.id)) throw new Error('Invalid factored choice');
   const gate = refuseLethalChoice(best.id, candidates, scored ?? candidates);
   return {
@@ -149,6 +172,10 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
       factorFallback: !factorsComplete,
       jevMove: {choice: jevMove.choice, confidence: jevMove.confidence},
       changed: jevMove.choice !== gate.choice,
+      // Which side the A/B actually played. Null when the experiment is off, or when the scorer and
+      // the model agreed and there was nothing to choose between. Distinguishing those two matters:
+      // 'null because off' and 'null because they agreed' are different facts.
+      abArm: abArm && abArm !== 'scorer' ? abArm : (abArm === 'scorer' && jevMove.choice !== gate.choice ? 'scorer' : null),
       // The ranking is left as the scorer produced it. Rewriting it to match an override would hide which
       // candidate the gate actually overrode, which is the one fact a reader needs. It is null on a
       // fallback, because no ranking was produced.
