@@ -1,38 +1,29 @@
 ---
 active: true
-iteration: 42
+iteration: 43
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## SWEEP 3, FINDING #4, IS A CORRECTION TO MY OWN WORK
-`distinctCardsSeenThisRun` — shipped two iterations ago as "the first honest deck signal the
-decision has ever had" — was false twice over:
+## SWEEP 3 FINDING #3 — HALF ALREADY TRUE, HALF A DOC LIE
+The review said the default policy is `deliberate` and carries no gate. Half of that was already
+handled by my own iteration-25 work: `deliberate.mjs:161` applies `refuseLethalChoice` to the final
+answer, and the server derives `gate: active|absent` from each policy's OWN SOURCE and prints it at
+boot. The safety half is genuinely fine.
 
-- the accumulator was keyed to `act:FLOOR`, so it was **wiped at every doorway**. "this run"
-  meant "since the last door".
-- it counted cards merely **OFFERED** at a reward alongside cards actually dealt. An offered card
-  may be declined and was never in the deck, so the set is not a lower bound on the deck — it is a
-  lower bound on nothing, while the field was labelled `floor: true` and said "a FLOOR on the deck".
+The other half was a real documentation lie: the README opened by describing a ~315ms one-call
+agent, while a bare launch runs the multi-call `deliberate` at ~2.4 calls and ~758ms. The headline
+described a configuration and read as the default. Now the note sits directly under it, the launch
+command shows the shipped flags, and the test badge is corrected 386 -> 516.
 
-Now keyed to the run, offered cards held separately and excluded, field renamed
-`distinctCardsDealtOrInDeck` with `basis` and `excluded` stating its actual population.
+## THE PATTERN IN THE REVIEW LOOP IS WORTH NAMING
+Every finding so far is the same shape as the eight measurement errors I made myself:
+  a number or a rule that is technically true, and practically misleading
+- elite guidance gated to the act where 95% of deaths do NOT happen
+- a "floor on the deck" that was a floor on nothing
+- a 315ms headline for a configuration nobody launches by default
+- a 89.4% calibration that mixes counterfactuals with executed turns
 
-This is the **ninth** wrong-number of the loop and the second of mine caught by the review loop
-rather than by me. The difference that matters: I had already written the honest-sounding note
-("a FLOOR on the deck, not the deck") *around* a number that was not a floor. A caveat does not
-repair a wrong quantity.
-
-## ALSO CAUGHT IN THE SAME REVIEW, NOT YET ACTIONED
-- the intent-description fallback is too narrow (94 unparsed-incoming attributions remain)
-- game-data structure promotes a card past the `unsupported` boundary without `apply()` modelling
-  the clause — a warning makes it `partial` but does not stop a wrong number entering the gate
-- **the default policy is `deliberate`, not the guarded one** — a bare launch runs the multi-call
-  policy with NO lethal gate, which contradicts the project's own one-call/315ms description
-- the 89.4% HP-loss calibration mixes prefix counterfactuals with executed turns
-
-## Honest note on my own process
-I committed once more with a failing test (a missing import meant the new assertion could not
-run) and fixed it in the next commit. That is the second time this loop. The suite was green in
-every report I wrote, including the ones written minutes after a red run.
+Outsiders keep finding the class I have been unable to see from inside it. That is the argument for
+running the loop rather than only running the tests.
