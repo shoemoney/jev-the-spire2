@@ -26,6 +26,9 @@ import {hedged} from './hedge.mjs';
 const hedgeEnabled=process.env.SPIRE_HEDGE!=='0';
 if(lunaEnabled&&planBenefitEnabled)throw Error('Choose one experiment at a time: Luna or plan-benefit.');
 import { readFile, mkdir, appendFile, writeFile, rename } from 'node:fs/promises';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFile = promisify(execFileCb);
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { actionsFor, fingerprint, factsFor } from './actions.mjs';
@@ -72,8 +75,24 @@ view.activePolicy=resolvedPolicy;
 view.memory=memoryStore?summarizeStore(memoryStore):null;
 view.adviser=lunaEnabled?'gpt-5.6-luna:max':null;
 let generation = 0, busy = false, lastExecuted = '', latestState = null, waitingSince = 0, nextDecisionAt = 0;
+
+// WHICH CODE wrote this run. The log accumulated across dozens of iterations of this codebase, so
+// "the corpus" is a mix of versions and nothing in the records said so. That cost a whole
+// investigation: 94 "incoming attacks could not be parsed" warnings looked like a live bug until
+// they were dated, and every one was from a parser fixed days earlier. A log entry that does not
+// name its own code version is a log entry that can be misread forever.
+//
+// `dirty` matters as much as the sha. A run recorded on a commit with uncommitted edits cannot be
+// reproduced from that commit, so the flag is recorded rather than smoothed over — a dirty run is
+// honestly labelled as unreproducible instead of quietly attributed to HEAD.
+const codeStamp = await (async () => {
+  const head = (await execFile('git', ['rev-parse', '--short', 'HEAD'], { cwd: root }).catch(() => ({ stdout: '' }))).stdout.trim() || null;
+  const dirty = head ? (await execFile('git', ['status', '--porcelain'], { cwd: root }).catch(() => ({ stdout: '' }))).stdout.trim().split('\n').filter(Boolean).length : null;
+  return { sha: head, dirty: dirty && dirty > 0 ? dirty : 0 };
+})();
+view.code = codeStamp;
 async function log(event) {
-  const entry = { time: new Date().toISOString(), ...event };
+  const entry = { time: new Date().toISOString(), code: codeStamp, ...event };
   view.events.unshift(entry); view.events.length = Math.min(view.events.length, 60);
   await appendFile(logFile, JSON.stringify(entry) + '\n', { mode: 0o600 });
   await writeFile(snapshotFile + '.tmp', JSON.stringify(view), { mode: 0o600 });

@@ -115,6 +115,59 @@ test('ascension is recorded ON the fight, and unknown is not the difficulty 0', 
   );
 });
 
+test('a fight records WHEN and ON WHAT CODE it was played, and a mid-fight upgrade does not fork it', () => {
+  // The guard for the mistake that cost iteration 63: a corpus spanning many versions of the
+  // codebase answered "how are we doing" with a blend of old and new, and 94 warnings from a
+  // parser fixed days earlier read as a live bug. A fight that cannot name its code version can
+  // be misread forever, so the stamp is part of the record rather than something the caller
+  // remembers to join.
+  const stamped = (t, sha) => ({ time: t, code: { sha }, ...dec('boss', { hp: 100 }) });
+  const fights = fightOutcomes([
+    stamped('2026-09-23T10:00:00.000Z', 'aaa111'),
+    stamped('2026-09-23T10:01:00.000Z', 'aaa111'),
+    // the process was rebuilt mid-fight. The fight did not end, so it does not split, and it is
+    // attributed to the code it STARTED on — a fight half-played by two versions is not a fight
+    // half-played by either.
+    stamped('2026-09-30T10:00:00.000Z', 'bbb222'),
+    dec('rewards'),
+  ]);
+  assert.equal(fights.length, 1, 'a code change mid-fight is not a new fight');
+  assert.equal(fights[0].code, 'aaa111');
+  assert.equal(fights[0].day, '09-23');
+  assert.equal(fights[0].decisions, 3);
+
+  const two = fightOutcomes([
+    stamped('2026-09-23T10:00:00.000Z', 'aaa111'), dec('rewards'),
+    stamped('2026-09-30T10:00:00.000Z', 'bbb222'), dec('rewards'),
+  ]);
+  assert.equal(two.length, 2);
+  assert.equal(two[1].code, 'bbb222');
+  assert.equal(two[1].day, '09-30');
+});
+
+test('decisions written before the code stamp are unstamped, not attributed to the newest sha', () => {
+  // Folding unstamped records into whatever version is current would silently credit old runs to
+  // new code — the exact conflation the stamp exists to prevent.
+  const s = summariseFights(fightOutcomes([dec('boss', { hp: 50 }), dec('rewards')]));
+  assert.deepEqual(Object.keys(s.byCode), ['unstamped']);
+  assert.equal(s.byCode.unstamped.won, 1);
+  assert.deepEqual(s.byCode.unstamped.days, [null]);
+});
+
+test('byCode groups and names the days each version played, so old and new never blend', () => {
+  const at = (t, sha) => ({ time: t, code: { sha }, ...dec('monster', { hp: 40 }) });
+  const s = summariseFights(fightOutcomes([
+    at('2026-09-24T09:00:00.000Z', 'aaa111'), dec('rewards'),
+    at('2026-09-24T09:01:00.000Z', 'aaa111'), dec('rewards'),
+    at('2026-09-30T09:00:00.000Z', 'bbb222'), dec('rewards'),
+    at('2026-09-30T09:01:00.000Z', 'bbb222'), dec('rewards'),
+  ]));
+  assert.equal(s.byCode.aaa111.total, 2);
+  assert.deepEqual(s.byCode.aaa111.days, ['09-24']);
+  assert.equal(s.byCode.bbb222.total, 2);
+  assert.deepEqual(s.byCode.bbb222.days, ['09-30']);
+});
+
 test('an absent difficulty reports null rather than a 0% rate', () => {
   // 0 wins and 0 fights is not a failure and is not a success; it is no data.
   const s = summariseFights([]);

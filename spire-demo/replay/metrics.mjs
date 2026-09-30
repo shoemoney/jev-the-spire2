@@ -554,6 +554,11 @@ export function fightOutcomes(events) {
     const kind = ev?.kind;
     const state = ev?.state ?? {};
     const type = state.state_type ?? null;
+    // When and on what code this fight was played. A corpus that spans many iterations of the
+    // codebase cannot answer "how are we doing" without these, because the honest answer is
+    // usually "how did the CURRENT code do" and the two differ by 20 points.
+    const when = ev?.time ?? null;
+    const code = ev?.code?.sha ?? null;
 
     if (kind === 'run_end') {
       // A run that ends mid-combat died in it. This is the ONLY loss signal, and it is
@@ -582,6 +587,8 @@ export function fightOutcomes(events) {
           // hide the only fact worth acting on: the difficulty the policy actually has to survive
           // is where it has never won.
           ascension: Number.isFinite(state.run?.ascension) ? state.run.ascension : null,
+          day: typeof when === 'string' ? when.slice(5, 10) : null,
+          code,
           decisions: 0,
           endHp: null,
           blockAtEnd: null,
@@ -678,6 +685,15 @@ export function summariseFights(fights) {
       [...new Set(fights.map(f => String(f.ascension)))].sort().map(a => [
         a === 'null' ? 'unknown' : a,
         group(fights, f => String(f.ascension) === a),
+      ]),
+    ),
+    // The same split by the code that played the fight. `null` predates the code stamp and is
+    // kept as its own bucket rather than folded into the newest sha, for the same reason
+    // `unknown` ascension is: a record from before the instrument existed is not a record from
+    // any version of the code.
+    byCode: Object.fromEntries(
+      [...new Set(fights.map(f => f.code === null ? 'unstamped' : f.code))].sort().map(c => [
+        c, { ...group(fights, f => (f.code === null ? 'unstamped' : f.code) === c), days: [...new Set(fights.filter(f => (f.code === null ? 'unstamped' : f.code) === c).map(f => f.day))].sort() },
       ]),
     ),
     // The pair that answers "is the policy actually getting better": the same fight at the
