@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { actionsFor, fingerprint, factsFor } from './actions.mjs';
 import {rawFactors} from './learning/factor-log.mjs';
+import {observeTurn, attrition} from './learning/attrition.mjs';
 import { decisionCandidates, decisionQuestion, POLICY_VERSION } from './planner.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -196,6 +197,27 @@ async function step(token, preview = false) {
     for(const c of [...(planningState?.player?.hand??[]), ...(planningState?.player?.deck??[]), ...(planningState?.card_reward?.cards??[])])
       if(c?.name) seen.add(String(c.name).replace(/\+$/,''));
     view.seenCards=[...seen];
+    // ATTRITION, accumulated PER TURN and reset per FIGHT. Keyed on the fight (act, floor, enemy
+    // names) because a turn is the unit a fight is measured in - the mistake of reading "61
+    // decisions" as a war of attrition when it was 11 turns.
+    const liveEnemies=((planningState?.battle?.enemies)??[]).filter(e=>(e?.hp??0)>0);
+    const fightKey=liveEnemies.length
+      ? `${(planningState?.run?.act??'a')}:${(planningState?.run?.floor??0)}:`+liveEnemies.map(e=>e.name).sort().join('+')
+      : null;
+    if(fightKey===null){view.fightKey=null;view.fightAccum=null;view.fightLastRound=null;view.fightPending=null;}
+    else{
+      if(view.fightKey!==fightKey){view.fightKey=fightKey;view.fightAccum=null;view.fightLastRound=null;view.fightPending=null;}
+      const round=(planningState?.battle?.round??0);
+      if(round!==view.fightLastRound){
+        // A new round means the previous turn is complete: fold what was observed at ITS end.
+        if(view.fightPending)view.fightAccum=observeTurn(view.fightAccum,view.fightPending);
+        view.fightLastRound=round;
+      }
+      const topForecast=actions.map(a=>a.forecast).find(f=>f&&typeof f.damage==='number'&&f.damage>0)??null;
+      view.fightPending={hp:(planningState?.player?.hp)??view.fightPending?.hp,
+                         dealt:(topForecast?.damage)??view.fightPending?.dealt??0,
+                         enemyHp:liveEnemies.reduce((n,e)=>n+(e.hp??0),0)};
+    }
     if(planBenefitEnabled)memory.persistentPlan=persistentPlan(s,view.events);
     // First match wins. Bound to a name so the decision below can be stamped with the policy that
     // actually produced it, named by FUNCTION IDENTITY rather than by re-reading the env.
@@ -205,6 +227,7 @@ async function step(token, preview = false) {
       recent:memory,
       memory:memoryStore,
       seenCards:view.seenCards,
+      attrition:attrition(view.fightAccum),
       onStage:stage=>{view.message=stage;view.pending.stage=stage;},
       ask:async payload=>{
         if(token!==generation)throw Error('Decision cancelled.');
