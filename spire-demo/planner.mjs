@@ -6,6 +6,7 @@ import {mechanicsReview} from './mechanics.mjs';
 import {setupLinks} from './setup-links.mjs';
 import {encounterBrief,deckSnapshot,visibleState} from './encounters.mjs';
 import { actionsFor, factsFor, makeQuestion } from './actions.mjs';
+import { byName as gameDataByName } from './gamedata/game-data.mjs';
 import {retrieveMechanics, lookup} from './mechanics/retrieve.mjs';
 
 export const POLICY_VERSION = 'jev-visible-v23-retaliation';
@@ -151,6 +152,23 @@ function applyPower(enemy, name, n) {
   return true;
 }
 
+// STRUCTURE ONLY. The game's own data says a card deals damage, applies Vulnerable, draws cards —
+// it never says how much, because the printed number is a placeholder resolved against the live
+// stat. Returning the effect NAMES (not values) is what makes this safe to act on: the generic
+// parser below still reads every magnitude from the text the board actually printed.
+//
+// An entity the data does not know returns null, so a genuinely unknown card is still refused
+// rather than waved through on a name match.
+const NON_CARD_EFFECTS = new Set(['placeholders', 'gold', 'heal']);
+function gameDataStructure(name) {
+  const key = String(name ?? '').replace(/\+$/, '').trim().toUpperCase().replace(/[ '\-]/g, '_');
+  const entry = gameDataByName(key);
+  const effects = entry?.effects;
+  if (!effects) return null;
+  const named = Object.keys(effects).filter(k => k !== 'placeholders');
+  return named.length ? named : null;
+}
+
 function apply(m0, a) {
   const m = structuredClone(m0);
   m.steps.push(a);
@@ -166,15 +184,24 @@ function apply(m0, a) {
   // branch below still owns every card the board does not pin down.
   const listed = (potion ? supportedPotions : supportedCards).has(name);
   const kb = listed || potion ? null : kbMagnitude(item.name, text);
-  if (!listed && !kb) {
+  // The game's OWN data, recovered from its resource pack: 1,784 entities, every card, relic and
+  // power in the game — against the 49 names above and the 159 the agent had actually drawn.
+  // Its descriptions are TEMPLATES (`{Damage:diff()}` is the card's own stat, which changes with
+  // upgrade), so it can say what KIND of effect a card has but never how much. It is therefore a
+  // statement about STRUCTURE only: it may un-block the card and let the generic text parser below
+  // read the live numbers, and it may never contribute a magnitude of its own. Without it, a card
+  // the agent had never drawn blanked the entire board's forecast.
+  const gd = listed || potion ? null : gameDataStructure(item.name);
+  if (!listed && !kb && !gd) {
     m.boundary = 'unsupported'; m.unsupported = true;
     m.unsupportedEnergy += potion ? 0 : cost(item,m);
     m.warnings.push(`Re-observe after ${item.name}; full consequences are not modeled.`);
     return m;
   }
-  // A simulated KB card is still a recorded reading, not a modelled effect, and the planner parses only some
-  // clauses of any card's text. Say so, so quality stays 'partial' instead of claiming 'calculated'.
+  // A simulated card is still a recorded reading, not a modelled effect, and the planner parses only
+  // some clauses of any card's text. Say so, so quality stays 'partial' instead of claiming 'calculated'.
   if (kb) m.warnings.push(`${item.name} is simulated from a recorded reading of this exact description; a clause it states that the planner does not model is omitted.`);
+  else if (gd) m.warnings.push(`${item.name} is resolved from the game's own card data (${gd.join(', ')}); magnitudes come from the printed text, and a clause the planner does not model is omitted.`);
   const replayCount = !potion ? number(text,/\bReplay (\d+)\b/i) : 0;
   // Only the fully understood plain Strike replay is modeled. Other replayed
   // effects may draw, change costs, exhaust, or alter targets between plays.

@@ -46,17 +46,27 @@ test('a card the knowledge base resolves from its LIVE description is simulated,
   assert.notEqual(p.forecast.boundary, 'unsupported');
 });
 
-test('a card the base knows only by NAME stays unsupported: one name is not one effect', () => {
+test('a card the base knows only by NAME never contributes a remembered number', () => {
   // Bolas has exactly ONE recorded reading, so retrieve() hands it back with a real `variant` and damage:3 even
   // when the board is showing text the corpus never recorded - source 'name'. Only the source gate stops that 3
   // being replayed onto this text, and no fallback is invented in its place.
   const off = 'Deal 3 damage, then do something the corpus never recorded.';
   assert.equal(lookup('Bolas', 'card', null, off).source, 'name');
   assert.equal(lookup('Bolas', 'card', null, off).variant.damage, 3);
+  // The card is no longer refused outright, because the GAME'S OWN DATA says Bolas is a real card
+  // that deals damage. That is a statement about STRUCTURE, never about magnitude - so the number
+  // must come from the text the board printed, and the 3 the corpus remembers must never appear.
+  // These are the three magnitudes this fixture's enemy state produces (Vantom carries Vulnerable 1,
+  // so each printed value lands one higher).
   const f = projectSequence(attack('Bolas', off), ['Bolas → Vantom']);
-  assert.equal(f.boundary, 'unsupported');
-  assert.equal(f.damage, null);
-  assert.ok(f.warnings.some(w => /Re-observe after Bolas/.test(w)));
+  assert.equal(f.damage, 4, 'damage comes from the printed 3, not the remembered 3 and not a guess');
+  assert.notEqual(f.damage, 6, 'the recorded 3 plus Vulnerable is exactly what a remembered number looks like');
+  assert.ok(f.warnings.some(w => /game.s own card data/.test(w)),
+    'and the request must say the card was resolved structurally, so the omitted clause is visible');
+  // The decisive property: a DIFFERENT printed number must produce a DIFFERENT forecast. If the
+  // remembered reading were being applied anywhere, 9 and 22 would both read 4.
+  assert.equal(projectSequence(attack('Bolas', 'Deal 9 damage.'), ['Bolas → Vantom']).damage, 13);
+  assert.equal(projectSequence(attack('Bolas', 'Deal 22 damage.'), ['Bolas → Vantom']).damage, 33);
   // The same card with the recorded text IS simulated - the gate reads the text, not the name.
   assert.equal(projectSequence(attack('Bolas', 'Deal 3 damage. At the start of your next turn, return this to your Hand.'), ['Bolas → Vantom']).damage, 4);
 });
@@ -68,11 +78,19 @@ test('the 4/6/7/8/9 Strike hazard: an ambiguous name yields readings, never one 
   assert.equal(hit.source, 'name-ambiguous');
   assert.equal(hit.variant, undefined);
   assert.deepEqual(hit.variants.map(v => v.damage), [4, 6, 7, 8, 9]);
-  // An off-allowlist ambiguous card therefore stays unsupported rather than picking one of its seven readings.
+  // An off-allowlist ambiguous card used to stay unsupported. It no longer has to: the game's own
+  // data says Sovereign Blade is a real card that deals damage, which is a statement about STRUCTURE.
+  // What must never happen is one of its remembered readings being chosen. So the property to pin is
+  // not a literal number - the planner's own clause parsing decides that - but that the forecast
+  // TRACKS THE LIVE TEXT and is a function of it, never a constant recovered from the name.
   assert.equal(lookup('Sovereign Blade', 'card', null, 'Deal 5 damage.').source, 'name-ambiguous');
-  const f = projectSequence(attack('Sovereign Blade', 'Deal 5 damage.'), ['Sovereign Blade → Vantom']);
-  assert.equal(f.boundary, 'unsupported');
-  assert.equal(f.damage, null);
+  const at = hp => projectSequence(attack('Sovereign Blade', `Deal ${hp} damage.`), ['Sovereign Blade → Vantom']).damage;
+  const observed = [5, 9, 18, 40].map(at);
+  assert.equal(new Set(observed).size, observed.length,
+    `each printed value must give a distinct forecast — got ${JSON.stringify(observed)}`);
+  assert.ok(observed.every((v, i) => i === 0 || v > observed[i - 1]),
+    `and the forecast must rise with the printed value — got ${JSON.stringify(observed)}`);
+  assert.ok(observed.every(v => Number.isInteger(v) && v > 0));
   // Strike itself is allowlisted, so it is read from the live text - and the number is the text's, not a
   // remembered one. 12 is chosen because it survives: `damage` is HP actually removed, so a lethal hit would
   // read as the target's remaining HP and hide which number produced it. 18 = 12 amplified 1.5x, and 18 is in
