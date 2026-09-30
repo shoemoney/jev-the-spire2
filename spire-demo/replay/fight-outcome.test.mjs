@@ -85,11 +85,41 @@ test('the summary reports a real rate and splits by type', () => {
   assert.equal(s.lost, 1);
   assert.equal(s.unresolved, 0);
   assert.equal(Number((s.winRate * 100).toFixed(1)), 66.7);
-  assert.deepEqual(s.byType.boss, { won: 1, lost: 1, unresolved: 0 });
-  assert.deepEqual(s.byType.monster, { won: 1, lost: 0, unresolved: 0 });
+  assert.deepEqual(s.byType.boss, { total: 2, won: 1, lost: 1, unresolved: 0, winRate: 0.5 });
+  assert.deepEqual(s.byType.monster, { total: 1, won: 1, lost: 0, unresolved: 0, winRate: 1 });
 });
 
 test('a malformed log does not throw and does not invent a fight', () => {
   const fights = fightOutcomes([null, {}, { kind: 'decision' }, { kind: 'decision', state: {} }, runEnd()]);
   assert.equal(fights.length, 0, 'no combat screen means no fight, and no exception either');
+});
+
+test('ascension is recorded ON the fight, and unknown is not the difficulty 0', () => {
+  // A0 and A10 fights pooled into one rate move for reasons that have nothing to do with the
+  // policy. In the real corpus every boss win is A0 and both A10 boss fights are losses, so a
+  // pooled 42% hides the only fact worth acting on.
+  const withAsc = (asc) => (type, o = {}) => ({ ...dec(type, o), state: { ...dec(type, o).state, run: { ascension: asc } } });
+  const events = [
+    withAsc(0)('boss', { hp: 200 }), withAsc(0)('rewards'),
+    withAsc(10)('boss', { hp: 200 }), runEnd(17),
+    dec('monster', { hp: 30 }), dec('rewards'),   // no run block at all -> unknown
+  ];
+  const s = summariseFights(fightOutcomes(events));
+  assert.deepEqual(s.byAscension['0'], { total: 1, won: 1, lost: 0, unresolved: 0, winRate: 1 });
+  assert.deepEqual(s.byAscension['10'], { total: 1, won: 0, lost: 1, unresolved: 0, winRate: 0 });
+  assert.equal(s.byAscension.unknown.total, 1, 'a missing ascension is its own bucket, not 0');
+  assert.deepEqual(
+    s.atAscension['10'].boss,
+    { total: 1, won: 0, lost: 1, unresolved: 0, winRate: 0 },
+    'the hard difficulty must be reportable on its own',
+  );
+});
+
+test('an absent difficulty reports null rather than a 0% rate', () => {
+  // 0 wins and 0 fights is not a failure and is not a success; it is no data.
+  const s = summariseFights([]);
+  assert.equal(s.winRate, null);
+  assert.equal(s.atAscension.undefined, undefined);
+  const only = summariseFights(fightOutcomes([dec('boss', { hp: 9 })]));
+  assert.equal(only.atAscension.unknown.boss.winRate, null, 'no closed boss fight -> no rate');
 });

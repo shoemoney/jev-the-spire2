@@ -563,6 +563,16 @@ export function fightOutcomes(events) {
           type,
           name: enemies[0]?.name ?? null,
           startHp: Number.isFinite(enemies[0]?.hp) ? enemies[0].hp : null,
+          // Ascension belongs ON the fight, not beside it. Pooling A0 and A10 win rates produces a
+          // number that moves for reasons that have nothing to do with the policy, and the whole
+          // reason this project keeps records is to know whether the POLICY is improving.
+          //
+          // The split is not academic. In the recorded corpus the agent has killed 5 bosses and
+          // every one is Ascension 0, while both Ascension 10 boss fights are losses. Reported as
+          // a single pool, that reads as a 42% boss win rate — which is true, useless, and would
+          // hide the only fact worth acting on: the difficulty the policy actually has to survive
+          // is where it has never won.
+          ascension: Number.isFinite(state.run?.ascension) ? state.run.ascension : null,
           decisions: 0,
           outcome: 'unresolved',
           closedBy: null,
@@ -602,16 +612,35 @@ export function summariseFights(fights) {
     // null, not 0: with no closed fights there is no rate to report.
     winRate: closed === 0 ? null : tally.won / closed,
     byType: Object.fromEntries(
-      [...new Set(fights.map(f => f.type))].sort().map(t => [
-        t,
-        {
-          won: fights.filter(f => f.type === t && f.outcome === 'won').length,
-          lost: fights.filter(f => f.type === t && f.outcome === 'lost').length,
-          unresolved: fights.filter(f => f.type === t && f.outcome === 'unresolved').length,
-        },
+      [...new Set(fights.map(f => f.type))].sort().map(t => [t, group(fights, f => f.type === t)]),
+    ),
+    // The same split by difficulty. `null` is a real key here, meaning the log recorded no
+    // ascension for those fights — kept as its own bucket instead of being folded into 0,
+    // because 0 is a difficulty the game has and a missing reading is not one.
+    byAscension: Object.fromEntries(
+      [...new Set(fights.map(f => String(f.ascension)))].sort().map(a => [
+        a === 'null' ? 'unknown' : a,
+        group(fights, f => String(f.ascension) === a),
       ]),
+    ),
+    // The pair that answers "is the policy actually getting better": the same fight at the
+    // difficulty that is supposed to be hard. Present as null rather than 0 when absent, so an
+    // empty cell can never read as a total failure — or as a success.
+    atAscension: Object.fromEntries(
+      [...new Set(fights.map(f => String(f.ascension)))].sort().map(a => {
+        const g = group(fights, f => String(f.ascension) === a);
+        return [a === 'null' ? 'unknown' : a, { ...g, boss: group(fights.filter(f => f.type === 'boss'), f => String(f.ascension) === a) }];
+      }),
     ),
   };
 }
+
+const group = (fights, pred) => {
+  const won = fights.filter(f => pred(f) && f.outcome === 'won').length;
+  const lost = fights.filter(f => pred(f) && f.outcome === 'lost').length;
+  const unresolved = fights.filter(f => pred(f) && f.outcome === 'unresolved').length;
+  const closed = won + lost;
+  return { total: fights.filter(pred).length, won, lost, unresolved, winRate: closed === 0 ? null : won / closed };
+};
 
 export { roomLabel };
