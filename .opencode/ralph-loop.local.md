@@ -1,48 +1,52 @@
 ---
 active: true
-iteration: 62
+iteration: 63
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## NAMED THE 9 A10 NON-BOSS LOSSES AND FOUND THE PATTERN — THEN CAUGHT MYSELF WRONG TWICE
-Got the loss list into the module (board at death + per-fight parser coverage) instead of another
-throwaway script, and broke my own analysis twice on the way, which is the argument for the module:
+## I WAS MEASURING HISTORICAL CODE, AND IT INVALIDATED MY OWN LAST ITERATION
+Chased the multi-hit blindness and it did not exist. In order:
 
-  1. Captured `state.battle.intents`, which does not exist. Recorded `inc=[]` on all 9 losses and
-     called it a measurement. An always-empty array is the most convincing wrong number there is.
-  2. Counted every non-numeric intent label as unparsed. Reported **"the agent is blind on 47% of
-     all decisions, losses and wins alike"** — and it was false. 1589 of 4592 intents are
-     Buff/Defend/Debuff/Summon/Stun whose label is empty BECAUSE they telegraph no damage. 895 of
-     those are Buffs. Counting them made a correct screen look like a failed parse.
-     Also the corpus has ZERO prose labels: every one of 4592 is a plain integer or `NxM`.
+  parseIntentLabel over every label in the corpus : 544/544 NxM accepted, 0 rejected
+  rejected intents by type                        : Buff 895, Debuff 361, Defend 175, ... — NO
+                                                   Attack intent is ever rejected. Every reject is a
+                                                   non-damage intent whose label is empty BECAUSE
+                                                   it telegraphs no damage.
+  mismatched labels (total != perHit x hits)      : 0
+  yet 94 forecasts warned "incoming attacks could not be parsed"
 
-## THE REAL SIGNAL
-  A10 non-boss, plain-integer Attack telegraphs the parser can read:
-    losses  215/302   71.2%
-    wins   1088/1251  87.0%
-  multi-hit telegraph involved in a loss: 7 of 9
+So the parser the warnings describe is not the parser in the tree. Dating them settled it:
 
-And the signature is exact on four of them — blindTurns == multiHit to the turn:
-    Inklet                multiHit 4   blind 4/4
-    Phantasmal Gardener   multiHit 22  blind 22/22
-    Skulking Colony       multiHit 8   blind 8/32
-    Byrdonis              multiHit 11  blind 11/24
+  day     combatDecisions  unknownForecast  "could not be parsed" warnings
+  09-23        354              38   10.7%                    34
+  09-24        415             121   29.2%                    60
+  09-30       3291              38    1.2%                     0
 
-**So the planner goes `unknown` on precisely the turns where the enemy telegraphs a multi-hit
-attack** — the case where the total is `NxM (total)` and is frequently much larger than the number
-on the card. The agent has been reading ~71% of A10 attack telegraphs and blind to the rest, and it
-loses disproportionately on exactly those fights.
+**All 94 are from 09-23/09-24. Zero today. Unknown forecasts fell 29.2% -> 1.2%.** The multi-hit
+parse fix landed days ago; I spent an iteration diagnosing a bug that had already been fixed,
+because the corpus is a mix of code versions and nothing in it said so.
 
-One honest exception: Gremlin Merc died with multiHit=22 and blind 0/30, so the NxM form IS parsed
-sometimes. The gap is not "NxM unhandled" but "NxM handled inconsistently" — which is a narrower
-and more fixable bug than the one I was about to describe. Fossil Stalker died facing a plain `14`
-with no multi-hit and no blindness, so not every loss is a parse failure either.
+The 20.4%-vs-4.0% multi-hit correlation was inflated by exactly those old runs. There is no
+multi-hit parse bug. There is no NxM inconsistency. Gremlin Merc's "22 multi-hit, 0 blind" was
+never evidence of a working parser; it was evidence that runs are not one code version.
 
-## Next
-Make the enemy-intent path parse `NxM (total)` deterministically, then re-measure this same table.
-The target is wins and losses converging on one coverage number.
+## What this costs, stated plainly
+Every number I have reported over the WHOLE corpus is partly a measurement of the past. That
+includes the A10 gradient. Re-measured on current code only:
+
+  A0    90 fights  88%   boss 5/11
+  A10   30 fights  80%   boss 0/1
+
+**The 8-point A10 gap survives** — it is real and current. The A3 band is GONE; all 11 A3 fights
+were 09-24. So "A3 is 91%, better than A0" was also historical, and I was about to explain it.
+
+## The actual lesson, and the guard it implies
+The instrument caught the error, but only because I dated the warnings instead of trusting the
+count. A log that accumulates across code versions will happily report a fixed bug as a live one
+forever. The fix is a time axis on the corpus, so "how are we doing" can mean "how did the CURRENT
+code do" — the only version of that question worth answering.
 
 ## Loop state
-547 tests green · sweep 4: 11/14 · game batch running
+547 tests green · sweep 4: 11/14
