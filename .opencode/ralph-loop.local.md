@@ -1,34 +1,32 @@
 ---
 active: true
-iteration: 56
+iteration: 57
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE NINETEEN COLORLESS CARDS HAVE ART AND NO TEXT
-I went looking rather than typing them in, which was the point. Results:
+## REVIEW FINDING: "the completeFactors fallback reverts to the pre-factoring policy, which
+## has no waste veto at all" — PARTLY TRUE, AND THE GATE COMPENSATES FOR THE PART THAT BITES
+Tested the full path, not the isolated `combine`, because the gate runs on both branches and an
+isolated test would have hidden that.
 
-  "bandage up"   0 occurrences in the entire 2GB pack
-  "BANDAGE_UP"   0
-  "Bandage Up"   0
-  "CORPSE_EXPLOSION" 0
+  COMPLETE factors: chose p1 (Defend)   factorFallback false
+  INCOMPLETE      : chose p1 (Defend)   factorFallback true
 
-And in the extracted localization text, of ten names I checked, **eight appear nowhere**. The two that
-do — "bite", "calm" — are substrings inside other cards' descriptions, not entries of their own. Every
-card that IS in the knowledge base has its name present in the text: vintage, bash, impervious,
-inflame, pommel strike, entropic brew, fairy in a bottle — all true.
+The waste veto IS bypassed on the fallback — the reviewer is right about the mechanism, and it is
+the reason the code says so in a comment. But the example given, a self-harm plan that does not
+survive, is still caught, because `refuseLethalChoice` runs on the fallback and the alternative's
+forecast states it survives.
 
-**So this is not a matching bug and not a scan-window miss.** Those atlas files are ART for cards
-whose text this build does not ship — reserved content, or text living somewhere I have not located.
+**Residual gap, stated precisely:** a plan that WASTES resources but SURVIVES passes unchecked on
+the fallback. That is real and it is the Bloodletting/Fortifier family minus the fatal ones. It is
+not the safety hole the finding implies.
 
-**The 94% figure is therefore closer to 100% of the cards that actually have text**, and the nineteen
-are not a gap I can close honestly. Typing them from their names would be inventing their effects,
-which is the Colossus mistake, the `distinctCardsSeenThisRun` mistake and the `lower_bound` mistake
-in one move. They stay unknown, and the planner re-observes.
-
-This also retires the task I set last iteration. The next concrete task is NOT "find the nineteen" —
-it is something that can actually be answered.
+Not fixed this iteration. The obvious repair — refuse any fallback plan whose waste noul is high —
+needs a threshold, and a threshold on a signal that is only sometimes present is a guess. Same
+reasoning that stopped the graded-survival treatment: measure the residual first, and a fallback
+fires on a minority of boards.
 
 ## Loop state
-535 tests green · sweep 4: 9/14 · game batch running · server up
+535 tests green · sweep 4: 10/14 · game batch running · server up
