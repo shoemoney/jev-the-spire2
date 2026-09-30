@@ -153,8 +153,19 @@ export function actionsFor(s) {
       const required = c?.prompt?.match(/^Choose (\d+) cards? to Enchant\./i);
       const selected = c?.cards?.filter(x=>x.is_selected).length ?? 0;
       const ready = c?.can_confirm && (!required || selected >= Number(required[1]));
+      // EVERY card is offered, selected ones included, because `select_card` TOGGLES on a grid
+      // screen (vendor api-reference.md, `select_card`: "toggles selection"). Offering only the
+      // unselected ones made the screen a dead end: a bad selection could not be undone, only
+      // confirmed. Measured live — a Deck Enchant screen sat on "Choose 3 cards to Enchant" with
+      // nine confirms executed and the screen never advanced, because the only legal move was to
+      // confirm the selection it had already got wrong. Selected cards are labelled as the
+      // deselect they are, so the label never claims a card is being added when it is being removed.
+      for (const x of c?.cards ?? []) {
+        if (x?.index === undefined || x?.index === null) continue;
+        add('select_card', {index: x.index},
+          x.is_selected ? `Deselect ${x.name}` : `Select ${x.name}`, x);
+      }
       if (ready) add('confirm_selection', {}, 'Confirm selected cards');
-      else list(c?.cards, 'select_card', 'index', x => !x.is_selected);
       if (c?.can_skip) add('cancel_selection', {}, 'Skip selection');
       break;
     }

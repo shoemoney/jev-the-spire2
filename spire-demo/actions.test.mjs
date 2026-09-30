@@ -29,8 +29,17 @@ test('multi-hit damage is multiplied and unknown intents are flagged', () => {
   const s = combat(); assert.equal(factsFor(s).displayed_block_gap, 7);
   s.battle.enemies[0].intents[0].label = '?'; assert.equal(factsFor(s).all_attack_labels_parsed, false);
 });
-test('selection confirmation prevents toggling already chosen cards', () => {
-  assert.deepEqual(actionsFor({ state_type: 'card_select', card_select: { can_confirm: true, cards: [{ index: 0 }] } }).map(a => a.command), [{ action: 'confirm_selection' }]);
+test('a ready selection offers confirm AND a way back out of a bad one', () => {
+  // This used to offer ONLY confirm, on the reasoning that toggling a chosen card was a mistake.
+  // `select_card` TOGGLES on a grid screen (vendor api-reference), so withholding it made the screen
+  // a dead end: measured live, a "Choose 3 cards to Enchant" overlay ran nine confirms and never
+  // advanced, because the only legal move was to confirm a selection it had already got wrong.
+  const a = actionsFor({ state_type: 'card_select', card_select: { can_confirm: true, cards: [{ index: 0, name: 'Strike+', is_selected: true }] } });
+  assert.ok(a.some(x => x.command.action === 'confirm_selection'), 'confirm is still there');
+  const back = a.find(x => /Deselect/.test(x.label));
+  assert.ok(back, 'and the selected card can be taken back');
+  assert.equal(back.command.action, 'select_card');
+  assert.match(back.label, /Deselect Strike\+/, 'the label says what the action will DO');
 });
 test('locked events, unaffordable purchases, full potion belt are excluded', () => {
   assert.equal(actionsFor({state_type:'event',event:{options:[{index:0,is_locked:true},{index:1,is_locked:false}]}}).length,1);
