@@ -1,51 +1,43 @@
 ---
 active: true
-iteration: 86
+iteration: 87
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE CONFOUND CANNOT BE REMOVED WITH THE DATA I HAVE
-I said a within-fight comparison at matched turn index would settle the 2.17-vs-4.08 question. Two
-attempts, and the second is the honest one.
+## THE BUDGET CAP I FOUND LAST ITERATION WAS MY OWN MISCONFIGURATION
+I said more boss fights were needed and that the token budget capped them at one run per session,
+because 12,413 input tokens per decision against a 10,000,000 budget buys about 805 decisions.
 
-**Attempt 1 was impossible by construction.** I tried to pair a changed and an unchanged decision
-at the same fight AND the same turn index. There is exactly one decision at each turn index, so it
-can never be both. Zero pairs. That was a design error, not a finding.
+Then I read the line that sets it. The batch's own restart path already uses:
 
-**Attempt 2, matched on depth across fights: also zero.** Bucketing every decision by its index
-within its own fight and requiring >=3 of each kind per bucket produced no usable bucket at all.
+  MAX_INPUT_TOKENS: '90000000'   MAX_DECISIONS: '20000'
 
-The reason, and it is a real property of the data rather than a bug:
+**90 million, not 10 million.** At the measured burn rate that is roughly 7,200 decisions, or about
+twelve runs per server session. There is no cap. The cap was the server I started by hand with
+default env an hour ago, and I measured my own misconfiguration and reported it as a property of
+the loop.
 
-  turn index: how often the scorer overrode, across all boss fights
-     0   73%     4   83%     8   58%
-     1   71%     5   83%     9   67%
-     2   57%     6   25%    10   50%
-     3   46%     7   75%    11   50%
+That is the sixth time in this session that a number described the setup rather than the system, and
+it is the same shape every time: I read a live value, did not ask which configuration produced it,
+and treated the result as a fact about the code. It is also the first one where the error was
+*optimistic* — it told me something was blocking me when nothing was — so the discipline that caught
+it was not scepticism, it was simply going back to read the line.
 
-`changed` **is** correlated with how deep into the fight the decision is — it ranges from 25% to 83%
-by turn index. So the confound I named is real, not a hedge. But each index holds only 2 to 15
-decisions across the whole corpus, and that is not enough to match on depth with any usable n.
+Server restarted on the batch's intended budget: 0/20000 decisions, 0/90000000 tokens, sha 3f5eebd.
+Play resumed.
 
-**So: 2.17 versus 4.08 damage per decision stays uninterpreted.** It is not evidence that the
-overrides are harmful and it is not evidence that they are harmless. With 15 boss fights in the
-entire corpus and a per-index n of 2-15, the question is underpowered, and no amount of clever
-analysis of this data will fix that.
+## Where the loop actually stands
+  play: running, one full run banked at act 1 floor 17 this batch
+  the open question (do the scorer's overrides help or hurt) needs more boss fights
+  the budget is not the constraint, and was never the constraint
 
-## What this actually costs, and what it buys
-Two of the three candidate explanations for the Ceremonial Beast losses are now refuted by
-measurement (ordering, scorer bias toward defence), and the third is real, located in
-`wire.mjs`, and cannot be evaluated on the evidence available. **That is a legitimate place to stop
-and it is not a place to ship anything.** Every change in this session that survived contact with
-data did so because a measurement came first; the temptation right now is to make one that does not,
-and the whole record of the last twenty iterations is a list of what that produces.
-
-The resolution is not more analysis. It is **more boss fights** — which is the thing the loop is
-already doing, and the only genuinely scarce input in this system.
+So the correct action for this iteration was the one I named — play, not analysis — and it turned
+out to also be a one-line configuration correction. The distinction matters: had I "fixed" the
+budget in the code I would have been editing a limit that was already set correctly, on the authority
+of a measurement of my own shell.
 
 ## Loop state
-565 tests green - override question UNDERPOWERED (15 fights, 2-15 decisions per turn index) - `changed`
-is genuinely correlated with depth (25-83% by index), so the confound is real - no change shipped, and
-the correct next action is play, not analysis
+565 tests green - server on the batch's real budget (90M tokens, 20k decisions) - play running
+- the token budget is NOT a constraint on boss-fight accumulation
