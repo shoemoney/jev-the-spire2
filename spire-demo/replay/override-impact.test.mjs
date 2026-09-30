@@ -69,3 +69,40 @@ test('an empty or malformed log reports nulls, not zeroes', () => {
     assert.equal(r.decisions, 0);
   }
 });
+
+// The A/B reader. Compared against the confounded `overrideImpact` on the SAME data, because the
+// whole point is that these are two different questions and reading the wrong one is the failure.
+import { abImpact } from './metrics.mjs';
+
+const armed = (type, hp, arm, name = 'X') => ({
+  kind: 'decision', outcome: 'executed',
+  deliberation: { changed: arm === 'scorer', abArm: arm },
+  state: { state_type: type, battle: { enemies: [{ name, hp }] } },
+});
+
+test('abImpact separates the arms and reports null until both appear at a depth', () => {
+  const only = abImpact([armed('elite', 100, 'model'), armed('elite', 80, 'model'), armed('elite', 70, 'model')]);
+  assert.equal(only.modelDelta, null, 'one arm only is not a comparison');
+  assert.equal(only.unmatched.nModel, 2);
+  assert.equal(only.unmatched.nScorer, 0);
+});
+
+test('a positive modelDelta means the model arm dealt more damage, depth-matched', () => {
+  const a = [armed('elite', 100, 'model', 'A'), armed('elite', 60, 'model', 'A'), armed('elite', 50, null, 'A')];
+  const b = [armed('elite', 100, 'scorer', 'B'), armed('elite', 90, 'scorer', 'B'), armed('elite', 85, null, 'B')];
+  const r = abImpact([...a, { kind: 'decision', outcome: 'executed', state: { state_type: 'rewards' } }, ...b]);
+  const d1 = r.matched.find(m => m.depth === 1);
+  assert.ok(d1, 'depth 1 has both arms');
+  assert.equal(d1.model, 40, 'the model arm dealt 40');
+  assert.equal(d1.scorer, 10, 'the scorer arm dealt 10');
+  assert.equal(d1.delta, 30);
+  assert.equal(r.modelDelta, 30);
+});
+
+test('an unarmed decision is excluded rather than counted as either arm', () => {
+  // The gate overrides an armed decision, and scorer/model agreement needs no arm. Counting either
+  // as an arm would put decisions in a bucket they were never assigned to.
+  const r = abImpact([armed('elite', 100, 'model'), armed('elite', 90, null), armed('elite', 85, null)]);
+  assert.equal(r.decisions, 0);
+  assert.equal(r.modelDelta, null);
+});

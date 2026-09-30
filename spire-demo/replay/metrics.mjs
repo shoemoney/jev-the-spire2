@@ -615,6 +615,60 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
   };
 }
 
+// READ THE A/B. `overrideImpact` compares "the scorer differed from the model" against "it did
+// not", which is exactly the confounded comparison the A/B exists to replace. This compares the arm
+// that was actually PLAYED, depth-matched, which is the comparison the experiment was built for.
+//
+// The two must be read as different questions. `changed` answers "when they disagree, does the
+// override look worse?" - an observation about the scorer. `abArm` answers "when we chose between
+// them at random on the same board, which one dealt more damage?" - an experiment.
+export function abImpact(events, { types = COMBAT_STATES } = {}) {
+  const fights = [];
+  let open = null;
+  for (const ev of events) {
+    if (ev?.kind === 'run_end') { if (open) { fights.push(open); open = null; } continue; }
+    if (ev?.kind !== 'decision' || ev.outcome !== 'executed') continue;
+    const state = ev.state ?? {};
+    const live = types.has(state.state_type)
+      ? (state.battle?.enemies ?? []).filter(e => (e.hp ?? 0) > 0 && (e.hp ?? 0) < 1e6)
+      : [];
+    if (!live.length) { if (open) { fights.push(open); open = null; } continue; }
+    open ??= { rows: [] };
+    const hp = live.reduce((n, e) => n + e.hp, 0);
+    const prev = open.rows.at(-1)?.hp;
+    // `hp` has to be stored, not just used. Omitting it left `prev` undefined on every row, so
+    // `dealt` was silently null throughout and the function reported zero decisions while looking
+    // like it had run. A measurement that cannot fail is not a measurement.
+    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, arm: ev.deliberation?.abArm ?? null });
+  }
+  if (open) fights.push(open);
+
+  const byDepth = new Map();
+  for (const f of fights) for (const r of f.rows) {
+    if (r.dealt == null || !r.arm) continue;
+    if (!byDepth.has(r.depth)) byDepth.set(r.depth, { model: [], scorer: [] });
+    byDepth.get(r.depth)[r.arm].push(r.dealt);
+  }
+  const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  const buckets = [...byDepth.keys()].sort((a, b) => a - b)
+    .filter(d => byDepth.get(d).model.length && byDepth.get(d).scorer.length)
+    .map(d => {
+      const { model, scorer } = byDepth.get(d);
+      return { depth: d, model: mean(model), scorer: mean(scorer), nModel: model.length, nScorer: scorer.length, delta: mean(model) - mean(scorer) };
+    });
+  const all = a => fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.arm === a)).map(r => r.dealt);
+  const m = all('model'), sc = all('scorer');
+  return {
+    decisions: m.length + sc.length,
+    unmatched: { model: mean(m), scorer: mean(sc), nModel: m.length, nScorer: sc.length },
+    matched: buckets,
+    // Positive means the model's own choice dealt more damage. Null, not 0: no depth had both arms,
+    // so there is no comparison to report and 0 would read as "no difference found".
+    modelDelta: buckets.length ? mean(buckets.map(b => b.delta)) : null,
+    depthsWithBothArms: buckets.length,
+  };
+}
+
 export function fightOutcomes(events) {
   const fights = [];
   let open = null;
