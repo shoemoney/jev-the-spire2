@@ -8,7 +8,7 @@ import {powerTimingReview} from './power-timing.mjs';
 import {decisionFocus} from './decision-focus.mjs';
 import {compactRequest} from './compact-request.mjs';
 import {decisionQuestion} from './planner.mjs';
-import {refuseLethalChoice} from './learning/lethal-gate.mjs';
+import {refuseLethalChoice, rankingByProbability} from './learning/lethal-gate.mjs';
 export const DELIBERATION_VERSION='jev-visible-review-v24-card-order';
 const upgradeValueReview = 'Evaluate upgrade and other setup effects by their marginal payoff. In combat, identify a specific eligible target from the visible hand, whether it is already upgraded, and whether remaining energy and card-play limits allow using it after setup. Separate immediate block or damage from the upgrade benefit; if the target cannot be played now, future payoff depends on retaining or redrawing it and the fight lasting long enough. Do not assume a combat upgrade permanently improves the deck. Use supplied upgrade text for exact gains; if unavailable, mark the gain uncertain rather than inventing it. For card rewards and purchases, count existing copies and already-upgraded cards, compare the added copy against skipping or other purchases, and account for drawing the setup card instead of needed damage or defense. Another copy needs an unmet need and useful targets, not merely a synergy label. Compare spending that energy on direct damage, defense or scaling. These are tradeoffs, not a ban on setup cards.';
 const mechanicsInstruction = 'When visible rules make facing matter, inspect forecast.facingProjection when available (incoming uses its conservative upper bound), forecast.facingReview and the last targeted action in each proposed sequence. Choose the final orientation for the lowest survivable total from all remaining attackers, not automatically the last damage target. Reserve a cheap targeted card or legal targeted potion for turning when needed before spending all energy; compare its cost with block, kills and retaliation. If both sides attack, compare both totals; if only one attacks, consider facing that attacker. Re-observe displayed intents after turning before ending. Do not assume area attacks turn you, or multiply already-adjusted displayed damage by the back-attack bonus again. '+
@@ -100,7 +100,7 @@ export async function deliberate({state,candidates,ask:rawAsk,recent=[],seenCard
   // are "no claim was made" and "no alternative existed" - both worth having. Published on the RESULT
   // rather than inside `deliberation`, which is null on this path (same reason as factored.mjs).
   const forced=await ask(decisionQuestion(state,candidates));
-  return {...forced,safetyGate:refuseLethalChoice(forced.answers?.move?.choice??null,candidates,candidates),deliberation:null};
+  return {...forced,safetyGate:refuseLethalChoice(forced.answers?.move?.choice??null,candidates,rankingByProbability(forced.answers?.move,candidates)),deliberation:null};
  }
  onStage('Jev is assessing the encounter and deck synergy');
  const first=await ask(perspectiveQuestion(state,candidates,recent,seenCards,fightAttrition));
@@ -152,7 +152,7 @@ export async function deliberate({state,candidates,ask:rawAsk,recent=[],seenCard
  // This is what makes `deliberate` - the policy a bare `node spire-demo/server.mjs` resolves to -
  // carry the same guard as the four opt-in policies, instead of the safety story being true only
  // of the flag-gated paths. See learning/lethal-gate.mjs for the measurement behind the guard.
- const gate=refuseLethalChoice(final.answers.move.choice,candidates,candidates);
+ const gate=refuseLethalChoice(final.answers.move.choice,candidates,rankingByProbability(final.answers.move,candidates));
  return {...final,usage:totals,
   answers:{...final.answers,move:{...final.answers.move,choice:gate.choice}},
   safetyGate:gate,

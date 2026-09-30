@@ -26,7 +26,7 @@ import { decisionQuestion } from './planner.mjs';
 import { decisionFocus } from './decision-focus.mjs';
 import { deckAssessment, deckUnavailableInstruction } from './deck-assessment.mjs';
 import { compactRequest } from './compact-request.mjs';
-import { refuseLethalChoice, completeFactors } from './learning/lethal-gate.mjs';
+import { refuseLethalChoice, completeFactors, rankingByProbability } from './learning/lethal-gate.mjs';
 
 // v2 adds the safety gate and the refuse-to-recombine guard, routes the `move`
 // question through decisionFocus, and rephrases the per-candidate nouls on boards
@@ -325,7 +325,7 @@ export async function factoredDeliberate({ state, candidates, ask, onStage = () 
   // would be a refusal nobody could see on the one path that has no deliberation.
   if (candidates.length <= 1) {
     const result = await ask(compactRequest(decisionQuestion(state, candidates)));
-    return { ...result, safetyGate: refuseLethalChoice(candidates[0]?.id ?? null, candidates, candidates), deliberation: null };
+    return { ...result, safetyGate: refuseLethalChoice(candidates[0]?.id ?? null, candidates, rankingByProbability(result.answers?.move, candidates)), deliberation: null };
   }
   onStage('Jev is scoring every option in one pass');
   const wasteAsked = (weights.waste ?? 0) > 0;

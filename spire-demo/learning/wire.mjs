@@ -26,7 +26,7 @@ import {buildRecallContext, RECALL_LESSON_LIMIT} from './recall.mjs';
 // factored.mjs - the default policy - needs the same two, and importing them back from
 // here would close a cycle. Re-exported so this module's callers and its tests are
 // unaffected by where the implementation now sits.
-import {refuseLethalChoice, statedSurvival, completeFactors, FACTOR_PREFIXES} from './lethal-gate.mjs';
+import {refuseLethalChoice, statedSurvival, completeFactors, rankingByProbability, FACTOR_PREFIXES} from './lethal-gate.mjs';
 export {refuseLethalChoice, statedSurvival, completeFactors};
 
 export const RECALL_POLICY_VERSION = 'jev-recall-v1';
@@ -111,7 +111,7 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
   // One candidate is a forced choice, not a ranking, so there is no combination to do and the gate has
   // nothing to move to. It is still reported: "no alternative existed" is worth having on the record.
   if (candidates.length <= 1) {
-    const gate = refuseLethalChoice(candidates[0]?.id ?? null, candidates, candidates);
+    const gate = refuseLethalChoice(candidates[0]?.id ?? null, candidates, rankingByProbability(result.answers?.move, candidates));
     return {
       ...result,
       answers,

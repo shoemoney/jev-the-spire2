@@ -74,6 +74,26 @@ export function statedSurvival(candidate) {
   return typeof forecast.survives === 'boolean' ? forecast.survives : null;
 }
 
+/**
+ * The candidates in the order THIS policy ranked them.
+ *
+ * The gate's job is to move to the BEST available survivor, so the order it is handed decides which
+ * survivor it picks. Four call sites passed the raw candidate list, so it took the first survivor in
+ * MENU order — and since the menu is now ordered by turn-completeness and damage, that is an
+ * arbitrary choice dressed as a rescue rather than the model's preference.
+ *
+ * For a policy with a combined score, pass `scored`. For one that has none, this builds the same
+ * ordering from the model's own choice probabilities — the closest thing to a ranking that policy
+ * actually has. Candidates the model gave no probability to sort last rather than being dropped: a
+ * policy that did not mention a candidate has not excluded it.
+ */
+export function rankingByProbability(answer, candidates) {
+  const probabilities = answer?.probabilities ?? {};
+  const ranked = candidates.filter(c => Number.isFinite(probabilities[c.id]));
+  const unranked = candidates.filter(c => !Number.isFinite(probabilities[c.id]));
+  return [...ranked.sort((a, b) => probabilities[b.id] - probabilities[a.id]), ...unranked];
+}
+
 const evidenceOf = candidate => {
   const forecast = candidate?.forecast ?? {};
   return {
@@ -314,4 +334,4 @@ export function completeFactors(candidates, answers = {}, required = ['safe_', '
   }));
 }
 
-export default {refuseLethalChoice, statedSurvival, completeFactors, FACTOR_PREFIXES};
+export default {refuseLethalChoice, statedSurvival, completeFactors, rankingByProbability, FACTOR_PREFIXES};
