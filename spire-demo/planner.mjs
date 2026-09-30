@@ -8,6 +8,7 @@ import {encounterBrief,deckSnapshot,visibleState} from './encounters.mjs';
 import { actionsFor, factsFor, makeQuestion } from './actions.mjs';
 import { byName as gameDataByName } from './gamedata/game-data.mjs';
 import { attritionLine } from './learning/attrition.mjs';
+import { RECALL_STATE_KEY } from './learning/lethal-gate.mjs';
 import {retrieveMechanics, lookup} from './mechanics/retrieve.mjs';
 
 export const POLICY_VERSION = 'jev-visible-v23-retaliation';
@@ -918,14 +919,25 @@ export function mechanicsContext(state, cap = MECHANICS_BYTE_CAP) {
 // unit tests passed throughout, because they called the builder that had it.
 //
 // At the base, a new policy cannot forget it.
-export function decisionQuestion(s,candidates,fightAttrition) {
+export function decisionQuestion(s,candidates,fightAttrition,recall) {
   s=visibleState(s);
-  if(!isCombat(s)){const q=makeQuestion(s,candidates);q.state.encounter=encounterBrief(s);q.state.deck=deckSnapshot(s);q.state.spending_routes=spendingRoutes(s);return q;}
-  const mechanics = mechanicsContext(s);
+  // Declared before the early return because BOTH branches use it - the non-combat branch is where
+  // MAP decisions live, and attaching to the combat branch alone reproduces the attrition bug on a
+  // different screen. That has now happened three times in this loop.
   const attritionNote = attritionLine(fightAttrition);
+  // BOTH return paths carry the record. The non-combat branch is where MAP decisions live — the ones
+  // that choose whether to walk into an elite — and it returned early, so attaching to the combat
+  // branch alone would have reproduced the attrition bug exactly, on a different screen. That is the
+  // third time in this loop a signal was attached to one of two paths.
+  if(!isCombat(s)){const q=makeQuestion(s,candidates);q.state.encounter=encounterBrief(s);q.state.deck=deckSnapshot(s);q.state.spending_routes=spendingRoutes(s);
+    if(recall)q.state[RECALL_STATE_KEY]={...recall};
+    if(attritionNote)q.questions.move.instructions+=' '+attritionNote;
+    return q;}
+  const mechanics = mechanicsContext(s);
   return {
     model:'typesafe/jev-1.13',
     state:{game:'Slay the Spire 2',objective:'Win the run. Survive the current turn and preserve useful resources.',state:s,encounter:encounterBrief(s),deck:deckSnapshot(s),facts:factsFor(s),policy:POLICY_VERSION,setup_dependencies:setupLinks(s),mechanics_review:mechanicsReview(s),...(mechanics?{[MECHANICS_STATE_KEY]:mechanics}:{}),potion_timing:potionTiming(s),
+      ...(recall?{[RECALL_STATE_KEY]:{...recall}}:{}),
       forecast_scope:'Plans are short prefixes, not complete optimal turns. Forecasts assume ending after the prefix. Null means unknown, not zero. Partial outcomes have explicit caveats. Do not treat displayed card damage as actual damage through enemy powers. When incomingExact is false, incomingMin and incomingMax bracket the turn\'s damage: prefer a plan that survives incomingMax, and do not read the single incoming figure as what will land. A bounded plan is a usable plan — rank it on its bound instead of setting it aside.'},
     questions:{move:{type:'choice',
       instructions:'Choose the next action or short plan that best advances winning the run. Derive tactics from visible rules, intents, cards and observations. Calculations are aids, not guaranteed outcomes; partial estimates omit stated effects and null means unknown. Evaluate tradeoffs over the encounter, not only the current turn. Only the FIRST action executes, followed by a fresh observation. Choose only among supplied IDs.'+(attritionNote?' '+attritionNote:''),

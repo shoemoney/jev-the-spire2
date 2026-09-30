@@ -94,6 +94,13 @@ export function rankingByProbability(answer, candidates) {
   return [...ranked.sort((a, b) => probabilities[b.id] - probabilities[a.id]), ...unranked];
 }
 
+// The key the cross-run record rides under. Defined here because the BASE question builder attaches
+// it: it was defined in wire.mjs and attached by wire.mjs, so only the recall policy ever saw it and
+// the default policy decided elite routes with no knowledge of the agent's own elite record — which
+// reads 29/52 won, 56% — sitting unused in the store. Same shape as the attrition bug: a signal
+// attached at one call site instead of the base, so every other policy silently went without it.
+export const RECALL_STATE_KEY = 'recalled_experience';
+
 const evidenceOf = candidate => {
   const forecast = candidate?.forecast ?? {};
   return {
