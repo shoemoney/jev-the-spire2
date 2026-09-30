@@ -324,6 +324,35 @@ async function step(token, preview = false) {
         const statePartBytes=(payload&&typeof payload.state==='object'&&payload.state)
           ?Object.fromEntries(Object.entries(payload.state).map(([k,v])=>[k,JSON.stringify(v??null).length])):null;
         view.requestBytes=body.length; view.requestPartBytes=partBytes; view.requestStateBytes=statePartBytes;
+        // ONE REAL DESCRIPTOR, because the wire measurement said `candidate_details` is 30% of every
+        // request and 100% of big decisions point all their candidates at ONE byte-identical value
+        // whose own forecast is null — yet a collapse of it did not fire, so the values differ
+        // somewhere nobody has looked. Aggregates cannot say where. A single captured descriptor can,
+        // and it costs one truncated sample on a bounded number of requests rather than a field on
+        // every decision: this is the same move that resolved the attrition bugs and the historical
+        // warning counts, and the fourth time it has been the answer.
+        // Sampled by SEARCHING the payload for candidate_details rather than assuming where it
+        // lives. The first version read payload.state.candidate_details and never fired: under the
+        // recall policy — the one actually booted — the descriptor is not there. Same failure shape
+        // as the last four: assuming a field's location instead of looking.
+        if(Date.now()-(view.lastDescriptorAt??0)>15000){
+          const find=(o,path='',depth=0,seen=new Set())=>{
+            if(!o||typeof o!=='object'||depth>4||seen.has(o))return null;
+            seen.add(o);
+            for(const [k,v] of Object.entries(o)){
+              const p=path?path+'.'+k:k;
+              if(k==='candidate_details'&&v&&typeof v==='object')return{path:p,map:v};
+              const r=find(v,p,depth+1,seen); if(r)return r;
+            }
+            return null;
+          };
+          const hit=find(payload);
+          if(hit){
+            const vals=[...new Set(Object.values(hit.map))];
+            view.descriptorSample={path:hit.path,ids:Object.keys(hit.map).length,distinct:vals.length,bytes:Object.values(hit.map).reduce((a,v)=>a+String(v).length,0),values:vals.slice(0,2).map(v=>String(v).slice(0,600))};
+            view.lastDescriptorAt=Date.now();
+          }
+        }
         const attempt=async signal=>{
           view.hedgeAttempts=(view.hedgeAttempts??0)+1;
           const r=await fetch('https://openrouter.ai/api/alpha/decisions',{

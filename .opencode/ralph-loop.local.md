@@ -1,50 +1,47 @@
 ---
 active: true
-iteration: 72
+iteration: 73
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE ANSWER TO LAST ITERATION'S QUERY: THERE ARE NO DUPLICATES
-  2,275 decisions, 39,095 candidates, every one carrying a plan and a descriptor
-    distinct by descriptor : 13,248   (66.7% "duplicate")
-    distinct by PLAN       : 39,095   (0.0% duplicate)
-    one plan carrying different labels : 0 / 2275
+## LOGGED THE DESCRIPTOR. IT IS 35 DISTINCT PLANS AND 31 KB OF REAL INFORMATION.
+  path: state.candidate_details
+  ids: 35   distinct: 35   bytes: 31,225
+  each value: {"sequence":[{"label":"Bash -> Ceremonial Beast","command":{"action":"play_card",...
 
-**Every candidate is unique.** The 66.7% was an artefact of `details` not containing the plan, and
-my previous iteration's "0.0% of candidates share a command but differ elsewhere" was itself
-measured on the command rather than the descriptor — so that number was about a field I was not
-actually comparing. Two bad measurements in a row from the same script, both because the id lives
-in a different place than I assumed (`candidate.details`, not `deliberation.candidate_details`).
+**Every value is distinct and each carries a `sequence` of labelled steps with real commands.** This
+is 35 different multi-card plans, described once each.
 
-## THE REAL DEFECT, WHICH IS BIGGER THAN A TOKEN PROBLEM
-  decisions with 10+ candidates : 1807
-    ALL candidates share ONE descriptor          : 1807  (100%)
-    candidate.forecast VARIES per candidate      : 1756  (97%)
+## SO THE PROMPT IS NOT WASTEFUL AND THE SIZE IS THE DECISION
+  p50 wire 28.1 KB   p90 77.6 KB
+A 35-way choice among genuine multi-card plans costs what it costs. There is no repetition to
+collapse, no shared object to hoist, and no cap that would be safe. The 28%-of-decisions-beyond-
+position-10 is not a symptom of distinct options being buried - it is the model reading 35 real
+options and picking the one it judges best, which is the behaviour the depth measurement was
+supposed to explain and now does.
 
-100% of them. And the shared descriptor's own `forecast` is null. Meanwhile the per-candidate
-forecast is computed and lives on `candidate.forecast` — so the largest field on the wire, 30% of
-all bytes and 41% of the largest request, is ONE object serialized 33 to 64 times, carrying a null
-forecast and describing no plan. The per-plan forecasts the model needs are on the candidates and
-are not in this field at all.
+**Three iterations of chasing prompt waste, and the answer is that there is none.** The size is the
+information content. The one real win in the whole line of inquiry was iteration 69 (nine relevance-
+free prose checks, 2.43 KB -> 1.18 KB), and even that was 10% of a small payload.
 
-**That is a wrong-information problem, not a wrong-size one.** A reviewer reading `candidate_details`
-would conclude every option has the same outlook, which is false: 97% of decisions have distinct
-forecasts per option, in a different field.
+## I WAS WRONG IN ITERATION 72, AND THE WRONG MEASUREMENT IS NAMED
+I wrote "100% of decisions with 10+ candidates share ONE descriptor, whose forecast is null." That
+was measured on `candidate.details` in the LOG - a different object from the wire's
+`state.candidate_details`, which is assembled later. The logged one is a per-candidate summary; the
+one on the wire is the per-plan sequence. I compared a summary against a plan, found the summary
+repetitive, and reported it as repetition in the thing being sent.
 
-## I BUILT THE COLLAPSE TWICE AND REVERTED IT TWICE — NOT BECAUSE TESTS FAILED
-First attempt removed candidate IDS, which is what tripped deliberation.test.mjs's "without removing
-defense" guard. That guard was right.
-Second attempt collapsed the descriptor and kept every id, which is the correct shape, with tests.
-It did not measurably fire: candidate_details stayed 30% of the wire and the largest request grew to
-161 KB. Comparing raw strings failed because each descriptor embeds its own id; comparing id-stripped
-still did not fire, so the descriptors differ somewhere I have not looked.
+That is the fifth time in six iterations a tidy causal story did not survive contact with the real
+object, and in every case the instrument that caught it was logging the actual thing rather than
+thinking harder about a proxy. Four reverted attempts and a wrong headline to show for it. The
+correct move now is to stop chasing the payload and go back to the win rate.
 
-**Reverted.** An unverifiable optimisation that does not demonstrably fire is not a win, it is a
-change that reads as one in the diff. The finding is banked; the fix needs the real descriptor
-shape, which means logging one — the same move that resolved the attrition bugs and the historical
-warnings, and the fourth time it has been the thing that worked.
+## Also: the backgrounding pattern was the real time sink
+`( ... node server.mjs & )` kept dying between iterations. The server runs fine in the foreground
+and fine under `nohup ... & disown`. Three diagnostic cycles went to a process-management problem
+while I believed I was diagnosing a payload problem - again a story about the wrong layer.
 
 ## Loop state
-562 tests green · two reverted attempts, one well-evidenced finding, wire size not yet improved
+562 tests green - payload investigation CLOSED as a genuine dead end - win rate untouched since 62
