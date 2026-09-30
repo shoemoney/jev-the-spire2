@@ -1,28 +1,40 @@
 ---
 active: true
-iteration: 46
+iteration: 47
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## TWO OF OPUS'S FIVE FINDINGS WERE ABOUT CODE THE PACKET DID NOT CONTAIN
-It reported Thorns as unmodelled. `retaliationRule` parses it exactly and falls back to
-`retaliation_unknown`. It reported that a plan killing the only attacker is not reclassified;
-I tested it and the forecast already returns `survives:true, incoming:0, boundary:combat_won`
-for a 6 HP enemy killed by a 6 damage Strike, and `survives:false` for the same board at 20 HP.
+## SWEEP 4 (74-file packet) CAUGHT THE GAP IN MY OWN LAST FIX
+I published `displayed_incoming_attack_lower_bound` last iteration. It went into the request text and
+nowhere else. `forecast.survives` still returned null, so `refuseLethalChoice` saw null and stayed
+silent. **The number decorated the request and did no work** — the same "honest note around a
+quantity that does nothing" mistake, one iteration on.
 
-Both are correct in the code and absent from the review. Cause: the packet listed **14 of 75
-files**. A reviewer speculating about an invisible file produces a finding that LOOKS specific —
-it names a file and a function — and that is worse than no review, because it survives a skim.
+    12 HP, 12 readable incoming, 1 UNREAD intent
+      incoming (total)   : null      <- genuinely unknown
+      incomingLowerBound : 12
+      boundedLethal      : true
+      SURVIVES           : false     <- was null; the gate could not see this
+      statedSurvival()   : false
 
-**Fixed: the packet now carries all 74 non-test modules, 1MB.** Large files excerpted, generated
-`knowledge.mjs` excluded at 500KB. `retaliation.mjs` is in it, with the exact-match rule on line 4.
+The arithmetic is not in doubt: if the readable intents already exceed HP plus block, the turn is
+lethal whatever the unread ones are, because they can only add. That is where the missing early
+verdict in 18 lost fights comes from.
 
-This is a correction to my instrument, not to the agent. It changes what the loop can see, and
-therefore what it can find next.
+## SCOPED TO `!parsed`, AND THAT IS A KNOWN LIMITATION
+A floor exceeding HP plus block proves death under ANY uncertainty — a facing multiplier only
+raises the damage. So the narrow gate leaves a real improvement on the table. But four existing
+tests pin `survives: null` when the cause is POSITIONING, and overturning four deliberate safety
+rules on the strength of my own reasoning is exactly the over-reach that has broken this codebase
+repeatedly. So it fires for the case it was built for, and positioning is untouched. Widening it is
+a separate, argued change.
 
-## The method lesson is worth more than the two findings
-A reviewer is only as good as what you show it. I spent two sweeps asking 14 frontier models
-about 14 files and treated silence about the other 61 as agreement. It was not agreement; it was
-absence. The next sweep has the whole repository in front of it.
+## The admission cannot be made symmetric by accident
+A floor is admitted for `false` only. A plan is never called a survivor on a lower bound, because
+a lower bound cannot prove safety. `statedSurvival({unknown, survives:true, boundedLethal:true})`
+returns `null`, not `true` — pinned by a test.
+
+## Loop state
+522 tests green · sweep 4 running with full coverage · server restarted · both batches going
