@@ -1,43 +1,40 @@
 ---
 active: true
-iteration: 92
+iteration: 93
 maxIterations: 100
-sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 keep playing get better every run be bol
 
-## THE EXPERIMENT IS LIVE AND IT ACTUALLY CHANGES BEHAVIOUR
-Armed in two places, because an experiment that only runs until the next crash produces a sample
-too small to read and no way to know it stopped:
-  - the batch's self-restart path now sets `SPIRE_AB_MODEL`, so it survives every restart
-  - the running server, restarted on the batch's real budget with the flag on, sha ed4e395
+## THE EXPERIMENT IS ACCUMULATING, AND IT HAS ITS FIRST STAMPED BOSS WIN
+  loop: running, act 1 f17, code ed4e395 (the A/B build)
+  A/B evidence: { buckets: 8, minBuckets: 8, samples: 25, minSamples: 200 }
+  modelDelta: null — bucket floor cleared, sample floor not
 
-First armed decisions, and the check that matters — does the arm change what is PLAYED, or only
-what is logged:
+  stamped boss fights under ed4e395 : Soul Fysh WON, Soul Fysh lost
 
-  MODEL  (plays the model's own choice)   jevMove=a1  executed=a1   <- the arm took effect
+**The first boss kill recorded under a code stamp that is also a controlled experiment.** Watched it
+live: the run reached f17 with hp 63 against a 211 HP boss, traded down to hp 10 while taking the
+boss from 142 to 85, and the run then ended. Whether that was the win or the loss is what the fight
+outcomes say, and the fight outcomes are the instrument that was wrong twice earlier in this session
+and is now tested — so I am taking its word over the last frame I happened to be watching.
 
-That is the difference between an experiment and a label. An arm that recorded `abArm: 'model'` and
-then executed the scorer's choice anyway would have produced a clean, confident, meaningless result,
-and the read-out would have shown it.
+**No result is claimed.** Eight buckets and 25 samples is the bucket floor met and the sample floor
+missed by 8x, and `modelDelta` says so rather than producing the -7.000 it would have printed a day
+ago.
 
-  decisions carrying an arm : 7   (model 4 / scorer 3)
-  depths with both arms    : 0
-  modelDelta               : null — not enough yet
+## What the sample floor actually implies
+The A/B only assigns an arm when the scorer and the model DISAGREE, which is about 47% of decisions,
+and 25 armed samples have come out of 78 decisions since arming. So 200 armed samples is roughly 425
+combat decisions — call it one to two full fights. The floor is reachable, not aspirational, and it
+is the right floor: the observational estimate needed 3,319 decisions to be readable, and 200
+randomised ones is a deliberately smaller bar that still cannot be cleared by a single bucket.
 
-Seven decisions and a 4/3 split is the hash doing roughly what a hash should. **No reading yet, and
-the read-out says so rather than producing a number from seven samples.**
-
-## Where the experiment stands
-`abImpact` compares the arm PLAYED, depth-matched. `overrideImpact` compares `changed`, which is the
-confounded question and is kept because the association is real and worth re-checking. Two different
-questions, two different functions, and the summary says which is which.
-
-The thing to watch is not the first result — it is the sample size. At 3,319 decisions the
-observational estimate was well-powered; the randomised one needs comparable depth coverage, and until
-`depthsWithBothArms` is in the dozens the honest read is "not yet".
+## The loop is doing the only thing that helps now
+Everything actionable this session is either shipped-and-measured or waiting on more runs. The
+experiment needs depth coverage, the Ceremonial Beast question needs boss fights, and both are
+produced by the same thing: the loop continuing to play. No amount of further analysis substitutes.
 
 ## Loop state
-580 tests green - A/B live, interleaved, both arms firing, arm effect VERIFIED on real play
-- 7 armed decisions, 4 model / 3 scorer - no result claimed
+581 tests green - A/B live: 8 buckets, 25/200 samples, modelDelta correctly null
+- first stamped boss WIN under the experiment code - no result claimed
