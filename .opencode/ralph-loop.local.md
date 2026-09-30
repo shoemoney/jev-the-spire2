@@ -1,30 +1,42 @@
 ---
 active: true
-iteration: 53
+iteration: 54
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE STORE'S BEST NUMBER WAS REACHING NOBODY
-The store holds `elite 29/52 won (56%)` — the agent's own measured elite record over twenty runs. It
-was attached by `recallingDeliberate`, so it reached exactly ONE policy of five, and the default
-policy decided whether to walk into an elite with that number sitting unread.
+## TWENTY-FIVE RUNS, SPLIT THE ONLY WAY THAT IS HONEST
+Split by ASCENSION, because pooling them is the mistake I retracted at iteration 38.
 
-The base question builder has two return paths. The non-combat one is where MAP decisions live —
-precisely the elite decision — and it returns early. **My first attempt attached to the combat
-branch only, which would have reproduced the attrition bug on a different screen.**
+**Ascension 10 — the only runs comparable to the historical baseline:**
+  runs 1-8  (before this session's fixes)   floors 14, 9, 14, 11, 12, 6, 8, 7   median 11, best 14
+  runs 9-10 (after the early fixes)         floors 15, 17                            median 16, best 17
+  n=2 against n=8. Suggestive. Not a claim.
 
-That is the THIRD time in this loop a signal has reached one of two paths, and it is now the first
-thing I check when wiring anything new. `recall-delivery.test.mjs` asserts both branches carry the
-record, that the attrition note reaches both, and that supplying nothing attaches nothing.
+**Ascension 0 — a different difficulty, reported separately and never pooled:**
+  runs 11-25   median 17, best 31 (act 2)
+  **five runs reached the Act 1 BOSS at floor 17** and one cleared it into Act 2.
 
-## The good news inside the store
-  monster 547/576 won (95%), 13.8 HP average cost
-  elite    29/52  won (56%)
-Elite was 11/34 (32%) when this record was first computed. It has roughly doubled as the run-level
-guidance, the complete turns, and the potion visibility landed. Still the worst class by a wide
-margin, and now at least the agent can see the number when it decides.
+So the honest sentence is: at the difficulty the corpus can be compared at, the last two runs are
+the two deepest, on a sample of two. At the easier setting the agent now reaches the boss routinely.
+Neither number says "the fixes caused it", and the ascension-0 line is not evidence of anything on
+its own.
+
+## What is solid
+- monster 547/576 (95%), elite 29/52 (56%) — elite has roughly doubled from 11/34 (32%)
+- six boss fights recorded, no kill, two left the boss under 20% of its health
+- 535 tests green, and the last three defects were each a signal that reached nobody
+
+## The shape of this loop
+Twenty-five runs, and the improvements were almost never "the model played better". They were:
+  a regex that matched no real label; a list of eleven potion names standing in for twenty-nine; a
+  signal attached to one of two code paths; a field labelled a floor that was a floor on nothing;
+  a gate rescuing whichever survivor the menu happened to list first.
+
+Not one of those is a play improvement. All five removed reasons the agent could not SEE the board,
+and every measurement that followed said the same thing: it was looking at half a picture and calling
+it a decision.
 
 ## Loop state
-535 tests green · sweep 4: 9/14 · game batch restarted · server up
+535 tests green · sweep 4: 9/14 · game batch running · server up
