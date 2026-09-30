@@ -184,7 +184,17 @@ function apply(m0, a) {
   // kbMagnitude() gates that read to the live text and returns null rather than a remembered number, so the
   // branch below still owns every card the board does not pin down.
   const listed = (potion ? supportedPotions : supportedCards).has(name);
-  const kb = listed || potion ? null : kbMagnitude(item.name, text);
+  // POTIONS WERE EXCLUDED FROM BOTH DYNAMIC PATHS. `listed || potion` sent every potion down the
+  // hand-written allowlist and nothing else, so the eighteen potion types the corpus has shown beyond
+  // the eleven named ones were invisible to the ranker — and an unlisted potion marks the play
+  // `unsupported`, which blanks the forecast and blinds the lethal gate for the WHOLE turn. Several
+  // of the missing ones are survival items: Fairy in a Bottle heals to 30% instead of dying, and it
+  // is the single most common potion in the corpus after Entropic Brew.
+  //
+  // The bridge sends a full description for every potion, so the generic text parsing below can read
+  // them; the game-data path classifies their prose effects, which it could not do before because it
+  // only matched `{Placeholder}` substitutions and Fairy writes "you heal to 30%".
+  const kb = listed ? null : kbMagnitude(item.name, text);
   // The game's OWN data, recovered from its resource pack: 1,784 entities, every card, relic and
   // power in the game — against the 49 names above and the 159 the agent had actually drawn.
   // Its descriptions are TEMPLATES (`{Damage:diff()}` is the card's own stat, which changes with
@@ -192,7 +202,12 @@ function apply(m0, a) {
   // statement about STRUCTURE only: it may un-block the card and let the generic text parser below
   // read the live numbers, and it may never contribute a magnitude of its own. Without it, a card
   // the agent had never drawn blanked the entire board's forecast.
-  const gd = listed || potion ? null : gameDataStructure(item.name);
+  // Game data says what a card DOES. It never says what it COSTS, and an X-cost play has an energy
+  // cost the planner cannot simulate — so promoting one on its effects alone produced a forecast
+  // that promised unspent energy it had no basis to promise. Structure licenses promotion only when
+  // the play is otherwise fully modelled.
+  const costKnown = String(item.cost ?? '').trim().toUpperCase() !== 'X' && Number.isFinite(Number(item.cost));
+  const gd = (listed || !costKnown) ? null : gameDataStructure(item.name);
   if (!listed && !kb && !gd) {
     m.boundary = 'unsupported'; m.unsupported = true;
     m.unsupportedEnergy += potion ? 0 : cost(item,m);

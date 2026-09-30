@@ -30,12 +30,35 @@ const KIND = {
   regen: ['Regen', 'RegenPower'], vigor: ['VigorPower'], stars: ['Star', 'Stars'],
 };
 
+// PROSE FORMS. The placeholder table above only sees `{Token}` substitutions, and a lot of the game
+// writes its effect as English instead — Fairy in a Bottle reads "When your HP would be reduced to 0,
+// instead this potion is discarded and you heal to 30%", with no `{Heal}` anywhere. So a potion whose
+// whole value is its prose was classified as having no effect at all.
+//
+// That matters more than it sounds: eleven potion types are named in a hand-written allowlist, the
+// corpus has shown twenty-nine, and an unlisted potion marks the play `unsupported` — which blanks
+// the forecast and blinds the lethal gate. The survival items were among the invisible ones.
+const PROSE = [
+  [/heal(?:s|ing)? to/i, 'heal'],
+  [/heal for/i, 'heal'],
+  [/\bDraw\s+\d+\b|\bDraw\s+cards?\b/i, 'draw'],   // "Draw Pile" is a zone, not an effect
+  [/\bUpgrade\b/i, 'upgrade'],
+  [/add into your/i, 'cardsInHand'],
+  [/random potions/i, 'randomPotion'],
+  [/Play the top/i, 'repeat'],
+  [/cannot be used|unplayable/i, 'unplayable'],
+  [/choose .* random /i, 'cardsInHand'],
+];
+
 function classify(text) {
   const effects = {};
   for (const [effect, tokens] of Object.entries(KIND)) {
     for (const t of tokens) {
       if (text.includes(`{${t}`) || text.includes(`{${t}}`)) { (effects[effect] ??= []).push(t); break; }
     }
+  }
+  for (const [re, effect] of PROSE) {
+    if (re.test(text)) (effects[effect] ??= []).push('prose');
   }
   for (const m of text.matchAll(PLACEHOLDER)) {
     (effects.placeholders ??= new Set()).add(m[1]);
