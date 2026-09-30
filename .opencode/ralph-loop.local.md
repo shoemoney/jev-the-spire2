@@ -1,37 +1,28 @@
 ---
 active: true
-iteration: 45
+iteration: 46
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## LANDED — the lower bound, which is the signal I had been describing for four iterations
-Sweep 3's Opus review found it concretely. When any attack intent is unread,
-`displayed_incoming_attack_total` is null, and a null incoming makes the forecast say
-"you survive." Technically true — an unread attack is not a KNOWN attack — and
-practically the opposite, because the readable ones are still coming.
+## TWO OF OPUS'S FIVE FINDINGS WERE ABOUT CODE THE PACKET DID NOT CONTAIN
+It reported Thorns as unmodelled. `retaliationRule` parses it exactly and falls back to
+`retaliation_unknown`. It reported that a plan killing the only attacker is not reclassified;
+I tested it and the forecast already returns `survives:true, incoming:0, boundary:combat_won`
+for a 6 HP enemy killed by a 6 damage Strike, and `survives:false` for the same board at 20 HP.
 
-    both readable   total=21   lower bound=21
-    ONE unread      total=null lower bound=12   <-- the case that matters
-    all unread      total=null lower bound=0    <-- nothing readable, no guess
+Both are correct in the code and absent from the review. Cause: the packet listed **14 of 75
+files**. A reviewer speculating about an invisible file produces a finding that LOOKS specific —
+it names a file and a function — and that is worse than no review, because it survives a skim.
 
-`low` was already computed and thrown away whenever anything was unread. It is a floor
-on the damage this turn takes, it is exact when everything reads, and when the floor alone
-exceeds HP plus block the unread intents cannot rescue the turn — they can only add.
+**Fixed: the packet now carries all 74 non-test modules, 1MB.** Large files excerpted, generated
+`knowledge.mjs` excluded at 500KB. `retaliation.mjs` is in it, with the exact-match rule on line 4.
 
-This is the arithmetic behind "0 of 18 lost fights were warned early." The bound is
-published in `factsFor` and carried as `displayed_block_gap_lower_bound`; the exact
-`displayed_block_gap` stays null where it is unknown, because the bound is ADDITIONAL
-evidence and must not replace the whole thing dressed up as it.
+This is a correction to my instrument, not to the agent. It changes what the loop can see, and
+therefore what it can find next.
 
-## Also from the same review, banked and not yet actioned
-- model Thorns in `retaliationRule` (the module already exists to apply it)
-- a kill removes the attacker's intent, so a lethal-on-paper plan that kills the only
-  attacker should be reclassified as a survivor rather than pushed down the loss path
-- `refuseLethalChoice` should prefer a `draw`-boundary plan over a stated-death plan:
-  unknown is strictly better than stated death
-- the 89.4% calibration still mixes prefix counterfactuals with executed turns
-
-## Live
-518 tests green · 5/14 sweep-3 reviews · server restarted with the bound · ascension-0 run going
+## The method lesson is worth more than the two findings
+A reviewer is only as good as what you show it. I spent two sweeps asking 14 frontier models
+about 14 files and treated silence about the other 61 as agreement. It was not agreement; it was
+absence. The next sweep has the whole repository in front of it.
