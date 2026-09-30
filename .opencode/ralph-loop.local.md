@@ -1,37 +1,34 @@
 ---
 active: true
-iteration: 55
+iteration: 56
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## MEASURED THE KNOWLEDGE BASE'S COMPLETENESS FOR THE FIRST TIME
-  cards the game HAS (from the card atlas index): 622
-  present in the knowledge base              : 584  (94%)
+## THE NINETEEN COLORLESS CARDS HAVE ART AND NO TEXT
+I went looking rather than typing them in, which was the point. Results:
 
-  by character
-    colorless     65/84   19 missing   <- the one real gap
-    defect        91/98    7 missing
-    event         20/23    3 missing
-    silent        91/93    2 missing
-    ironclad      88/89    1 missing
-    necrobinder   92/93    1 missing
-    regent        92/93    1 missing
-    status        11/14    3 missing   (wither1/2/3 — a numeric-suffix naming convention, not a gap)
-    curse/quest   complete
+  "bandage up"   0 occurrences in the entire 2GB pack
+  "BANDAGE_UP"   0
+  "Bandage Up"   0
+  "CORPSE_EXPLOSION" 0
 
-**The colorless gap is the one that matters.** Nineteen cards the agent can be handed and cannot
-plan, and colorless cards are exactly the ones that arrive unannounced from pots, events and
-shops. `bandage up`, `bite`, `calm`, `deep breath`, `beta`, `expunger` — none are in the
-localization under those names, so this is not a matching bug to fix but something to go looking for:
-either they live under a different key, or the English scan window missed a sub-block.
+And in the extracted localization text, of ten names I checked, **eight appear nowhere**. The two that
+do — "bite", "calm" — are substrings inside other cards' descriptions, not entries of their own. Every
+card that IS in the knowledge base has its name present in the text: vintage, bash, impervious,
+inflame, pommel strike, entropic brew, fairy in a bottle — all true.
 
-`status` and `event` misses are naming conventions, not missing data.
+**So this is not a matching bug and not a scan-window miss.** Those atlas files are ART for cards
+whose text this build does not ship — reserved content, or text living somewhere I have not located.
 
-## Next concrete task
-Find the nineteen colorless cards in the pack rather than adding them by hand — hand-typing a card
-whose effect I cannot read is precisely the invention this project refuses.
+**The 94% figure is therefore closer to 100% of the cards that actually have text**, and the nineteen
+are not a gap I can close honestly. Typing them from their names would be inventing their effects,
+which is the Colossus mistake, the `distinctCardsSeenThisRun` mistake and the `lower_bound` mistake
+in one move. They stay unknown, and the planner re-observes.
+
+This also retires the task I set last iteration. The next concrete task is NOT "find the nineteen" —
+it is something that can actually be answered.
 
 ## Loop state
 535 tests green · sweep 4: 9/14 · game batch running · server up
