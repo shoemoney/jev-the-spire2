@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { offerEffects } from './deck-assessment.mjs';
+import { offerEffects, seenCardEvidence } from './deck-assessment.mjs';
 import {perspectiveQuestion,reviewQuestion} from './deliberation.mjs';
 import {deckAssessment,deckAssessmentInstruction} from './deck-assessment.mjs';
 import {decisionCandidates} from './planner.mjs';
