@@ -1,34 +1,44 @@
 ---
 active: true
-iteration: 34
+iteration: 35
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE 18 LOST FIGHTS, LOOKED AT PROPERLY
-  108 won · 18 lost   (monster 6, elite 7, boss 5)
-  lost fights entered at **53 HP** average
-  **forecast said survives:false within the first 3 decisions: 0 of 18**
-  decisions spent in a KNOWN-lethal state: 66 of 582 (11%)
-  longest fight among the losses: 67 decisions
+## I ALMOST SHIPPED A WRONG FRAMING, AND CAUGHT IT IN THE SAME BREATH
+I read "61 decisions" and wrote "a war of attrition — 40 to 67 decisions to fight a boss." **That
+was decisions, not turns.** Measured properly:
 
-**In every single lost fight the agent was never told, early, that it was losing.** Zero of 18 had a
-lethal verdict in their first three decisions. The forecast is `partial` almost everywhere — its
-warnings are about an unmoded clause, not about accumulating danger — so it says "survives: true"
-right up until the turn it cannot survive, and then it is too late to matter.
+  monster   median  4 turns, max 11   (n=108)
+  elite     median  6 turns, max 20   (n=14)
+  boss      median 11 turns, max 14   (n=5)
 
-That is a much more precise statement of the failure than "the deck is weak": the agent loses fights
-it is never warned about, so it plays every turn as though the fight were fine. It is the same class
-as every other bug this loop has found — a number that is technically correct and practically
-misleading, because it is a per-turn verdict and the danger is cumulative.
+**Boss fights last 11-14 turns.** That is a normal Slay the Spire boss fight, not a grind. The
+"war of attrition" line was mine, it was wrong, and I had already typed it before checking. That is
+the SEVENTH time this loop a confident claim of mine came from reading the wrong unit.
 
-## NOT FIXING IT THIS ITERATION
-A "danger accumulates" signal is exactly the kind of heuristic I have been burned by building on
-unverified ground, and unlike the billion-HP pool this one I CAN reason about from the data — but
-the right shape of it (per-turn slope? HP-per-turn trend? encounter-relative?) is a real design
-decision, not a patch. It gets its own iteration with a plan, not a rushed edit.
+## WHAT THE NUMBERS ACTUALLY SAY
+  lost fights entered at 53 HP average
+  ~5.4 HP lost per TURN across an 11-14 turn boss (1.2 per decision x ~4.5 decisions per turn)
+  53 HP / 5.4 per turn = about 10 turns of life, and the fight runs 11-14
 
-Also corrected my own analysis twice in one sitting: a first pass reported "126 lost fights" and a
-second "0/18" on a polluted list. Both were my grouping, and both were caught by re-running the
-verified tool rather than by reading the output carefully. Fifth and sixth corrections of this shape.
+So the boss does its damage every turn and the deck cannot out-sustain it. It is a deck problem —
+as I have said for several iterations — but now measured in the right unit instead of asserted in
+the wrong one.
+
+## THE DANGER SIGNAL, DESIGNED (and the lesson from the wrong unit)
+The signal I deferred last iteration should be per TURN, not per decision, and it should be
+arithmetic rather than a heuristic:
+
+  turnsToLive  = hp / damageTakenPerTurn
+  turnsToKill  = enemyHp / damageDealtPerTurn
+  losing on attrition when turnsToLive < turnsToKill
+
+Nothing here is invented: both rates are observed from the fight the agent is already in, and the
+verdict is a comparison of two counts. The same discipline as `incomingMax`, as the idle-turn notice
+and as the card conditions — a derived fact, not a judgement.
+
+It needs per-turn accumulation in the server (HP deltas and damage deltas, keyed on the fight the
+way `seenCards` is keyed on `runKey`), and it must report `unknown` rather than a verdict on the
+first turn, when there is no rate yet.
