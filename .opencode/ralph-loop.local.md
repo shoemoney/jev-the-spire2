@@ -1,34 +1,42 @@
 ---
 active: true
-iteration: 58
+iteration: 60
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE RESIDUAL GAP I DESCRIBED LAST ITERATION HAS NEVER OCCURRED
-  decisions logging a factorFallback   : 2489
-    the fallback actually fired        : 0   (0.0%)
-    lethal gate overrode on it         : 0
-  => the gap applies to ZERO decisions in the entire corpus.
+## THE LOOP HAD NO KILL INSTRUMENT AT ALL — SO IT INVENTED ONE, TWICE, WRONG
+Found while chasing "six boss fights, no kill": there is no boss-kill code in this project.
+`replay/metrics.mjs` measures how DEEP a run got, never whether a fight was WON. Every kill number
+I have ever reported came from a throwaway python script. Two of them disagreed:
 
-Last iteration I wrote: *"a plan that wastes but survives passes unchecked on the fallback. That is
-real."* It is real **in theory and empty in practice.** The model answers every factor set on every one
-of 2,489 logged decisions, so the fallback is a defensive branch that has never executed.
+  "6 boss fights, no kill"  grouped each run's boss sequence and called it a loss whenever the run
+                            ended — which is exactly what happens AFTER a kill, on the walk to the
+                            next act. The one real kill read as a loss.
+  "12 won, 0 lost"          scanned past the run boundary, so the NEXT run's first non-combat
+                            decision read as "the boss died". Every completed fight read as a win.
 
-So there is nothing to build, and the honest summary is: **a reviewer found a real mechanism behind
-a path the agent has never taken.** Three findings now stand as measured-and-not-built:
-  the waste veto outvoting survival   — the safer plan won every case
-  the graded survival treatment       — would change 5 boards in 2191
-  the fallback bypassing the veto      — the fallback fires on 0 boards
+Built `fightOutcomes()` off the transition the log already records: leaving a combat screen with
+the run alive is a win, `run_end` mid-combat is a loss, a log that ends mid-fight is `unresolved`
+and is NEVER guessed. Both wrong numbers are now named regression tests.
 
-**What that pattern is worth.** Each of the three is a genuine hole in the code and none of them is a
-hole in the agent's behaviour. A review that reads code finds reachable-in-principle paths; it cannot
-tell whether the agent ever goes there. The corpus can, immediately, and for free. So the loop's real
-instrument is not the review at all — it is **the log, queried before the fix is written.** That is
-cheaper than a code change, and it is what has caught every false positive since I started asking.
+  ALL FIGHTS 154   won 132  lost 21  unresolved 1   rate 86.3%
+  monster 117/8 · elite 10/7 · BOSS 5 won / 6 lost / 1 unresolved
 
-I should have measured this one before describing the gap, not after.
+**The agent has killed 5 bosses. I have been reporting 0 for many iterations.**
+
+## THE FIRST DRAFT OF THE FIX REPEATED THE ORIGINAL BUG
+I whitelisted post-combat screens, which quietly turned 4 real boss kills into `unresolved`
+because `card_select` was missing from the list. Checked the data before widening the list: all 4
+had `enemies: 0` and followed a monster/event/shop/rest screen, so they were reward picks. Then
+deleted the whitelist instead of extending it — a win is a positive observation, and making a known
+outcome depend on having enumerated every way it can be observed is the same mistake in new
+clothes. Deleting it moved boss wins 1 -> 5.
+
+The instrument caught its own error four times in the first ten minutes. That is the argument for
+building it rather than reasoning about it: every hand-rolled version of this number, mine included,
+was wrong, and the module is the first one that can prove why.
 
 ## Loop state
-535 tests green · sweep 4: 10/14 · game batch running · server up
+542 tests green (7 new) · sweep 4: 11/14 · game batch running

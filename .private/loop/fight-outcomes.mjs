@@ -78,6 +78,18 @@ export function summarize(events) {
     byStreak[bucket] ??= {won: 0, lost: 0};
     byStreak[bucket][f.died ? 'lost' : 'won'] += 1;
   }
+  // ASCENSION GATING. The bridge's `character_select` screen exposes no ascension control — its
+  // options are character IDs, back and confirm — so every run started through the API is Ascension
+  // 0 unless a SAVE carried a higher one. That is not a detail: the session that produced the first
+  // boss kill ran entirely at Ascension 0 while every earlier run was Ascension 10, and the
+  // "improvement" was reported before anyone checked. A number that can silently change difficulty
+  // must not be summarised without it.
+  const ascensions = {};
+  for (const e of events) {
+    const a = e?.state?.run?.ascension;
+    if (Number.isFinite(a)) ascensions[a] = (ascensions[a] ?? 0) + 1;
+  }
+  const levels = Object.keys(ascensions).map(Number).sort((a, b) => a - b);
   return {
     fights: fights.length,
     won: fights.filter(f => !f.died).length,
@@ -85,6 +97,10 @@ export function summarize(events) {
     byStreak,
     runs: events.filter(e => e?.kind === 'run_end').length,
     floors: events.filter(e => e?.kind === 'run_end').map(e => e?.state?.run?.floor).filter(Number.isFinite),
+    ascensions,
+    singleDifficulty: levels.length <= 1,
+    // A mixed-difficulty summary is still true, but it cannot be compared to a single-level one.
+    comparable: levels.length <= 1,
   };
 }
 
@@ -100,7 +116,15 @@ for (const f of files) {
 }
 const s = summarize(merged);
 const floors = s.floors;
+const levels = Object.keys(s.ascensions).map(Number).sort((a, b) => a - b);
 console.log(`files ${files.length} · runs ${s.runs} · fights ${s.fights}`);
+if (levels.length > 1) {
+  console.log(`  !! MIXED ASCENSION ${JSON.stringify(s.ascensions)} — these fights are NOT a like-for-like sample.`);
+  console.log('     The bridge cannot set ascension (character_select has no control for it), so fresh runs are Ascension 0');
+  console.log('     and only a resumed SAVE can carry 10. Report per-ascension, never pooled.');
+} else {
+  console.log(`  ascension: ${levels[0] ?? 'unknown'}`);
+}
 console.log(`  WON ${s.won}   LOST ${s.lost}   (${(s.won / Math.max(1, s.fights) * 100).toFixed(0)}% won)`);
 console.log(`  floors at death: ${floors.join(', ')}  best ${floors.length ? Math.max(...floors) : '-'}`);
 console.log('\nFIGHT OUTCOME BY LONGEST BLOCKING STREAK');

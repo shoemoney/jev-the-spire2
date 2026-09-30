@@ -510,4 +510,108 @@ export function fatalDecisions(events, n = 5) {
   }).filter(d => d.closedByRunEnd);
 }
 
+// FIGHT OUTCOMES — the one thing the corpus could always answer and never did.
+//
+// The loop reported how DEEP a run got (floors) but never whether a fight was WON, because a
+// win and a loss look identical in a per-run summary: both end with a `run_end` eventually. Two
+// wrong numbers came out of hand-rolled attempts to infer it, and they disagreed:
+//
+//   "6 boss fights, no kill"  grouped every run's boss sequence and called it a loss whenever the
+//                             run ended — which is exactly what happens AFTER a kill, on the long
+//                             walk to the next act. The one real kill read as a loss.
+//   "12 won, 0 lost"          scanned past the end of a run, so the NEXT run's first non-combat
+//                             decision was read as "the boss died". Every completed fight read as
+//                             a win.
+//
+// The fix is not a better heuristic; it is to use the transition the log actually records. A
+// fight is WON when the screen leaves combat and the run continues, LOST when `run_end` arrives
+// while still in combat, and UNRESOLVED when neither is observed. A kill is the easiest kind of
+// fact in this whole log to read and we were inferring it.
+//
+// `unresolved` is a real bucket, not a hedge, but it is now narrow on purpose. It means the log
+// did not observe how the fight ended: the file ended mid-combat, or a combat room was replaced
+// by another combat room with no non-combat screen between them (suspicious data). It does NOT
+// mean "some screen I did not enumerate", because enumerating screens is how this function got
+// the first four boss kills wrong.
+const POST_COMBAT_STATES = new Set([
+  'rewards', 'card_reward', 'treasure', 'rest', 'map', 'shop', 'char_select', 'game_over',
+]);
+
+export function fightOutcomes(events) {
+  const fights = [];
+  let open = null;
+
+  for (const ev of events) {
+    const kind = ev?.kind;
+    const state = ev?.state ?? {};
+    const type = state.state_type ?? null;
+
+    if (kind === 'run_end') {
+      // A run that ends mid-combat died in it. This is the ONLY loss signal, and it is
+      // unambiguous. Reset so the next run cannot inherit or invent a fight.
+      if (open) { open.outcome = 'lost'; open.closedBy = 'run_end'; fights.push(open); open = null; }
+      continue;
+    }
+    if (kind !== 'decision') continue;
+
+    if (COMBAT_STATES.has(type)) {
+      if (!open || open.type !== type) {
+        // A different combat room is a different fight, even in the same run.
+        if (open) { open.outcome = 'unresolved'; open.closedBy = 'superseded'; fights.push(open); }
+        const enemies = Array.isArray(state.battle?.enemies) ? state.battle.enemies : [];
+        open = {
+          type,
+          name: enemies[0]?.name ?? null,
+          startHp: Number.isFinite(enemies[0]?.hp) ? enemies[0].hp : null,
+          decisions: 0,
+          outcome: 'unresolved',
+          closedBy: null,
+        };
+      }
+      open.decisions += 1;
+      continue;
+    }
+
+    if (open) {
+      // ANY transition out of a combat screen, with the run still alive, ends the fight as a
+      // win — a win is a POSITIVE observation and does not need a whitelist to be recognised.
+      //
+      // The first draft of this function did whitelist post-combat screens, and it silently
+      // turned 4 real boss kills into `unresolved` because `card_select` was missing. Every one
+      // of the 4 had `enemies: 0` and followed a monster/event/shop/rest screen, i.e. a reward
+      // pick, so the whitelist had been guessing at exactly what the transition already states.
+      // A whitelist here is the same bug wearing a different hat: it makes a KNOWN outcome
+      // depend on having enumerated the ways it can be observed.
+      open.outcome = 'won';
+      open.closedBy = `screen:${type}`;
+      fights.push(open);
+      open = null;
+    }
+  }
+  if (open) { open.outcome = 'unresolved'; open.closedBy = 'eof'; fights.push(open); }
+  return fights;
+}
+
+export function summariseFights(fights) {
+  const tally = { won: 0, lost: 0, unresolved: 0 };
+  for (const f of fights) tally[f.outcome] = (tally[f.outcome] ?? 0) + 1;
+  const closed = tally.won + tally.lost;
+  return {
+    ...tally,
+    total: fights.length,
+    // null, not 0: with no closed fights there is no rate to report.
+    winRate: closed === 0 ? null : tally.won / closed,
+    byType: Object.fromEntries(
+      [...new Set(fights.map(f => f.type))].sort().map(t => [
+        t,
+        {
+          won: fights.filter(f => f.type === t && f.outcome === 'won').length,
+          lost: fights.filter(f => f.type === t && f.outcome === 'lost').length,
+          unresolved: fights.filter(f => f.type === t && f.outcome === 'unresolved').length,
+        },
+      ]),
+    ),
+  };
+}
+
 export { roomLabel };

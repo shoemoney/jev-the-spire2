@@ -1,0 +1,464 @@
+- generic [ref=f216e1]:
+  - navigation [ref=f216e2]:
+    - generic [ref=f216e3]:
+      - generic [ref=f216e4]:
+        - link [ref=f216e5] [cursor=pointer]:
+          - /url: /account/domains
+          - img "Porkbun Logo" [ref=f216e6]
+          - text: porkbun
+        - text: 
+      - generic [ref=f216e7]:
+        - list [ref=f216e8]:
+          - listitem [ref=f216e9]:
+            - button "products" [ref=f216e10] [cursor=pointer]:
+              - text: products
+              - generic [aria-hidden] [ref=f216e11]: 
+          - listitem [ref=f216e12]:
+            - link "transfer" [ref=f216e13] [cursor=pointer]:
+              - /url: /account/transfers
+          - listitem [ref=f216e14]:
+            - link "SALE!" [ref=f216e15] [cursor=pointer]:
+              - /url: /event/holidaysales
+          - listitem [ref=f216e16]:
+            - button "About" [ref=f216e17] [cursor=pointer]:
+              - text: About
+              - generic [aria-hidden] [ref=f216e18]: 
+          - listitem [ref=f216e19]:
+            - button "Resources" [ref=f216e20] [cursor=pointer]:
+              - text: Resources
+              - generic [aria-hidden] [ref=f216e21]: 
+        - link "$0.00 (0)" [ref=f216e23] [cursor=pointer]:
+          - /url: /checkout/cart
+          - img [aria-hidden] [ref=f216e24]: 
+          - text: $0.00 (0)
+        - list [ref=f216e26]:
+          - listitem [ref=f216e27]:
+            - button "ACCOUNT " [ref=f216e28] [cursor=pointer]:
+              - text: ACCOUNT
+              - img [aria-hidden] [ref=f216e29]: 
+              - generic [ref=f216e31]: 
+            - text: 
+  - generic [ref=f216e37]:
+    - generic [ref=f216e38]: Security Notice Fake Porkbun emails are going around, claiming a domain is expiring, expired, or suspended. Nothing here has been breached and nothing has leaked; this is an industry-wide campaign working off public registration data. Check the sender before you click, and never sign in from an email link.
+    - generic [ref=f216e39]:
+      - link "How To Spot A Fake" [ref=f216e40] [cursor=pointer]:
+        - /url: https://porkbun.com/security
+      - text: Dismiss
+  - generic [ref=f216e41]:
+    - text: 
+    - dialog [aria-hidden] [ref=f216e42]:
+      - generic [ref=f216e43]:
+        - generic [ref=f216e44]: DNS Powered by Cloudflare
+        - generic [ref=f216e46]:
+          - link [ref=f216e47] [cursor=pointer]:
+            - /url: "#"
+            - text: Switch to classic view
+          - button [ref=f216e48] [cursor=pointer]: ×
+      - generic [ref=f216e49]:
+        - generic [ref=f216e50]: Filter records
+        - textbox [ref=f216e51]:
+          - /placeholder: Filter records…
+        - button [ref=f216e52] [cursor=pointer]: + Add record
+      - link [ref=f216e55] [cursor=pointer]:
+        - /url: "#"
+        - text: Delete all records
+    - dialog [aria-hidden] [ref=f216e56]:
+      - generic [ref=f216e58]:
+        - button [ref=f216e59] [cursor=pointer]: ← Back
+        - generic [ref=f216e60]: Add Record
+      - generic [ref=f216e61]:
+        - button [ref=f216e62] [cursor=pointer]: Manual
+        - button [ref=f216e63] [cursor=pointer]: Quick Setup
+      - generic [ref=f216e65]:
+        - generic [ref=f216e66]:
+          - generic [ref=f216e67]: Type
+          - combobox [ref=f216e68]
+        - generic [ref=f216e69]:
+          - generic [ref=f216e70]: Host
+          - paragraph [ref=f216e71]: Leave blank for root domain. Use * for wildcard.
+          - textbox [ref=f216e73]
+        - generic [ref=f216e75]:
+          - generic [ref=f216e76]: Answer / Value
+          - textbox [ref=f216e77]
+        - generic [ref=f216e80]:
+          - generic [ref=f216e81]: TTL
+          - spinbutton [ref=f216e82]: "600"
+        - generic [ref=f216e83]:
+          - generic [ref=f216e84]: Notes (private, optional — does not affect DNS)
+          - textbox [ref=f216e85]:
+            - /placeholder: For your reference only
+        - generic [ref=f216e87]:
+          - button [ref=f216e88] [cursor=pointer]: Add
+          - button [ref=f216e89] [cursor=pointer]: Cancel
+        - link [ref=f216e90] [cursor=pointer]:
+          - /url: https://kb.porkbun.com/article/68-how-to-edit-dns-records
+          - generic [aria-hidden] [ref=f216e91]: 
+          - text: Need help? How to edit DNS records
+    - text:  
+    - dialog [ref=f216e92]:
+      - generic [ref=f216e93]:
+        - generic [ref=f216e94]:
+          - heading "Edit Authoritative Nameservers" [level=4] [ref=f216e95]
+          - generic [ref=f216e96]:
+            - text: ·
+            - link "Switch to classic view" [ref=f216e97] [cursor=pointer]:
+              - /url: "#"
+        - button "Close" [ref=f216e98] [cursor=pointer]: ×
+      - generic [ref=f216e99]:
+        - generic [ref=f216e100]:
+          - paragraph [ref=f216e101]: Enter the nameservers you would like to use for your domain in the text area below. Put one nameserver per line, please.
+          - paragraph [ref=f216e102]:
+            - strong [ref=f216e103]: "Please note:"
+            - text: Although we update your nameservers immediately, this change can take up to 48 hours to propagate due to DNS caching.
+          - paragraph [ref=f216e104]:
+            - link "More Information" [ref=f216e105] [cursor=pointer]:
+              - /url: https://kb.porkbun.com/article/35-how-long-will-it-take-to-switch-nameservers
+        - generic [ref=f216e106]:
+          - generic [ref=f216e107]: Nameservers (one per line)
+          - textbox "Nameservers (one per line)" [ref=f216e108]
+      - generic [ref=f216e110]:
+        - button "Cancel" [ref=f216e111] [cursor=pointer]
+        - button "Save Nameservers" [ref=f216e112] [cursor=pointer]
+    - text:    
+    - generic [ref=f216e115]:
+      - heading "Domain Management" [level=1] [ref=f216e116]
+      - generic [ref=f216e118]:
+        - text: "Logged in as:"
+        - strong [ref=f216e119]: shoemoneysi
+    - generic [ref=f216e122]:
+      - generic [ref=f216e123]: Register a New Domain
+      - generic [ref=f216e124]:
+        - generic [ref=f216e127]:
+          - textbox "Domain Search" [active] [ref=f216e128]:
+            - /placeholder: Find your domain...
+          - generic [ref=f216e129]:
+            - button "open bulk search" [ref=f216e130] [cursor=pointer]:
+              - generic [ref=f216e131]: bulk search
+              - generic [aria-hidden] [ref=f216e132]: 
+            - button "submit search" [ref=f216e133] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e134]: 
+        - text:  
+      - generic [ref=f216e136]:
+        - link "AI Search" [ref=f216e137] [cursor=pointer]:
+          - /url: /checkout/ai
+        - text: "|"
+        - link "Auction Search" [ref=f216e138] [cursor=pointer]:
+          - /url: /auctions
+        - text: "|"
+        - link "Marketplace Search" [ref=f216e139] [cursor=pointer]:
+          - /url: /marketplace
+    - generic [ref=f216e140]:
+      - generic [ref=f216e141]:
+        - generic [ref=f216e142]:
+          - button "No thanks" [ref=f216e143] [cursor=pointer]: ×
+          - generic [ref=f216e144]:
+            - generic [ref=f216e145]: One quick question
+            - generic [ref=f216e146]: How did you first hear about Porkbun?
+            - generic [ref=f216e147]:
+              - button "A friend, coworker, or word of mouth" [ref=f216e148] [cursor=pointer]
+              - button "Hacker News" [ref=f216e149] [cursor=pointer]
+              - button "Google or another search engine" [ref=f216e150] [cursor=pointer]
+              - button "A news article or review" [ref=f216e151] [cursor=pointer]
+              - button "ChatGPT, Claude, or another AI assistant" [ref=f216e152] [cursor=pointer]
+              - button "A hackathon or event" [ref=f216e153] [cursor=pointer]
+              - button "Proton (Mail, VPN, or Drive)" [ref=f216e154] [cursor=pointer]
+              - button "YouTube" [ref=f216e155] [cursor=pointer]
+              - button "Reddit" [ref=f216e156] [cursor=pointer]
+              - button "A podcast or newsletter" [ref=f216e157] [cursor=pointer]
+              - button "X, Bluesky, or another social network" [ref=f216e158] [cursor=pointer]
+              - button "Something else" [ref=f216e159] [cursor=pointer]
+            - button "Submit" [disabled] [ref=f216e161]
+        - generic [ref=f216e162]:
+          - generic [ref=f216e163]:
+            - generic [ref=f216e164]:
+              - generic:
+                - img [aria-hidden]: 
+              - textbox "Search your domains" [ref=f216e165]:
+                - /placeholder: Search domains…
+            - generic [ref=f216e166]:
+              - button "Filter domains by label" [ref=f216e168] [cursor=pointer]:
+                - img [aria-hidden] [ref=f216e169]: 
+              - generic [ref=f216e171]:
+                - button "Sort by creation date" [ref=f216e172] [cursor=pointer]:
+                  - img [aria-hidden] [ref=f216e173]: 
+                - text:  
+              - button "Add external domain" [ref=f216e175] [cursor=pointer]:
+                - img [aria-hidden] [ref=f216e176]: +
+              - button "Domain management settings" [ref=f216e178] [cursor=pointer]:
+                - img [aria-hidden] [ref=f216e179]: 
+              - link "Connect your domains to your own Cloudflare account" [ref=f216e181] [cursor=pointer]:
+                - /url: /account/connectCloudflare
+                - img [aria-hidden] [ref=f216e182]: 
+              - link "Get AI domain suggestions based on your inventory (opens in new tab)" [ref=f216e184] [cursor=pointer]:
+                - /url: /checkout/ai?useAccountDomains=on
+                - img [aria-hidden] [ref=f216e185]: 
+            - button "Bulk Actions" [ref=f216e189] [cursor=pointer]:
+              - text: Bulk Actions
+              - img [aria-hidden] [ref=f216e190]: 
+          - generic [ref=f216e192]: Displaying 1 out of 1 domains in your account
+          - text:    
+      - generic [ref=f216e194]:
+        - generic [ref=f216e195]:
+          - checkbox "Select all domains." [ref=f216e196]
+          - text: name  
+        - generic [ref=f216e197]: website  
+        - generic [ref=f216e198]: email  
+        - generic [ref=f216e199]: renew  
+        - generic [ref=f216e200]: lock  
+        - generic [ref=f216e201]: whois  
+        - generic [ref=f216e202]: market  
+        - generic [ref=f216e203]:
+          - text: expires
+          - img [aria-hidden] [ref=f216e204]: 
+          - text: 
+      - generic [ref=f216e210]:
+        - generic [ref=f216e211]:
+          - checkbox "select sio.dev" [ref=f216e213]
+          - generic [ref=f216e214]:
+            - text:  
+            - generic [ref=f216e215]:
+              - text: sio.dev
+              - link "external link for sio.dev" [ref=f216e216] [cursor=pointer]:
+                - /url: http://sio.dev
+                - img "external link for sio.dev" [ref=f216e217]: 
+            - button "add labels for sio.dev" [ref=f216e220] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e221]: 
+            - generic [ref=f216e223]:
+              - button "edit dns records for sio.dev" [ref=f216e224] [cursor=pointer]: DNS
+              - generic [ref=f216e225]: "|"
+              - button "edit name servers for sio.dev" [ref=f216e226] [cursor=pointer]: NS
+        - generic:
+          - text: 
+          - generic:
+            - button "setup webhosting for sio.dev" [ref=f216e228] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e229]: 
+            - button "manage email hosting and forwarding for sio.dev" [ref=f216e232] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e233]: 
+              - img [aria-hidden] [ref=f216e236]: 
+          - generic:
+            - generic [ref=f216e241]:
+              - button "renew domain and configure auto renew for sio.dev" [ref=f216e242] [cursor=pointer]:
+                - img [aria-hidden] [ref=f216e243]: 
+              - text: 
+            - button "unlock domain for sio.dev" [ref=f216e246] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e247]: 
+            - button "manage whois privacy for sio.dev" [ref=f216e251] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e252]: 
+            - button "manage marketplace settings for sio.dev" [ref=f216e255] [cursor=pointer]:
+              - img [aria-hidden] [ref=f216e256]: $
+            - generic [ref=f216e260]:
+              - text: 2027-09-30
+              - generic [ref=f216e261]: 364 d
+          - button "additional management and details for sio.dev" [ref=f216e264] [cursor=pointer]: Details ▼
+      - generic [ref=f216e265]: Displaying 1 out of 1 domains in your account.
+  - contentinfo [ref=f216e267]:
+    - generic [ref=f216e274]:
+      - generic [ref=f216e275]:
+        - generic [ref=f216e276]:
+          - generic [ref=f216e277]:
+            - img "Porkbun Footer Logo" [ref=f216e278]
+            - text: porkbun
+          - generic [ref=f216e279]:
+            - paragraph [ref=f216e280]: Porkbun is an amazingly awesome ICANN accredited domain name registrar based out of the Pacific Northwest. We're different, we're easy, and we're affordable. Use us, you won't be sorry. If you don't use us we'll be sad, but we'll still love you.
+            - generic [ref=f216e284]:
+              - heading "Get Pork-Puns In Your Inbox" [level=4] [ref=f216e285]
+              - paragraph [ref=f216e286]: Stay in the loop on all things Porkbun by signing up for our newsletter!
+              - generic [ref=f216e287]:
+                - textbox [ref=f216e288]:
+                  - /placeholder: sign@up.now
+                - button "OINK" [ref=f216e289] [cursor=pointer]
+              - textbox [ref=f216e291]
+            - generic [ref=f216e292]:
+              - img [aria-hidden] [ref=f216e294]: 
+              - generic [ref=f216e296]: 11575 SW Pacific Hwy PMB 40649Tigard, OR 97223, US
+            - generic [ref=f216e297]:
+              - img [aria-hidden] [ref=f216e299]: "?"
+              - paragraph [ref=f216e302]:
+                - text: If you're looking for support, you might be able to answer your own question using our
+                - link "Knowledge Base" [ref=f216e303] [cursor=pointer]:
+                  - /url: https://kb.porkbun.com/
+                - text: .
+            - generic [ref=f216e304]:
+              - img [aria-hidden] [ref=f216e306]: 
+              - generic [ref=f216e308]:
+                - text: "Reach our USA-Based phone support team: 1.855.PORKBUN (1.855.767.5286)"
+                - generic [ref=f216e309]: Every day, 9AM - 5PM Pacific Time Weekends and holidays included.
+            - generic [ref=f216e310]:
+              - img [aria-hidden] [ref=f216e312]: 
+              - generic [ref=f216e314]: support@porkbun.com 24 / 7 / 365 Email Support
+            - generic [ref=f216e315]:
+              - img [aria-hidden] [ref=f216e317]: 
+              - generic [ref=f216e319]:
+                - link "Chat Support" [ref=f216e320] [cursor=pointer]:
+                  - /url: javascript:void(0);
+                - generic [ref=f216e321]: Every day, 9AM - 5PM Pacific Time Weekends and holidays included.
+                - text: If chat is full, you'll see an email option instead.
+            - button "Play the Porkbun jingle." [ref=f216e324] [cursor=pointer]: 
+        - generic [ref=f216e327]:
+          - generic [ref=f216e328]:
+            - paragraph [ref=f216e329]: Products
+            - link "Domain Names" [ref=f216e330] [cursor=pointer]:
+              - /url: /products/domains
+            - link "Greatest Deals" [ref=f216e331] [cursor=pointer]:
+              - /url: /products/deals
+            - link "Local Marketplace" [ref=f216e332] [cursor=pointer]:
+              - /url: /marketplace
+            - link "Domain Auctions" [ref=f216e333] [cursor=pointer]:
+              - /url: /auctions
+            - link "Expired Closeouts" [ref=f216e334] [cursor=pointer]:
+              - /url: /closeouts
+            - link "3rd Party Aftermarket" [ref=f216e335] [cursor=pointer]:
+              - /url: /aftermarket
+            - link "Web Hosting" [ref=f216e336] [cursor=pointer]:
+              - /url: /products/web_hosting
+            - link "Link In Bio" [ref=f216e337] [cursor=pointer]:
+              - /url: /products/webhosting/managedLinks
+            - link "Articulation Sitebuilder" [ref=f216e338] [cursor=pointer]:
+              - /url: /products/webhosting/articulation
+            - link "Cloud for WordPress" [ref=f216e339] [cursor=pointer]:
+              - /url: /products/webhosting/cloudWordPress
+            - link "cPanel Hosting" [ref=f216e340] [cursor=pointer]:
+              - /url: /products/webhosting/cPanelHosting
+            - link "Static Hosting" [ref=f216e341] [cursor=pointer]:
+              - /url: /products/webhosting/secureStaticHosting
+            - link "Easy PHP" [ref=f216e342] [cursor=pointer]:
+              - /url: /products/webhosting/managedPHP
+            - link "Email Hosting" [ref=f216e343] [cursor=pointer]:
+              - /url: /products/email
+            - link "WHOIS Privacy" [ref=f216e344] [cursor=pointer]:
+              - /url: /products/whois_privacy
+            - link "DNS Management" [ref=f216e345] [cursor=pointer]:
+              - /url: /products/dns_management
+            - link "SSL Certificates" [ref=f216e346] [cursor=pointer]:
+              - /url: /products/ssl
+            - link "Email Forwarding" [ref=f216e347] [cursor=pointer]:
+              - /url: /products/email_forwarding
+            - link "URL Forwarding" [ref=f216e348] [cursor=pointer]:
+              - /url: /products/url_forwarding
+            - link "Domain Transfer" [ref=f216e349] [cursor=pointer]:
+              - /url: /transfer
+            - link "API Access" [ref=f216e350] [cursor=pointer]:
+              - /url: /api/json/v3/documentation
+            - link "MCP Server" [ref=f216e351] [cursor=pointer]:
+              - /url: /mcp
+            - link "For AI Agents" [ref=f216e352] [cursor=pointer]:
+              - /url: /ai-agents
+          - generic [ref=f216e353]:
+            - paragraph [ref=f216e354]: Support
+            - link "Contact Us" [ref=f216e355] [cursor=pointer]:
+              - /url: /contact
+            - link "Knowledge Base" [ref=f216e356] [cursor=pointer]:
+              - /url: https://kb.porkbun.com
+            - link "Payment Options" [ref=f216e357] [cursor=pointer]:
+              - /url: /support/payment_options
+            - link "Security" [ref=f216e358] [cursor=pointer]:
+              - /url: /security
+            - link "Report Abuse" [ref=f216e359] [cursor=pointer]:
+              - /url: /abuse
+            - paragraph [ref=f216e360]: Tools
+            - link "Domain Search" [ref=f216e361] [cursor=pointer]:
+              - /url: /checkout/search
+            - link "RDAP (WHOIS)" [ref=f216e362] [cursor=pointer]:
+              - /url: /whois
+            - link "Password Generator" [ref=f216e363] [cursor=pointer]:
+              - /url: /tools/password
+            - link "DMARC Generator" [ref=f216e364] [cursor=pointer]:
+              - /url: /tools/dmarc_generator
+            - link "What's My IP Address?" [ref=f216e365] [cursor=pointer]:
+              - /url: /tools/whats_my_ip_address
+            - link "Service Status" [ref=f216e366] [cursor=pointer]:
+              - /url: https://status.porkbun.com
+            - paragraph [ref=f216e367]: External Tools
+            - link "nTLDData – New gTLD Statistics" [ref=f216e368] [cursor=pointer]:
+              - /url: https://ntlddata.com/
+          - generic [ref=f216e369]:
+            - paragraph [ref=f216e370]: Our Company
+            - link "About Us" [ref=f216e371] [cursor=pointer]:
+              - /url: /about
+            - link "Our Official Blog" [ref=f216e372] [cursor=pointer]:
+              - /url: https://blog.porkbun.com
+            - link "Careers" [ref=f216e373] [cursor=pointer]:
+              - /url: /careers
+            - link "Branding Guidelines" [ref=f216e374] [cursor=pointer]:
+              - /url: https://porkbun.design/
+            - link "Policies and Legal" [ref=f216e375] [cursor=pointer]:
+              - /url: /legal
+            - link "Data Disclosure Policy" [ref=f216e376] [cursor=pointer]:
+              - /url: /legal/agreement/data_disclosure_policy
+            - link "Bug Bounty Program" [ref=f216e377] [cursor=pointer]:
+              - /url: /products/bug_bounty
+            - link "Awesomeness" [ref=f216e378] [cursor=pointer]:
+              - /url: /awesome
+            - paragraph [ref=f216e379]: PRIVACY
+            - link "Your Privacy Choices" [ref=f216e380] [cursor=pointer]:
+              - /url: javascript:void(0);
+            - link "Privacy Policy" [ref=f216e381] [cursor=pointer]:
+              - /url: /legal/agreement/privacy_policy
+            - paragraph [ref=f216e382]: Account
+            - link "Settings / Billing" [ref=f216e383] [cursor=pointer]:
+              - /url: /account
+            - link "View Orders" [ref=f216e384] [cursor=pointer]:
+              - /url: /account/orders
+            - link "API Access" [ref=f216e385] [cursor=pointer]:
+              - /url: /account/api
+            - link "Simple Domain List" [ref=f216e386] [cursor=pointer]:
+              - /url: /account/domainList
+            - link "Logout" [ref=f216e387] [cursor=pointer]:
+              - /url: "#"
+            - paragraph [ref=f216e388]: Nonsense
+            - link "Don't like our name?" [ref=f216e389] [cursor=pointer]:
+              - /url: /single-tear.html
+            - link [aria-hidden] [ref=f216e390] [cursor=pointer]:
+              - /url: /buniverse.html
+              - text: The Buniverse
+      - generic [ref=f216e391]:
+        - generic [ref=f216e392]:
+          - link "facebook" [ref=f216e393] [cursor=pointer]:
+            - /url: https://www.facebook.com/PorkbunLLC/
+            - img [aria-hidden] [ref=f216e394]: 
+          - link "x formerly twitter" [ref=f216e396] [cursor=pointer]:
+            - /url: https://x.com/Porkbun
+            - img [aria-hidden] [ref=f216e397]: 
+          - link "youtube" [ref=f216e399] [cursor=pointer]:
+            - /url: https://www.youtube.com/channel/UCXe05A3Wp-qFsszt-CHCxyQ
+            - img [aria-hidden] [ref=f216e400]: 
+          - link "instagram" [ref=f216e402] [cursor=pointer]:
+            - /url: https://www.instagram.com/porkbundomains/
+            - img [aria-hidden] [ref=f216e403]: 
+          - link "tiktok" [ref=f216e405] [cursor=pointer]:
+            - /url: https://www.tiktok.com/@porkbun.com/
+            - img [aria-hidden] [ref=f216e406]: 
+          - link "github" [ref=f216e408] [cursor=pointer]:
+            - /url: https://github.com/porkbundomains/
+            - img [aria-hidden] [ref=f216e409]: 
+          - link "bluesky" [ref=f216e411] [cursor=pointer]:
+            - /url: https://bsky.app/profile/porkbun.com
+            - img [aria-hidden] [ref=f216e412]: 
+        - link "payment methods" [ref=f216e415] [cursor=pointer]:
+          - /url: /support/payment_options
+          - img [aria-hidden] [ref=f216e416]: 
+          - img [aria-hidden] [ref=f216e418]: 
+          - img [aria-hidden] [ref=f216e420]: 
+          - img [aria-hidden] [ref=f216e422]: 
+          - img [aria-hidden] [ref=f216e424]: 
+          - img [aria-hidden] [ref=f216e426]: 
+          - img [aria-hidden] [ref=f216e428]: 
+          - img [aria-hidden] [ref=f216e430]: 
+  - generic [ref=f216e436]:
+    - generic [ref=f216e437]:
+      - link "ICANN" [ref=f216e439] [cursor=pointer]:
+        - /url: https://www.icann.org
+        - img "ICANN Logo" [ref=f216e440]
+      - generic [ref=f216e441]:
+        - text: Copyright © Porkbun LLC. All rights reserved.
+        - generic [ref=f216e442]:
+          - text: Porkbun is a
+          - link "Top Level Design" [ref=f216e443] [cursor=pointer]:
+            - /url: https://toplevel.design
+          - text: Company
+        - text: Made in the USA 🇺🇸
+    - generic [ref=f216e445]:
+      - strong [ref=f216e446]: "WARNING:"
+      - text: This site has been known to cause a mind blowing experience. We recommend you prepare yourself mentally and if possible be sitting down. Side effects may include saving money, letting out a chuckle, and sporadic oinking.
+  - button "Support chat is disabled" [ref=f216e448] [cursor=pointer]
+  - text: a9074e8e3fbf141b2e8a787e19072403
