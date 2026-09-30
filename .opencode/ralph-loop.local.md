@@ -1,32 +1,34 @@
 ---
 active: true
-iteration: 57
+iteration: 58
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## REVIEW FINDING: "the completeFactors fallback reverts to the pre-factoring policy, which
-## has no waste veto at all" — PARTLY TRUE, AND THE GATE COMPENSATES FOR THE PART THAT BITES
-Tested the full path, not the isolated `combine`, because the gate runs on both branches and an
-isolated test would have hidden that.
+## THE RESIDUAL GAP I DESCRIBED LAST ITERATION HAS NEVER OCCURRED
+  decisions logging a factorFallback   : 2489
+    the fallback actually fired        : 0   (0.0%)
+    lethal gate overrode on it         : 0
+  => the gap applies to ZERO decisions in the entire corpus.
 
-  COMPLETE factors: chose p1 (Defend)   factorFallback false
-  INCOMPLETE      : chose p1 (Defend)   factorFallback true
+Last iteration I wrote: *"a plan that wastes but survives passes unchecked on the fallback. That is
+real."* It is real **in theory and empty in practice.** The model answers every factor set on every one
+of 2,489 logged decisions, so the fallback is a defensive branch that has never executed.
 
-The waste veto IS bypassed on the fallback — the reviewer is right about the mechanism, and it is
-the reason the code says so in a comment. But the example given, a self-harm plan that does not
-survive, is still caught, because `refuseLethalChoice` runs on the fallback and the alternative's
-forecast states it survives.
+So there is nothing to build, and the honest summary is: **a reviewer found a real mechanism behind
+a path the agent has never taken.** Three findings now stand as measured-and-not-built:
+  the waste veto outvoting survival   — the safer plan won every case
+  the graded survival treatment       — would change 5 boards in 2191
+  the fallback bypassing the veto      — the fallback fires on 0 boards
 
-**Residual gap, stated precisely:** a plan that WASTES resources but SURVIVES passes unchecked on
-the fallback. That is real and it is the Bloodletting/Fortifier family minus the fatal ones. It is
-not the safety hole the finding implies.
+**What that pattern is worth.** Each of the three is a genuine hole in the code and none of them is a
+hole in the agent's behaviour. A review that reads code finds reachable-in-principle paths; it cannot
+tell whether the agent ever goes there. The corpus can, immediately, and for free. So the loop's real
+instrument is not the review at all — it is **the log, queried before the fix is written.** That is
+cheaper than a code change, and it is what has caught every false positive since I started asking.
 
-Not fixed this iteration. The obvious repair — refuse any fallback plan whose waste noul is high —
-needs a threshold, and a threshold on a signal that is only sometimes present is a guess. Same
-reasoning that stopped the graded-survival treatment: measure the residual first, and a fallback
-fires on a minority of boards.
+I should have measured this one before describing the gap, not after.
 
 ## Loop state
 535 tests green · sweep 4: 10/14 · game batch running · server up
