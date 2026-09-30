@@ -1,48 +1,53 @@
 ---
 active: true
-iteration: 82
+iteration: 83
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE DAMAGE ARITHMETIC, ACROSS ALL THREE CEREMONIAL BEAST FIGHTS
-  fight   decisions  dealt   dmg/decision  plans naming an attack
-     1         42      125        3.0          19/42  (45%)
-     2         61      179        2.9          27/61  (44%)
-     3         34      122        3.6          14/34  (41%)
+## THE DEFECT, PROVEN AND QUANTIFIED
+Starting from "were the non-attack turns forced?" and following it to the end:
 
-The ramp hypothesis is CONFIRMED, not merely plausible: every one of the three fights contains a
-`Buff:` intent and a monotonic attack climb (12-32, 15-30). Fight 2 died at hp 4 with `Attack:17`
-and `Buff:` both pending — it was killed an action before the next ramp.
+```
+boss decisions with a usable forecast                            466
+  plan names an attack : 177    of which the forecast said LETHAL:  10
+  plan names NO attack : 289    of which the forecast said LETHAL:  23
+```
+So **92% of the agent's non-attack turns were not forced by a lethal forecast** — 266 of them. And
+the cases are not marginal: `inc=21 hpLoss=9 hp=80 Defend` is 21 incoming, a forecast saying only 9
+would land, and a block card anyway.
 
-**But the ramp is not the finding. The arithmetic is:**
+Then the question that actually matters — was a safe attack available?
 
-  252 HP at 3.0 damage per decision = 84 decisions to kill
-  the agent dies between decision 34 and 61
+```
+  an ATTACKING plan the forecast said survives was ALSO on the table : 112  (42%)
+  no such plan existed, defending really was the only safe option   : 154  (58%)
+```
 
-It cannot win this fight by out-trading the ramp, at any decision quality. That is a rate
-comparison, not an interpretation, and it is why 0/3 is not bad luck.
+**112 times the agent was offered a demonstrably surviving attack and chose not to attack.** That is
+the mechanism behind 3.0 damage per decision, and it is not caution — the forecast already cleared
+the attack.
 
-**And the lever is visible in the same table: only ~43% of the plans it chooses name an attack.**
-Fifty-seven percent of its decisions against a 252 HP boss involve no attack at all. For contrast,
-the fights it wins include a 7.7 dmg/decision Vantom — the same agent, pointed at a target it can
-out-pace.
+## AND THE OBVIOUS EXPLANATION IS REFUTED
+Iteration 70 found the chosen candidate sits deep (p50 depth 6, p90 18, max 63), so the obvious story
+was "surviving attacks are ranked late and the model walks past them". Tested directly:
 
-## What the honest next question is
-"Play more attacks" is obviously the reflex and it is NOT established. Some of those 57% are
-certainly forced — a 30-damage telegraph has to be answered, and a block turn is not a mistake. The
-measurement that settles it is per-decision rather than per-fight: **were the non-attack turns the
-ones where the forecast said the agent would die without block?** If yes, the rate is correct and
-the loss is elsewhere. If a meaningful share were optional, the planner is over-weighting survival
-and that is a real, fixable defect with a named lever.
+  rank of the FIRST surviving attack, on the 112 declined turns
+    n=112   min 1   p25 1   p50 1   p75 2   max 4
+    positions 1-5: 112    6-15: 0    16+: 0
 
-## Incidental, and it is now confirmed rather than odd
-A Waterfall Giant fight again recorded the boss at **999,999,984 HP** — a fourth sighting. Whatever
-it is, it is a real recurring state of the game and not a one-off parsing artefact, which is what I
-suspected when I first flagged it. Still unexplained, and still not something to guess at.
+**Every single one was in the top four.** The planner already ranks a surviving attack first or
+second, and the model declines it anyway. **The fix is not ordering** — I would have built a ranking
+change on a refuted premise, and the only reason I did not is that the measurement was cheap enough
+to run before the code was written.
+
+So this is a SELECTION problem, not a presentation problem: the top-ranked option is a surviving
+attack and the agent picks defence. The obvious next candidate explanation is that the deliberation
+weights `safe` above `prog` and prefers the lower-variance plan — locally defensible, and globally
+fatal against a boss that ramps. That is testable against the logged factors, and it is the next
+measurement rather than a change.
 
 ## Loop state
-565 tests green - Ceremonial Beast loss is arithmetic: 3.0 dmg/decision needs 84 decisions, the
-agent dies at 34-61 - 43% of plans name an attack, and whether the other 57% were forced is the
-next measurement
+565 tests green - 112 turns where a surviving attack was ranked first and declined - ordering
+refuted, so the lever is selection, not presentation
