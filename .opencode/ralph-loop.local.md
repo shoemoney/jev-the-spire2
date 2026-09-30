@@ -1,54 +1,48 @@
 ---
 active: true
-iteration: 100
+iteration: 101
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## FOURTH REVIEW: A REAL CODE OBSERVATION THAT WOULD CHANGE ONE DECISION IN 5,001
-claude-opus-5-5, finding 1. The claim is sharp and correct as an observation: `factsFor` computes
-`displayed_incoming_attack_lower_bound`, nothing downstream reads it, and on a blind turn
-`survives` is null so the gate cannot fire. `boundedLethal` exists for exactly this shape.
+## THE GAME IS UNBLOCKED AND PLAY RESUMED
+The click landed — the bridge went from `menu/main` with zero options to `state_type: event`, a run
+already in progress. The batch had died in the meantime, so it was restarted; it adopted the live run
+and the agent is deciding again. That single click is what unblocked the last eight iterations of
+measurement work.
 
-Measured before acting, as the last three taught me to:
+## FOURTH REVIEW'S SECOND FINDING: HALF CONFIRMED, AND THE CAUSAL CLAIM IS NOT ESTABLISHED
+claude-opus-5-5 finding 2 says the agent dies holding usable potions because unlisted potions go
+`unknown`, rank at -10000, and become invisible to the gate. Measured:
 
-    executed decisions with quality unknown                          210
-      carrying a numeric incomingLowerBound                           18
-      where that floor ALONE >= hp + block, so death is arithmetic      1
+    combat deaths                                       30
+    holding a usable potion at the fatal board          8   (27%)
+    a potion-play action WAS among the candidates       8
+    NO potion-play action was offered at all            0
+    ...of those boards, at least one potion action was 'unknown'   8
 
-    executed decisions with a proven lethal floor (boundedLethal:true)  0
+**Half of it is solid: 8 of 30 combat deaths happened with a usable potion in hand, and in every one
+of those the agent had a potion-play action available.** That is a real number about real deaths.
 
-**The proposed fix would fire on exactly one decision in the whole corpus**, and the mechanism it
-asks to extend has never executed once. Not shipping it. The observation is true and the effect is
-nil, and those are different facts that only a number separates.
+**The causal story is NOT established, and my own measurement is weaker than the review's:**
+  - `supportedPotions` has 11 names and **`speed potion` is one of them** — so the flagship example is
+    a LISTED potion, not an unlisted one
+  - my check was `some(...)` not `all(...)`, so it only shows at least one potion action was unknown
+  - 6 of the 8 held potions ARE in the game-data KB, and line 221 records that potions were
+    *deliberately* excluded from the KB fallback
+  - and drinking a potion is not unconditionally right: holding Entropic Brew while an Elite kills you
+    can be correct if the potion does not help
 
-## What four reviews actually produced
-| review | finding | measured effect | outcome |
-|---|---|---|---|
-| qwen omni | `partial` licenses survival from an incomplete model | 3246 of 3332 decisions | upstream fix shipped, `calculated` 2% → 38% |
-| gemini 3.7 | campfire before elite, across branches | route guidance on divergent maps | fixed; same-row case was already covered |
-| glm 5.3 | Thorns null damage blinds the board | 105 occurrences, 43 states | fixed |
-| opus 5.5 | lethal floor is computed and not consumed | 1 decision in 5001 | **not shipped** |
+So: **deaths with an unused potion are real, and "the agent hoards potions it cannot model" is a
+hypothesis the data does not yet support.** The decisive test is whether a *surviving* potion-play
+candidate was available on those 8 boards and declined — and that is one query, not shipped until run.
 
-Three fixes, one decline, and the decline was the only one that cost nothing to reach because the
-number came first. **That ratio is the argument for the process, not for the reviews.**
+## The running pattern across four reviews
+Real code observation every time. Effect measured before acting every time. Three fixes, one
+decline on a number, and one finding half-confirmed with the causal claim explicitly withheld. **The
+reviews are not the bottleneck. Deciding what to do with them is, and that is the part worth keeping.**
 
-## The hundredth iteration, honestly
-The task is **not** finished and I am not claiming otherwise:
-  - the game is parked on a main menu exposing zero options, so no run has been played since
-    iteration 93. One human click unblocks it.
-  - the A/B needs 200 armed samples and has 25. Its question is open.
-  - `statedSurvival` is deliberately still permissive, pending live confirmation that the new
-    quality distribution holds.
-  - the A10 win rate, the primary metric, has not been measurable since the code stamp went in,
-    because the bridge exposes no ascension control on any reachable screen.
-
-What the hundred iterations produced is an instrument that now catches its own author: a kill
-counter that found 5 boss kills reported as zero, a code stamp on every log line, an attrition signal
-moved from a prediction to an observation, a difficulty gradient, a randomised experiment with a
-verifiable arm, a replay harness that measures a code change without playing a single new card, and
-four independent reviews converted into three fixes and one measured refusal.
-
-**The most useful thing built this session was not a feature. It was the set of measurements that
-stopped six plausible changes from shipping.**
+## Loop state
+PLAY RESUMED - 590 tests green - one click unblocked eight iterations of measurement
+- A/B accumulating toward 200 armed samples
