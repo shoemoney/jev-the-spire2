@@ -2,52 +2,39 @@
 active: true
 iteration: 64
 maxIterations: 100
-sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 keep playing get better every run be bol
 
-## I WAS MEASURING HISTORICAL CODE, AND IT INVALIDATED MY OWN LAST ITERATION
-Chased the multi-hit blindness and it did not exist. In order:
+## THE GUARD: A LOG ENTRY THAT CANNOT NAME ITS CODE CAN BE MISREAD FOREVER
+Iteration 63's whole cost was that 94 warnings from a parser fixed days earlier read as a live
+bug, and nothing in the record said which version wrote it. Two halves, both shipped:
 
-  parseIntentLabel over every label in the corpus : 544/544 NxM accepted, 0 rejected
-  rejected intents by type                        : Buff 895, Debuff 361, Defend 175, ... — NO
-                                                   Attack intent is ever rejected. Every reject is a
-                                                   non-damage intent whose label is empty BECAUSE
-                                                   it telegraphs no damage.
-  mismatched labels (total != perHit x hits)      : 0
-  yet 94 forecasts warned "incoming attacks could not be parsed"
+  1. server.mjs resolves {code:{sha,dirty}} once at boot and stamps EVERY log entry. Live check:
+     server code stamp: {'sha': 'b01af33', 'dirty': 0}
+     `dirty` is recorded rather than smoothed over. A run on a commit with uncommitted edits is
+     not reproducible from that commit, so it is labelled unreproducible instead of being quietly
+     attributed to HEAD — which would be the same class of lie as the warnings, one level up.
+  2. Fights carry `day` and `code`; summariseFights groups `byCode` and names the days each
+     version played. Unstamped records are their OWN bucket, never folded into the newest sha —
+     folding them is precisely the conflation that caused the error.
 
-So the parser the warnings describe is not the parser in the tree. Dating them settled it:
+## The design question worth answering: what does a code change MID-FIGHT do?
+My first test asserted it splits the fight. It does not, and that is right: the fight did not end.
+A fight is attributed to the code it STARTED on, because a fight half-played by two versions is
+not a fight half-played by either, and splitting would manufacture a short fake fight and a short
+fake remainder out of one real one. The test now pins that instead of the behaviour I assumed.
 
-  day     combatDecisions  unknownForecast  "could not be parsed" warnings
-  09-23        354              38   10.7%                    34
-  09-24        415             121   29.2%                    60
-  09-30       3291              38    1.2%                     0
+## The new default question
+The instrument can now answer "how did the CURRENT code do", which is the only version of that
+question worth asking. Historical fight records carry code:null, so the split is honest about what
+it does and does not know:
 
-**All 94 are from 09-23/09-24. Zero today. Unknown forecasts fell 29.2% -> 1.2%.** The multi-hit
-parse fix landed days ago; I spent an iteration diagnosing a bug that had already been fixed,
-because the corpus is a mix of code versions and nothing in it said so.
+  byCode  unsta... 155 fights   <- everything recorded before this change
+           b01af33   0 fights   <- nothing yet, as expected
 
-The 20.4%-vs-4.0% multi-hit correlation was inflated by exactly those old runs. There is no
-multi-hit parse bug. There is no NxM inconsistency. Gremlin Merc's "22 multi-hit, 0 blind" was
-never evidence of a working parser; it was evidence that runs are not one code version.
-
-## What this costs, stated plainly
-Every number I have reported over the WHOLE corpus is partly a measurement of the past. That
-includes the A10 gradient. Re-measured on current code only:
-
-  A0    90 fights  88%   boss 5/11
-  A10   30 fights  80%   boss 0/1
-
-**The 8-point A10 gap survives** — it is real and current. The A3 band is GONE; all 11 A3 fights
-were 09-24. So "A3 is 91%, better than A0" was also historical, and I was about to explain it.
-
-## The actual lesson, and the guard it implies
-The instrument caught the error, but only because I dated the warnings instead of trusting the
-count. A log that accumulates across code versions will happily report a fixed bug as a live one
-forever. The fix is a time axis on the corpus, so "how are we doing" can mean "how did the CURRENT
-code do" — the only version of that question worth answering.
+Zero on the new stamp is correct and expected. It becomes the only trustworthy bucket within one
+batch of play, and every number from here on can name its own provenance.
 
 ## Loop state
-547 tests green · sweep 4: 11/14
+550 tests green (3 new) · sweep 4: 11/14 · server up, stamping
