@@ -68,3 +68,36 @@ test('deckAssessment never invents a deck the state does not carry',()=>{
  const empty=deckAssessment({player:{deck:[]}});
  assert.equal(empty.available,true);assert.equal(empty.size,0);assert.deepEqual(empty.costs,{});
 });
+
+// The card-reward decision was being made with nothing to weigh an offer against: the bridge sends
+// no deck, so the only thing in the request was the offer itself. The measured cost of that is a
+// best-run deck of Strike, Defend, Tremble, Blood Wall and Taunt on a policy that loses elites 10
+// for 26. The game's own data can say what each offered card DOES.
+test('every offered card is annotated from the game data, and an unknown one says so', () => {
+  const s = {
+    state_type: 'card_reward', run: {act: 1, floor: 3, ascension: 10},
+    player: {hp: 70, max_hp: 80, block: 0, energy: 3, gold: 99, status: [], relics: [], potions: []},
+    card_reward: {cards: [{name: 'Inflame', cost: 1, description: 'Gain 1 Strength.'},
+                          {name: 'Impervious', cost: 2, description: 'Gain 30 Block.'},
+                          {name: 'Some Unreleased Card', cost: 1, description: '???'}]},
+  };
+  const c = [{id: 'a0', label: 'Take Inflame', command: {action: 'take_card', index: 0}, details: {}},
+             {id: 'a1', label: 'Skip', command: {action: 'skip'}, details: {}}];
+  const q = perspectiveQuestion(s, c, []);
+  const off = q.state.offered_card_effects;
+  assert.equal(off.length, 3, 'every offer is annotated, including the ones the model might skip');
+  assert.deepEqual(off[0].effects, ['strength'], 'what the game says the card does, from the game data');
+  assert.deepEqual(off[1].effects, ['block']);
+  assert.equal(off[2].known, false, 'a card the game data does not have is unknown, not guessed at');
+  assert.equal(off[2].effects, undefined, 'and it contributes no effects');
+  // It is a FACT about the cards, not a recommendation - the choice is still the model's.
+  assert.match(q.questions.move.instructions, /not a recommendation/);
+  assert.equal(c.length, 2, 'no option is added, removed or reordered');
+});
+
+test('the annotation is absent on a non-reward screen', () => {
+  const s = {state_type: 'map', run: {act: 1, floor: 4}, player: {hp: 70, max_hp: 80, status: [], relics: [], potions: []},
+             map: {next_options: [{index: 0, col: 0, type: 'Monster', leads_to: []}]}};
+  const q = perspectiveQuestion(s, [{id: 'a0', label: 'Travel', command: {action: 'choose_map_node', index: 0}, details: {}}], []);
+  assert.equal(q.state.offered_card_effects, undefined, 'card data on a map board is noise');
+});

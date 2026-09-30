@@ -1,3 +1,29 @@
+import {byName as gameData} from './gamedata/game-data.mjs';
+
+// WHAT THE GAME'S OWN DATA SAYS EACH OFFERED CARD DOES.
+//
+// The bridge sends no deck, so the card-reward decision is made with nothing to compare the offer
+// against — and the measured result of that is a deck of Strike, Defend, Tremble, Blood Wall and
+// Taunt, with Blood Wall, Cinder, Whirlwind, Molten Fist and a Skip taken along the way. At
+// Ascension 10 that deck loses: elites are 10-for-26 on this policy, and a deck with no damage
+// basis cannot kill one however much it blocks.
+//
+// So each offered card is annotated from the game's OWN localization, which classifies all 1,784
+// entities. This is STRUCTURE, never a magnitude — the templates carry no numbers — and it is
+// reported as a fact about the card, not as a recommendation. The choice stays the model's; what
+// changes is that it is no longer choosing blind.
+//
+// The one thing this must never become is a hidden policy that quietly picks for the model. It is
+// attached to the payload and named in the instruction; the model can still take Blood Wall.
+export function offerEffects(cards) {
+  return (cards ?? []).map(card => {
+    const entry = gameData(card?.name);
+    if (!entry?.effects) return {name: card?.name ?? null, known: false};
+    const kinds = Object.keys(entry.effects).filter(k => k !== 'placeholders');
+    return {name: card.name, known: true, effects: kinds.length ? kinds : null, text: entry.plain ?? null};
+  });
+}
+
 import {exhaustSupport} from './exhaust-support.mjs';
 import {deckSnapshot} from './encounters.mjs';
 export function deckAssessment(state){
