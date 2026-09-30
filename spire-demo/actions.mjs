@@ -150,9 +150,17 @@ export function actionsFor(s) {
     }
     case 'card_select': {
       const c = s.card_select;
-      const required = c?.prompt?.match(/^Choose (\d+) cards? to Enchant\./i);
+      // HOW MANY THIS SCREEN WANTS. The old pattern matched only "Choose N cards to Enchant.", so an
+      // UPGRADE screen ("Choose a card to Upgrade.") matched nothing, `required` was null, and the
+      // count was never enforced — the screen was treated as "confirm whenever the bridge feels like
+      // it". Generalised: any "Choose N card(s)", and a screen that asks for a single card wants ONE.
+      const wantN = c?.prompt?.match(/\bchoose\s+(\d+)\s+cards?\b/i);
+      const wantOne = /\bchoose\s+a\s+card\b/i.test(c?.prompt ?? '')
+        || /\bchoose\s+one\s+card\b/i.test(c?.prompt ?? '');
+      const required = wantN ? Number(wantN[1]) : (wantOne ? 1 : null);
       const selected = c?.cards?.filter(x=>x.is_selected).length ?? 0;
-      const ready = c?.can_confirm && (!required || selected >= Number(required[1]));
+      const satisfied = required === null || selected >= required;
+      const ready = Boolean(c?.can_confirm) && satisfied;
       // EVERY card is offered, selected ones included, because `select_card` TOGGLES on a grid
       // screen (vendor api-reference.md, `select_card`: "toggles selection"). Offering only the
       // unselected ones made the screen a dead end: a bad selection could not be undone, only
@@ -160,12 +168,17 @@ export function actionsFor(s) {
       // nine confirms executed and the screen never advanced, because the only legal move was to
       // confirm the selection it had already got wrong. Selected cards are labelled as the
       // deselect they are, so the label never claims a card is being added when it is being removed.
+      // CONFIRM FIRST ONCE THE SCREEN IS SATISFIED. Same lesson as the combat menu: a plan the reader
+      // never reaches is not on the menu. Measured on an upgrade screen — the agent toggled cards for
+      // TWENTY-TWO decisions while `confirm_selection` sat at the bottom of thirteen identical-looking
+      // "Select Strike" entries. Confirming alone advances the screen, verified by hand against the
+      // bridge. The cards stay offered, because on an unsatisfied screen picking one is the whole task.
+      if (ready) add('confirm_selection', {}, 'Confirm selected cards');
       for (const x of c?.cards ?? []) {
         if (x?.index === undefined || x?.index === null) continue;
         add('select_card', {index: x.index},
           x.is_selected ? `Deselect ${x.name}` : `Select ${x.name}`, x);
       }
-      if (ready) add('confirm_selection', {}, 'Confirm selected cards');
       if (c?.can_skip) add('cancel_selection', {}, 'Skip selection');
       break;
     }

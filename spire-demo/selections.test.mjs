@@ -60,3 +60,43 @@ test('a screen whose bridge DOES report is_selected is left exactly as the bridg
   const pick = {kind: 'decision', outcome: 'executed', state: withFlags, chosen: {command: {action: 'select_card', index: 1}}};
   assert.equal(selectionState(withFlags, [pick]), withFlags, 'the bridge is the authority when it speaks');
 });
+
+// A screen that asks for ONE card wants one. The old pattern matched only
+// "Choose N cards to Enchant.", so an upgrade screen ("Choose a card to Upgrade.") matched nothing
+// and the count was never enforced.
+//
+// And on an unsatisfied screen picking is the whole task; on a SATISFIED one, confirming is, so
+// confirm leads. Measured live: the agent toggled cards for 22 decisions while `confirm_selection`
+// sat at the bottom of thirteen identical-looking "Select Strike" entries. Confirming alone advances
+// the screen — verified by hand against the bridge — and it was never taken.
+test('a choose-one screen counts one, and leads with confirm once it has one', () => {
+  const screen = chosen => ({
+    state_type: 'card_select',
+    card_select: {prompt: 'Choose a card to Upgrade.', can_confirm: true, can_cancel: true,
+      cards: [{index: 0, name: 'Strike', is_selected: chosen === 0},
+              {index: 1, name: 'Bash', is_selected: chosen === 1},
+              {index: 2, name: 'Whirlwind', is_selected: false}]},
+  });
+  const none = actionsFor(screen(-1));
+  assert.match(none[0].label, /^Select /, 'nothing chosen: picking is the whole task, so a card leads');
+  // Confirm is NOT offered on an unsatisfied screen. The bridge will happily accept it — the screen
+  // advances — but "Choose a card to Upgrade" with nothing chosen advances by skipping the upgrade,
+  // which is exactly the silent no-op this screen let the agent fall into 22 times.
+  assert.ok(!none.some(a => a.command.action === 'confirm_selection'),
+    'an unsatisfied screen must not offer a confirm that quietly skips the choice');
+
+  const one = actionsFor(screen(0));
+  assert.equal(one[0].command.action, 'confirm_selection', 'a choice is made: confirming is now the task');
+  // ...and the cards are all still reachable, because the choice can still be revised.
+  assert.equal(one.filter(a => a.command.action === 'select_card').length, 3, 'no card becomes unreachable');
+});
+
+test('a choose-N screen still needs all N before confirm leads', () => {
+  const screen = n => ({
+    state_type: 'card_select',
+    card_select: {prompt: 'Choose 3 cards to Enchant.', can_confirm: true,
+      cards: [0, 1, 2, 3].map(i => ({index: i, name: 'C' + i, is_selected: i < n}))},
+  });
+  assert.match(actionsFor(screen(2))[0].label, /^Deselect /, 'two of three: revise, do not confirm');
+  assert.equal(actionsFor(screen(3))[0].command.action, 'confirm_selection', 'three of three: confirm leads');
+});
