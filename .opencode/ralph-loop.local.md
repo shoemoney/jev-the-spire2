@@ -1,50 +1,56 @@
 ---
 active: true
-iteration: 79
+iteration: 80
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## A0 FIGHT WIN RATE IS SATURATED, SO STOP MEASURING IT
-Every stamped version since the code stamp went in reports A0 between 83% and 100%:
+## THE CHARACTER_SELECT QUESTION IS ANSWERED, WITH THE FULL LIST
+  [menu "character_select": 9 options recorded]
 
-  ff06fa6  6 fights  83%      abbd694  5 fights  100%      35ddb56  3 fights  67%
+  IRONCLAD  SILENT  REGENT  NECROBINDER  DEFECT  RANDOM_CHARACTER  confirm  embark  back
 
-16 fights, all Ascension 0, all inside the noise. **The metric I have been steering by is
-saturated** — a policy that wins 88% of trash-mob fights has no headroom there, and no amount of
-additional A0 data will show whether anything improved.
+**There is no ascension or difficulty control on that screen.** Confirmed from the complete,
+untruncated list rather than a 180-character slice of it.
 
-The A0 signals that are NOT saturated, and are therefore the ones worth watching until ascension
-becomes available:
-  - **boss win rate at A0: 5/11 (45%)** — genuinely mid-range
-  - **depth reached** — median floor 17, best 31, and still climbing in the corpus
+So iteration 74's claim was CORRECT and iteration 75's walk-back was correct *procedure* — do not
+assert a fact about a screen from a truncated read of it — and the two are now reconciled by
+actually reading the whole thing. Walking a claim back is not the same as the claim being wrong, and
+holding both of those at once for six iterations was the right amount of stubbornness.
 
-So the honest framing of everything since iteration 62: the difficulty gradient was real and worth
-finding, and at A0 the interesting question stopped being "can it win a trash mob" and became "can
-it finish a boss". Neither can be compared across code versions yet, because only 2 stamped runs
-have ENDED. The instrument is correct; the data needs time.
+Two things the full list also revealed, invisible in the truncated version:
+  - `RANDOM_CHARACTER` exists
+  - `embark` exists, alongside the `confirm` the batch has been sending. `confirm` works, so this
+    is not a bug, but the real start action is `embark` and the batch has been using the wrong one
+    without harm.
 
-## TWO MORE BATCH DEFECTS, BOTH OF WHICH SUPPRESSED EVIDENCE
-**1. It printed a mean for runs that never happened.** `results` was read back from the previous
-batch's `batch.json` and appended to, so every invocation ended by printing that batch's floors plus
-every run ever taken. A batch in which nothing occurred still printed:
+## THE REMAINING LEAD: `custom`
+The singleplayer screen offers standard / daily / **custom** / back. `custom` is the only path to a
+difficulty setting that has not been ruled out, and iteration 75 could not reach it because the game
+was mid-run every time. The batch now reaches a real menu on every run boundary, so the next time it
+walks one, `custom` is worth selecting and its options recorded the same way.
 
-  floors: 17, 5, 17
-  n=3 mean=13.0 best=17
+## LIVE PLAY WHILE ALL THIS HAPPENED
+The run reached the boss and died with the boss at **8 HP of 240**:
 
-I quoted that line twice across two iterations as though it were fresh. Output that reports a mean
-for work that did not happen is worse than no output, because it reads as a result. Each invocation
-now owns its results and writes an invocation stamp.
+  f17 boss hp=42 -> 39 -> 34 -> 33 -> 18 -> 8 -> [run ended] -> f1 hp=80
 
-**2. One failed run cancelled the batch.** The catch block did `break`, so a single flaky bridge read
-— precisely the thing iteration 78 spent itself fixing — ended every remaining run. That is the
-difference between a loop that accumulates evidence and one that restarts from zero whenever the
-game hitches, which is most of the time. It now continues.
+That is a boss loss by 8 HP, which is the unsaturated signal doing exactly what it should: 45% boss
+win rate is not 100%, so the metric still has signal in it. It is also the run the automation had to
+wait for before it could read a menu at all.
 
-Both are the same failure as iteration 78's two: the loop treating one unreliable event as
-conclusive, in the harness this time rather than the client.
+## The shape of the last six iterations on this one question
+  74  asserted from a truncated read          -> wrong process, right answer
+  75  walked it back, correctly                -> and started recording the full list
+  76  blamed a timeout chain                    -> real chain, wrong first link
+  77  instrumented the wrong service           -> correct, would never have fired
+  78  found the right service (the bridge)     -> unblocked play entirely
+  80  read the full list                       -> answer, in nine lines
+
+Six iterations to read nine options, and the thing that finally did it was making the harness write
+the answer to disk on every pass instead of me reading it by hand and truncating it.
 
 ## Loop state
-565 tests green - batch resilient and its output honest - play advancing f13 -> f14, 68 decisions
-- A0 fight rate saturated, boss rate 5/11 and depth are the live signals
+565 tests green - ascension NOT settable on character_select, confirmed in full - custom is the last
+lead - play running, one boss loss at 8/240 hp
