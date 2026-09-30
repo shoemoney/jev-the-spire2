@@ -1,7 +1,17 @@
 const relicPreference = 'Relic purchase preference: evaluate useful affordable relics before spending gold on cards. Prefer a relic with meaningful benefits for this deck over a marginal card addition: its ongoing effects do not dilute the draw pile or require drawing and playing another card. Read its actual triggers and drawbacks; price or item type alone does not establish value. Before buying a card, subtract its price from current gold and check whether that prevents buying the strongest useful affordable relic or better purchase combination. Reserve gold for that relic when it is the better improvement. A card that fixes a critical weakness can take priority over a low-impact relic; potions, removal and leaving remain available. Do not buy a weak relic merely because it is affordable, and do not assume unseen inventory or future shops.';
 // Screen-specific questions, with no named encounters or prescribed builds.
 export function decisionFocus(state) {
- const act2Route=Number(state.run?.act)===2 ? 'Act 2 route preference: prefer paths with fewer elites, using only the visible map connections. An optional elite needs a concrete justification: healthy HP, useful potions and evidence from recent fights that this deck handles incoming damage and ends fights reliably. Heavy recent HP losses, depleted potions or weak damage/defense make avoiding elites the default. Compare the entire visible route, including forced normal fights and whether healing or shopping comes before danger; a rest site after an elite cannot make that elite safe now. Do not choose a worse overall survival route merely to reduce the elite count. When elites are unavoidable, compare the least dangerous reachable path and preparation opportunities. Unknown rooms and rewards remain unknown. Keep all routes available; Jev makes the choice. ' : '';
+ // ELITE AVOIDANCE IS NOT AN ACT-2 THING. This block was gated to `act === 2`, so the guidance only
+ // ever applied in the act the agent reaches once — while the data says the opposite: deaths by act
+ // are 19 in Act 1 and 1 in Act 2, and elites are the worst class at 11/34 won (32%). The act-2 gate
+ // meant 95% of the runs that died were dying in an act where the one piece of route guidance that
+ // mentions elites was silent.
+ //
+ // It applies in every act now. The text is kept intact otherwise: it is a route preference, not a
+ // claim that elites are always bad, and it explicitly says not to take a worse route merely to
+ // reduce the elite count. A class record rides along when the store has one, so the guidance is
+ // weighed against what this policy has actually done to elites rather than against a prior.
+ const act2Route='Route preference: prefer paths with fewer elites, using only the visible map connections. An optional elite needs a concrete justification: healthy HP, useful potions and evidence from recent fights that this deck handles incoming damage and ends fights reliably. Heavy recent HP losses, depleted potions or weak damage/defense make avoiding elites the default. Compare the entire visible route, including forced normal fights and whether healing or shopping comes before danger; a rest site after an elite cannot make that elite safe now. Do not choose a worse overall survival route merely to reduce the elite count. When elites are unavoidable, compare the least dangerous reachable path and preparation opportunities. Unknown rooms and rewards remain unknown. Keep all routes available; Jev makes the choice. ';
 
  if(state.state_type==='card_reward')return {
   name:'Card reward',instructions:{
