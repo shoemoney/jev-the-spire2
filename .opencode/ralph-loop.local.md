@@ -1,44 +1,47 @@
 ---
 active: true
-iteration: 48
+iteration: 49
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THIRD SIGNAL BUILT CORRECTLY AND CONNECTED TO NOTHING
-Sweep 4's opening finding: "the attrition warning is never delivered." Twelve iterations.
+## SWEEP 4 FINDING #2 — EIGHTEEN OF TWENTY-NINE POTION TYPES WERE INVISIBLE
+`apply()` read `listed || potion ? null : ...`, sending every potion down an eleven-name
+hand-written allowlist and nothing else. An unlisted potion marks the play `unsupported`,
+which blanks the forecast and blinds the lethal gate for the WHOLE TURN.
 
-server.mjs computed the verdict and passed it in the options object. `recallingDeliberate`
-did not destructure the parameter and called `factoredQuestion(state, candidates)` with no
-third argument. The value died at the boundary.
+  Entropic Brew      372 sightings
+  Attack Potion      335
+  Colorless Potion   251
+  Skill Potion       166
+  Fairy in a Bottle  73      <- heals to 30% instead of dying
 
-Every unit test passed throughout, because every unit test called
-`perspectiveQuestion` directly. **The tested seam was not the broken one.**
+The game data could not see them either: it only matched `{Placeholder}` substitutions, and
+Fairy writes "you heal to 30%" in prose. A prose layer now recognises heal/draw/upgrade/
+add-to-hand/random-potion/repeat — with `Draw` requiring `Draw N` or `Draw cards`,
+because "Draw Pile" is a zone and the first attempt matched it and promoted Cascade past
+`unsupported` on a false reading.
 
-And there are TWO builders: `deliberation.perspectiveQuestion` and
-`factored.factoredQuestion`. I attached the signal to the first; the shipped recall policy
-uses the second. So it reached the unflagged policy and nothing else.
+**Structure licenses promotion only when the play is otherwise modelled.** Game data says
+what a card DOES, never what it COSTS; an X-cost play has an energy cost the planner cannot
+simulate, so promoting it on effects alone promised unspent energy it had no basis for.
 
-    now, through the real shipped path:
-      losing on time -> reaches the request? true
-      no verdict     -> reaches the request? false
+## The honest outcome, and the test asserts it
+Block, Swift and Speed simulate. Fairy in a Bottle stays `unsupported` and states NO survival
+claim — the planner has no clause for a trigger at zero HP, and promoting it would produce a
+confident wrong number. Unknown is the correct answer there. The test says "not everything
+works" on purpose.
 
-**Fixed at the base.** `decisionQuestion` takes the verdict and attaches it; `factoredQuestion`
-forwards it. A new policy cannot forget it because there is nowhere else for it to be.
+## Pattern, now five instances
+1. seen-card floor: labelled a floor, was a floor on nothing
+2. lower bound: published, went into the request and nowhere else
+3. attrition: computed, dropped at a function boundary
+4. potion allowlist: eleven names standing in for twenty-nine
+5. classifier: matched placeholders only, so every prose effect was invisible
 
-## The pattern across all three
-1. the seen-card floor, labelled a floor, was a floor on nothing
-2. the lower bound, published correctly, went into the request and nowhere else
-3. the attrition verdict, computed correctly, was dropped at a function boundary
-
-All three are the same mistake: a value that exists, is correct, is described in a comment, and
-is never observed leaving the building. None was caught by a unit test, because a unit test
-calls the function directly. All three were caught by something that READS THE SYSTEM —
-a reviewer quoting the code, or a loop log.
-
-**A signal is not a signal until a test proves it survives the real path.** That is what
-`signal-delivery.test.mjs` now does, hop by hop, including the absent case.
+Four of the five are the same shape: a list or a rule that LOOKS comprehensive and quietly
+is not. None was caught by a unit test. All were caught by something reading the whole system.
 
 ## Loop state
-525 tests green · sweep 4 running with 74-file coverage · both batches going · server restarted
+528 tests green · server restarted with potion visibility · game batch and sweep 4 both running
