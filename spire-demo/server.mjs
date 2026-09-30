@@ -317,7 +317,13 @@ async function step(token, preview = false) {
         //
         // Per-part, because a single total cannot say WHICH part to cut.
         const partBytes=Object.fromEntries(Object.entries(payload).map(([k,v])=>[k,v==null?0:JSON.stringify(v).length]));
-        view.requestBytes=body.length; view.requestPartBytes=partBytes;
+        // One level deeper into `state`, because the logged state is 4 KB and 45 KB is what the
+        // model receives: the payload WRAPS it with encounter/deck/facts/mechanics/setup parts.
+        // Which of those six is the bloat is not answerable by reading the planner — they are not
+        // exported — and one level of nesting settles it for a couple of bytes per decision.
+        const statePartBytes=(payload&&typeof payload.state==='object'&&payload.state)
+          ?Object.fromEntries(Object.entries(payload.state).map(([k,v])=>[k,JSON.stringify(v??null).length])):null;
+        view.requestBytes=body.length; view.requestPartBytes=partBytes; view.requestStateBytes=statePartBytes;
         const attempt=async signal=>{
           view.hedgeAttempts=(view.hedgeAttempts??0)+1;
           const r=await fetch('https://openrouter.ai/api/alpha/decisions',{
@@ -344,7 +350,7 @@ async function step(token, preview = false) {
     // the agent reasons with could not be audited, replayed, or measured after the fact, and a bug
     // in it would have been invisible forever. The fix that made `dealt` observed in iteration 65
     // was unfalsifiable until this was logged: there was no way to check it on real data.
-    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
+    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, requestStateBytes:view.requestStateBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
     if (token !== generation) { await log({ ...event, outcome: 'cancelled' }); return; }
     if (preview) { await log({ ...event, outcome: 'preview' }); view.message = `Preview: ${chosen.label}`; return; }
     const fresh = await observe();
