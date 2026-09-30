@@ -1,49 +1,44 @@
 ---
 active: true
-iteration: 76
+iteration: 77
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE CHAIN, AND IT EXPLAINS WHY ITERATIONS 67, 74 AND 75 ALL STALLED IN THE SAME PLACE
-I spent this iteration trying to read the full character_select option list. Chasing why that kept
-failing produced the actual structural answer, and it is not about menus at all:
+## TWO THINGS DONE THAT DO NOT NEED THE GAME
+Both aimed at the 30s timeout, which iteration 76 established is upstream of every stall.
 
-  model calls intermittently exceed the 30s timeout   (errors 12 -> 19, all "aborted due to timeout")
-    -> the agent stalls mid-run, waiting on a decision that never comes
-      -> runs do not END
-        -> menu_select is a no-op while a run is in progress, so the batch can never get back to a
-           menu, let alone character_select
-          -> ascension can never be examined, let alone set
-            -> A10 stays unmeasured, and the primary metric cannot move
+**1. Failures now carry their request.** Every error entry recorded exactly one field — the string
+"The operation was aborted due to timeout" — so 19 of them in the corpus are indistinguishable. The
+failure path now also logs requestBytes, the per-part and per-state breakdowns, the running token
+and decision counts, and the last successful latency. Sizes only, no board state, because the point
+is to tell "this one was 3 KB" from "this one was 160 KB", and writing a whole decision's game state
+into the log for every blip is not worth the bytes.
 
-**Every symptom in the last three iterations traces to the undiagnosed timeout I wrote off as
-"probably transient upstream" in iteration 67 and told myself not to write a story about.** The
-story was the chain. I had the pieces at 67 and did not join them.
+**2. The hedge was throwing away the useful error.** `finish(reject, failures[0])` reports the FIRST
+attempt's failure. Attempt 1 is precisely the one that times out when the endpoint is in its slow
+mode, so a later attempt failing with an HTTP status or a rate-limit message — the actual clue —
+was discarded on every single failure. It now reports the LAST failure and appends the full set of
+distinct reasons. 19 identical opaque errors is consistent with this bug, not with the endpoint
+being uniformly unhelpful.
 
-## What I got wrong on the way
-The menu-recording loop I added was placed AFTER the navigation sequence, so by the time it polled
-the run had already started and `state_type` was 'monster' — it could never see a menu screen, and
-it printed nothing for two runs. Moved it INSIDE the walk, capturing after each `menu_select`,
-which is where the screens actually exist. Even then it recorded nothing, for the reason above.
+## On the hedge itself: it is sound, and the timeouts are still unexplained
+I expected to find the stall here. I did not. The hedge staggers at 900ms with 3 attempts, each
+carrying its own 30s `AbortSignal.any`, and the reject path is reached correctly when all attempts
+settle. The documented slow mode tops out around 16s, so a 30s timeout means all three attempts
+exceeded 30s — slower than any call ever observed. **I am not writing a story about that.** The
+instrumentation above will settle it the next time it happens, which is the honest position
+available while the game is closed.
 
-## Where the loop actually is right now
-  bridge  http://127.0.0.1:15526/            -> 200
-  bridge  /api/v1/singleplayer               -> EMPTY
-  agent   http://127.0.0.1:4317/api/status   -> 200, alive
+## The blocked thing is still blocked
+The game process is gone. bridge / returns 200 with nothing behind it; the agent is alive and will
+serve a decision the moment a state arrives. Nothing on my side substitutes for launching it.
 
-**The game process is gone.** The bridge is up with nothing to report, which is why the batch
-cannot do anything and why no run is progressing. This is a handback: the game needs launching
-before the loop can play, and no amount of work on my side substitutes for that.
-
-## Two things worth doing that are NOT blocked on the game
-1. The 30s timeout needs a diagnosis, not a shrug. It is upstream of every stall in this thread.
-   p50 is 270ms and p95 649ms, so it is not a slow API — it is a specific tail. One captured
-   request body from a slow call would settle it the way logging the descriptor settled that.
-2. `batch.mjs` now records every menu screen it walks through, untruncated, to
-   `.private/loop/batch.menus.json`. The ascension question will answer itself the next time a run
-   legitimately ends and the walk reaches a menu.
+## What iteration 76 got right, in one line
+Every symptom in 67, 74, 75 and 76 was one chain, and the only reason I found it was that I kept
+asking why a menu screen would not read. The chain is more useful than any of the four
+investigations it replaced.
 
 ## Loop state
-562 tests green - GAME CLOSED, handback required - timeout diagnosis is the unblocked next step
+565 tests green (3 new) - timeouts now self-diagnosing - GAME CLOSED, launch required

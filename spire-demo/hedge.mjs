@@ -64,7 +64,22 @@ export async function hedged(attempt, { delayMs = HEDGE_DELAY_MS, maxAttempts = 
           // A real failure frees a slot, so try again immediately rather than
           // waiting out the stagger.
           if (launched < maxAttempts) launch();
-          else if (settled >= launched) finish(reject, failures[0] ?? error);
+          // Report the LAST failure, and carry the whole set. `failures[0]` is the earliest
+          // attempt, which is the least informative one: attempt 1 is the one that times out when
+          // the endpoint is in its slow mode, so a later attempt failing with an HTTP status or a
+          // rate-limit message — the actually useful clue — was being thrown away every time.
+          //
+          // This is why 19 errors in the log are all the identical string "The operation was
+          // aborted due to timeout" with nothing else attached: whichever attempt failed first set
+          // the message, and the others that may have said something different were discarded.
+          else if (settled >= launched) {
+            const last = failures[failures.length - 1] ?? error;
+            if (failures.length > 1) {
+              const seen = [...new Set(failures.map(f => f?.message ?? String(f)))];
+              last.message = `${last.message} [${failures.length} attempts: ${seen.join(' | ')}]`;
+            }
+            finish(reject, last);
+          }
         });
       if (launched < maxAttempts) {
         sleep(delayMs, controller.signal).then(launch, () => {});

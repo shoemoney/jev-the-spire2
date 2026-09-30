@@ -403,7 +403,24 @@ async function step(token, preview = false) {
     await log({ ...event, outcome: 'executed', result: outcome });
   } catch (error) {
     stop(error.message === 'fetch failed' ? 'Game bridge unavailable. Launch Slay the Spire 2 with STS2_MCP enabled.' : error.message);
-    await log({ kind: 'error', message: view.message });
+    // A failure that carries nothing but its own message cannot be diagnosed after the fact, and
+    // this one has cost four iterations: 19 timeouts, all recorded as the bare string "The
+    // operation was aborted due to timeout", which is why iterations 67, 74, 75 and 76 each had to
+    // guess whether the cause was size, the network, or the provider. The request that FAILED is
+    // the one worth keeping — the successful ones are already in the log with their sizes.
+    //
+    // Captured on the failure path only, and only sizes: no state, no cards, no board. Enough to
+    // tell "this one was 3 KB" from "this one was 160 KB" without writing a whole decision's worth
+    // of game state into the log for every blip.
+    await log({
+      kind: 'error', message: view.message,
+      requestBytes: view.requestBytes ?? null,
+      requestPartBytes: view.requestPartBytes ?? null,
+      requestStateBytes: view.requestStateBytes ?? null,
+      inputTokensSoFar: view.inputTokens ?? null,
+      decisionsSoFar: view.decisions ?? null,
+      lastLatencyMs: view.latencyMs ?? null,
+    });
   } finally { busy = false; view.pending = null; }
 }
 
