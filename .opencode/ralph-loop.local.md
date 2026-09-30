@@ -1,47 +1,58 @@
 ---
 active: true
-iteration: 73
+iteration: 74
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## LOGGED THE DESCRIPTOR. IT IS 35 DISTINCT PLANS AND 31 KB OF REAL INFORMATION.
-  path: state.candidate_details
-  ids: 35   distinct: 35   bytes: 31,225
-  each value: {"sequence":[{"label":"Bash -> Ceremonial Beast","command":{"action":"play_card",...
+## THE VERDICT ON MY OWN WORK, USING THE INSTRUMENT I BUILT
+Asked the question the whole code-stamp apparatus exists to answer: did any of this help?
 
-**Every value is distinct and each carries a `sequence` of labelled steps with real commands.** This
-is 35 different multi-card plans, described once each.
+  stamped versions that actually played a fight:
+    abbd694  5 fights  won 5  lost 0   A0
+    35ddb56  3 fights  won 2  lost 1   A0
+    47fe1c4  1 fight   won 1  lost 0   A0
+    ff06fa6  4 fights  won 2  lost 1   A0  (+1 unresolved)
 
-## SO THE PROMPT IS NOT WASTEFUL AND THE SIZE IS THE DECISION
-  p50 wire 28.1 KB   p90 77.6 KB
-A 35-way choice among genuine multi-card plans costs what it costs. There is no repetition to
-collapse, no shared object to hoist, and no cap that would be safe. The 28%-of-decisions-beyond-
-position-10 is not a symptom of distinct options being buried - it is the model reading 35 real
-options and picking the one it judges best, which is the behaviour the depth measurement was
-supposed to explain and now does.
+**10 fights, all Ascension 0, n too small to conclude anything.** And A0 has been 88% since
+iteration 62 — it is saturated, so even 200 more A0 runs would not move the number worth steering by.
 
-**Three iterations of chasing prompt waste, and the answer is that there is none.** The size is the
-information content. The one real win in the whole line of inquiry was iteration 69 (nine relevance-
-free prose checks, 2.43 KB -> 1.18 KB), and even that was 10% of a small payload.
+## WHY THERE IS NO A10 DATA: TWO BUGS, BOTH OF WHICH HAD TO BE FIXED
+The batch has always tried to select Ascension 10 and warned loudly when it failed:
+  [WARNING: ascension is 0, not 10 - this run is NOT comparable to earlier ones]
 
-## I WAS WRONG IN ITERATION 72, AND THE WRONG MEASUREMENT IS NAMED
-I wrote "100% of decisions with 10+ candidates share ONE descriptor, whose forecast is null." That
-was measured on `candidate.details` in the LOG - a different object from the wire's
-`state.candidate_details`, which is assembled later. The logged one is a per-candidate summary; the
-one on the wire is the per-plan sequence. I compared a summary against a plan, found the summary
-repetitive, and reported it as repetition in the thing being sent.
+That branch had never once executed. Two independent bugs, either of which alone was fatal:
 
-That is the fifth time in six iterations a tidy causal story did not survive contact with the real
-object, and in every case the instrument that caught it was logging the actual thing rather than
-thinking harder about a proxy. Four reverted attempts and a wrong headline to show for it. The
-correct move now is to stop chasing the payload and go back to the win rate.
+  1. `options` is an array of OBJECTS - [{"name":"IRONCLAD","enabled":true}, ...] - read straight
+     off the bridge. `String(o)` is "[object Object]", so the test never matched.
+  2. `includes('ASCEND')` **does not match "ASCENSION"**. A-S-C-E-N-S-I-O-N. The stem is "ASCEN".
+     Even handed plain strings it was constant-false.
 
-## Also: the backgrounding pattern was the real time sink
-`( ... node server.mjs & )` kept dying between iterations. The server runs fine in the foreground
-and fine under `nohup ... & disown`. Three diagnostic cycles went to a process-management problem
-while I believed I was diagnosing a payload problem - again a story about the wrong layer.
+Both fixed, proven against the real shapes:
+  'ASCEND' in 'ASCENSION LEVEL' : false    <- the old stem
+  'ASCEN'  in 'ASCENSION LEVEL' : true     <- the fix
+  {name:'Ascension Level 10'}   : matches
+  character list               : no match  <- and this is the finding
+
+**The character_select options list contains only characters.** IRONCLAD, SILENT, REGENT,
+NECROBINDER, DEFECT. There is no ascension or difficulty control exposed there, so even with both
+bugs fixed the run starts at Ascension 0 — and the batch now says so out loud instead of leaving it
+to be discovered later in a statistic.
+
+So: the primary metric — A10 non-boss win rate, 80% — cannot move from here. Not because the
+bridge lacks the endpoint, but because that screen has no control to set it.
+
+## What that means for the loop
+Iterations 63-73 produced: a kill instrument that found 5 boss kills the loop had been reporting as
+zero, a code-version stamp on every log entry, an attrition signal fixed from a forecast to an
+observation, an 8-point difficulty gradient, a relevance filter on nine prose checks, and one
+genuinely dead end (the payload). Every one of those is real and none of it moved the win rate,
+because the win rate has not been measurable at the difficulty that matters.
+
+**Starting an Ascension 10 run in the game UI is the one thing left that is not mine to do.** From
+the moment it does, `byCode` groups every new fight under a known sha and the number finally has
+provenance. That is the handback.
 
 ## Loop state
-562 tests green - payload investigation CLOSED as a genuine dead end - win rate untouched since 62
+562 tests green - payload investigation closed - ascension selection fixed and proven, blocked on a human
