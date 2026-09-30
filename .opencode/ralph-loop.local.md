@@ -1,55 +1,49 @@
 ---
 active: true
-iteration: 84
+iteration: 85
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE HYPOTHESIS I NAMED LAST ITERATION IS WRONG, AND WRONG IN THE OPPOSITE DIRECTION
-I said the lever was "the deliberation weights safe above prog". Measured, on 2011 ranked boss plans:
+## FOUND THE CODE PATH, AND IT IS THE ARCHITECTURE RATHER THAN A BUG
+`spire-demo/learning/wire.mjs`:
 
-  ATTACKING plans : n=1007  mean 0.2117  p25 0.0750  p50 0.2593  p75 0.3810
-  DEFENSIVE plans : n=1004  mean 0.0602  p25 -0.1749  p50 0.1419  p75 0.3608
+    const best = factorsComplete ? scored[0] : {id: jevMove.choice};
 
-**The scorer prefers attacks on every percentile** — mean 0.21 against 0.06, and the defensive
-distribution is the one with a negative lower quartile. So the ranking is not the thing that is
-pushing the agent into defence, and a weights change built on that story would have made it worse.
+**The model's own choice is used only when the factor set is incomplete.** When factors are complete
+— 426 of 461 boss decisions — the scorer decides alone, and `deliberation.changed` records that it
+overrode the model. So the 24 substitutions were working as designed, not a lost decision.
 
-## AND THE GATE IS NOT DOING IT EITHER
-On the 112 declined turns the gate says, every time:
+## AND THE OVERRIDE IS MEASURABLY WORSE, WHICH IS THE FINDING
+  boss decisions with a measurable outcome : 461
+    scorer AGREED with the model : n=208   848 damage   4.08 per decision   attack-chosen  13%
+    scorer OVERRODE the model    : n=253   549 damage   2.17 per decision   attack-chosen  56%
 
-  safetyGate        : null
-  safetyGateReason  : "the chosen candidate's own forecast states it survives (quality "partial"),
-                      so there is no lethal forecast to refuse"
+**The scorer's overrides pick an attack far more often (56% against 13%) and produce less than half
+the damage per decision.** So it is not choosing the wrong card — it is choosing attacks that do not
+land damage, which is a sharper and stranger failure than picking defence.
 
-The gate is correctly declining to intervene, exactly as designed. It is not overriding anything.
+**The confound I am not hiding.** This is association, not causation. The scorer may override on
+intrinsically worse moments — after a big telegraph, late in a long fight, when energy is gone — and
+any of those would produce low damage per decision with no defect involved. Overrides are 253 of 461
+decisions, far too many to be a rare event, so "it only overrides in good situations" is not available
+as an explanation either. What settles it is a within-fight comparison at matched turn index, and
+that is the next measurement.
 
-## WHAT THE 112 ACTUALLY CONSIST OF
-  the MODEL's own choice was already an attack        :  24
-  model choice != what was executed                   :  59
-  model and execution agreed, no override in between  :  53
+## Where the Ceremonial Beast work now stands
+The 3.0 damage-per-decision arithmetic is still why 0/3. The explanation has now moved three times:
+ordering (refuted — surviving attacks are ranked first, top 4 of 112), scorer bias toward defence
+(refuted — it prefers attacks on every percentile), and now the scorer's overrides themselves, which
+are associated with less than half the damage. **Each was measured before any code was written, and
+two of the three died on contact with the data.** That is the process working, not the process
+failing.
 
-The clean defect is the 24: the model chose an attack, and a different plan executed. One of them
-picked `p4 "Setup Strike -> Lagavulin Matriarch -> End"` and the run played `p3 "Feel No Pain -> End
-turn"`. I do not have the mechanism for that substitution and I am not going to invent one — the
-gate is inert, the scorer prefers attacks, and something between the model's answer and the executed
-command is not yet accounted for.
-
-**The 53 are not obviously wrong either.** "Feel No Pain" is a block-generating power; against a boss
-that ramps from 12 to 32, banking block is defensible play that my binary "does the label name an
-attack" test scores as a non-attack. The measurement is cruder than the decision it is judging.
-
-## Where this leaves the Ceremonial Beast work
-The 3.0 damage-per-decision arithmetic stands — it is arithmetic and it is why 0/3. The explanation
-for it does not. Two of three candidate mechanisms (ordering, scorer bias) are now measured and
-refuted, and the third (the 24 substitutions) is real but unexplained. **I am not shipping a change
-against a refuted story**, which is now the standing rule after five wrong causal stories in this
-session.
-
-The next measurement is narrow: find the code path that turns `jevMove.choice` into the executed
-candidate, and see what it does when they differ.
+Also: the Waterfall Giant sentinel (999,999,984) corrupted this measurement on the first pass, the
+fifth time it has done so. It is excluded from arithmetic and left unexplained, which is the correct
+order — a measured exclusion rather than a guess at a mechanism.
 
 ## Loop state
-565 tests green - scorer prefers attacks (bias hypothesis REFUTED) - gate inert - 24 model-vs-executed
-substitutions real but unexplained - no change shipped
+565 tests green - architecture located (scorer overrides the model on 426/461) - overrides associated
+with 2.17 vs 4.08 damage per decision - confound named, next measurement is within-fight at matched
+turn index
