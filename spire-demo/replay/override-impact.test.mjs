@@ -51,8 +51,11 @@ test('at a depth where both kinds occurred, the comparison is reported', () => {
   assert.ok(d0, 'depth 1 has both kinds and must appear');
   assert.equal(d0.changed, 40, 'the overridden decision dealt 40');
   assert.equal(d0.agreed, 10, 'the agreed one dealt 10');
-  assert.equal(d0.delta, 30);
-  assert.equal(r.matchedDelta, 30, 'one bucket, so the pooled delta is that bucket');
+  assert.equal(d0.delta, 30, 'the per-bucket delta is always reported');
+  // The POOLED figure is not. One bucket with two samples is exactly the case that produced a
+  // confident `modelDelta: -7.000` on live data, and a mean of means gives a 1-sample bucket the
+  // same vote as a 100-sample one.
+  assert.equal(r.matchedDelta, null, 'one bucket is not enough evidence to pool');
 });
 
 test('the Waterfall Giant sentinel is excluded rather than read as a billion points of damage', () => {
@@ -87,7 +90,7 @@ test('abImpact separates the arms and reports null until both appear at a depth'
   assert.equal(only.unmatched.nScorer, 0);
 });
 
-test('a positive modelDelta means the model arm dealt more damage, depth-matched', () => {
+test('a single bucket never pools, however extreme its delta', () => {
   const a = [armed('elite', 100, 'model', 'A'), armed('elite', 60, 'model', 'A'), armed('elite', 50, null, 'A')];
   const b = [armed('elite', 100, 'scorer', 'B'), armed('elite', 90, 'scorer', 'B'), armed('elite', 85, null, 'B')];
   const r = abImpact([...a, { kind: 'decision', outcome: 'executed', state: { state_type: 'rewards' } }, ...b]);
@@ -95,8 +98,10 @@ test('a positive modelDelta means the model arm dealt more damage, depth-matched
   assert.ok(d1, 'depth 1 has both arms');
   assert.equal(d1.model, 40, 'the model arm dealt 40');
   assert.equal(d1.scorer, 10, 'the scorer arm dealt 10');
-  assert.equal(d1.delta, 30);
-  assert.equal(r.modelDelta, 30);
+  assert.equal(d1.delta, 30, 'the per-bucket delta is always reported');
+  assert.equal(r.modelDelta, null, 'but one bucket does not pool');
+  assert.deepEqual(r.evidence, { buckets: 1, minBuckets: 8, samples: 2, minSamples: 200 },
+    'and the read-out says why, so a reader need not re-derive it');
 });
 
 test('an unarmed decision is excluded rather than counted as either arm', () => {
@@ -105,4 +110,32 @@ test('an unarmed decision is excluded rather than counted as either arm', () => 
   const r = abImpact([armed('elite', 100, 'model'), armed('elite', 90, null), armed('elite', 85, null)]);
   assert.equal(r.decisions, 0);
   assert.equal(r.modelDelta, null);
+});
+
+test('the floors clear once there are enough depths AND enough samples, and then it pools', () => {
+  // Build 9 depths, each with both arms and enough samples, and the pooled figure must appear.
+  // Then the same shape with too few depths must not. One assertion each way, on the real reader.
+  // Two SEPARATE fights per depth, one all-model and one all-scorer, so the same depth index
+  // holds samples from both arms. Alternating the arms inside one fight puts them at different
+  // depths and produces no matched bucket at all - which is the trap, and it cost this test twice.
+  const build = (depths, perArm) => {
+    const ev = [];
+    for (let arm of ['model', 'scorer']) {
+      for (let d = 0; d < depths; d++) {
+        ev.push(armed('elite', 1000 + d * 10, arm, arm + d));
+        for (let i = 0; i < perArm; i++) ev.push(armed('elite', 1000 + d * 10 - (i + 1), arm, arm + d));
+        ev.push({ kind: 'decision', outcome: 'executed', state: { state_type: 'rewards' } });
+      }
+    }
+    return ev;
+  };
+  const thin = abImpact(build(3, 4));
+  assert.ok(thin.evidence.buckets >= 1, 'buckets exist even when thin');
+  assert.equal(thin.modelDelta, null, 'but three depths do not clear the floor');
+
+  const thick = abImpact(build(10, 20));
+  assert.ok(thick.evidence.buckets >= 8, `ten depths clears the bucket floor (got ${thick.evidence.buckets})`);
+  assert.ok(thick.evidence.samples >= 200, `and the sample floor (got ${thick.evidence.samples})`);
+  assert.equal(typeof thick.modelDelta, 'number', 'so a pooled figure is finally reported');
+  assert.ok(Math.abs(thick.modelDelta) < 5, 'and here the two arms are identical, so it is near zero');
 });

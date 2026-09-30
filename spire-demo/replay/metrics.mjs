@@ -610,9 +610,31 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     // confounded with depth, so it must not be read as the answer.
     unmatched: { changed: mean(allChanged), agreed: mean(allAgreed), nChanged: allChanged.length, nAgreed: allAgreed.length },
     matched: buckets,
-    // null, not 0: no depth had both kinds, so there is no comparison to report.
-    matchedDelta: buckets.length ? mean(buckets.map(b => b.delta)) : null,
+    // POOLED BY SAMPLE, not as a mean of bucket means. A mean of means gives a 1-sample bucket the
+    // same vote as a 100-sample one, so the first armed decision to share a depth with an unarmed one
+    // produced a confident `modelDelta: -7.000` out of a SINGLE bucket. Weighting by n is the
+    // difference between a pooled estimate and an average of anecdotes.
+    matchedDelta: pooled(buckets),
   };
+}
+
+// A pooled figure is not reported on thin evidence. Both thresholds exist because one bucket with
+// one sample per arm produces a large, confident, entirely meaningless delta, and a reader cannot
+// tell that from a real effect without being told the bucket count.
+const MIN_BUCKETS = 8, MIN_SAMPLES = 200;
+function pooled(buckets) {
+  if (buckets.length < MIN_BUCKETS) return null;
+  let w = 0, acc = 0;
+  // Both readers feed this, and they name their bucket sizes differently (nChanged/nAgreed vs
+  // nModel/nScorer). Reading only one pair made the sample weight zero for the other, so the floor
+  // could never be cleared and the pooled figure was permanently null - a reader would have seen a
+  // permanently-empty result and concluded the experiment never gathered evidence.
+  for (const b of buckets) {
+    const n = (b.nChanged ?? b.nModel ?? 0) + (b.nAgreed ?? b.nScorer ?? 0);
+    w += n; acc += b.delta * n;
+  }
+  if (w < MIN_SAMPLES) return null;
+  return acc / w;
 }
 
 // READ THE A/B. `overrideImpact` compares "the scorer differed from the model" against "it did
@@ -662,10 +684,13 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
     decisions: m.length + sc.length,
     unmatched: { model: mean(m), scorer: mean(sc), nModel: m.length, nScorer: sc.length },
     matched: buckets,
-    // Positive means the model's own choice dealt more damage. Null, not 0: no depth had both arms,
-    // so there is no comparison to report and 0 would read as "no difference found".
-    modelDelta: buckets.length ? mean(buckets.map(b => b.delta)) : null,
+    // Positive means the model's own choice dealt more damage. Sample-weighted for the same reason
+    // as overrideImpact's matchedDelta, and null rather than 0 so "no comparison" never renders as
+    // "no difference found".
+    modelDelta: pooled(buckets),
     depthsWithBothArms: buckets.length,
+    // So a reader can see WHY the pooled figure is null without re-deriving it.
+    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: m.length + sc.length, minSamples: MIN_SAMPLES },
   };
 }
 
