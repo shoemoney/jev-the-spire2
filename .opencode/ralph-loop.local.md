@@ -1,41 +1,31 @@
 ---
 active: true
-iteration: 40
+iteration: 41
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE HANDBACK IS CONFIRMED, NOT ASSUMED
-The bridge exposes ascension only in MULTIPLAYER lobby objects (`max_ascension`, `ascension` fields in
-`multiplayer_load_lobby` / `multiplayer_join` examples). The singleplayer `character_select` options
-are, verbatim from the vendor reference: character IDs/names, `back`, `confirm`/`embark`,
-`unready`. There is no ascension control on the singleplayer path.
+## SWEEP 3 FOUND A REAL DEFECT, AND IT IS THE BEST ONE YET
+The review loop re-read the CURRENT code (255KB packet, the first two sweeps predate the card
+conditions, the attrition signal, the seen-card floor and the card-select fix). Its first finding:
 
-`custom` mode does not help either: the reference states a `seed` "is only supported in menu contexts
-that expose a real seeded flow. Standard singleplayer character select currently returns an error
-without starting a run when `seed` is supplied."
+**Elite-avoidance guidance was gated to `act === 2`.** So the only text in the codebase that says
+"prefer a path with fewer elites" fired in the act the agent reaches once, while:
 
-No Ascension-10 save is on disk to resume either — the only save-path directory belongs to the
-UnifiedSavePaths mod and the run that produced floor 31 was started fresh.
+  deaths by act:   19 in Act 1,  1 in Act 2
+  elite win rate:  11/34  (32%) — the worst class in the corpus
+  95% of the runs that died, died in the act where the guidance was silent
 
-**So comparable Ascension-10 data requires a human to start a run at Ascension 10 in the game UI.**
-That is the one thing the loop genuinely cannot do for itself.
+Fixed: the guidance now applies in every act. The text is unchanged because it was never the
+problem — it is a route preference, not a claim that elites are always bad, and it already says
+not to take a worse route merely to reduce elite count and to keep all routes available. The GATE
+was the bug.
 
-## The tool now refuses to pool across difficulty
-`fight-outcomes.mjs` prints `!! MIXED ASCENSION {...} — NOT a like-for-like sample` and refuses to
-present a pooled win rate without the cut. A metric that can silently change difficulty must not be
-summarised without it.
+`act2-route.test.mjs` asserted acts 1 and 3 must NOT carry it. **The test pinned the defect.** That is
+the first time in this loop a test has actively protected a bug, and it is a different failure mode
+from the eight measurement errors: those were me misreading, this one was the suite agreeing with
+me. Rewritten to the corrected contract, keeping every real guard.
 
-## Per-ascension, the honest baseline
-  ascension  0:  9 deaths, best floor 31
-  ascension  3:  1 death,  floor 14
-  ascension 10: 10 deaths, floors 14,9,11,12,6,8,7,15,17,6   best 17
-
-Ascension 0 median death floor 17, Ascension 10 median 11. The gap is real and it is the reason
-last iteration's headline could not be believed.
-
-## The batch warns, loudly, on every non-10 run
-  [run started: ascension 0]
-  [WARNING: ascension is 0, not 10 — this run is NOT comparable to earlier ones]
-Working as intended: it fired on the first run after the fix.
+This is what the multi-model loop is FOR. Every measurement I took was consistent with this being
+fine, because none of them compared guidance-coverage against where deaths happen.
