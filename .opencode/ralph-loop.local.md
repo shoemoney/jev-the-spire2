@@ -1,40 +1,45 @@
 ---
 active: true
-iteration: 93
+iteration: 94
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE EXPERIMENT IS ACCUMULATING, AND IT HAS ITS FIRST STAMPED BOSS WIN
-  loop: running, act 1 f17, code ed4e395 (the A/B build)
-  A/B evidence: { buckets: 8, minBuckets: 8, samples: 25, minSamples: 200 }
-  modelDelta: null — bucket floor cleared, sample floor not
+## I BROKE RUN STARTUP IN ITERATION 80 AND IT WENT UNNOTICED FOR A FULL BATCH
+Chasing the ascension question, I changed the batch's menu walk from `['singleplayer', 'standard',
+'IRONCLAD']` to `['singleplayer', 'custom']` to probe `custom` for a difficulty setting. It broke two
+independent things at once:
 
-  stamped boss fights under ed4e395 : Soul Fysh WON, Soul Fysh lost
+  1. `custom` leads to a screen the walk does not handle, so the sequence falls back to `main`,
+     `confirm` starts nothing, and the batch reports `ascension undefined` for a run that never began
+  2. the same edit DROPPED the `IRONCLAD` step, so `confirm` was being sent with no character chosen
 
-**The first boss kill recorded under a code stamp that is also a controlled experiment.** Watched it
-live: the run reached f17 with hp 63 against a 211 HP boss, traded down to hp 10 while taking the
-boss from 142 to 85, and the run then ended. Whether that was the win or the loss is what the fight
-outcomes say, and the fight outcomes are the instrument that was wrong twice earlier in this session
-and is now tested — so I am taking its word over the last frame I happened to be watching.
+Both restored, and the `custom` probe is now opt-in behind `SPIRE_PROBE_CUSTOM=1` and never sits on
+the path to a run.
 
-**No result is claimed.** Eight buckets and 25 samples is the bucket floor met and the sample floor
-missed by 8x, and `modelDelta` says so rather than producing the -7.000 it would have printed a day
-ago.
+**The part worth keeping is not the fix, it is the failure.** A change made to ANSWER an open question
+silently disabled the thing the question was about. And the symptom was not an error — the batch
+looked busy, printed menu walks, and reported runs. It read as "the ascension probe is inconclusive"
+rather than "I broke the game three iterations ago and misread its silence as an answer."
 
-## What the sample floor actually implies
-The A/B only assigns an arm when the scorer and the model DISAGREE, which is about 47% of decisions,
-and 25 armed samples have come out of 78 decisions since arming. So 200 armed samples is roughly 425
-combat decisions — call it one to two full fights. The floor is reachable, not aspirational, and it
-is the right floor: the observational estimate needed 3,319 decisions to be readable, and 200
-randomised ones is a deliberately smaller bar that still cannot be cleared by a single bucket.
+That is the same shape as the payload investigation, the 47%-blindness claim, and the token-budget
+cap: **a change or a measurement that fails quietly, whose silence I filled in with a story.** This
+is the fourth, and the first one where the damage was to the loop itself rather than to my
+understanding of it.
 
-## The loop is doing the only thing that helps now
-Everything actionable this session is either shipped-and-measured or waiting on more runs. The
-experiment needs depth coverage, the Ceremonial Beast question needs boss fights, and both are
-produced by the same thing: the loop continuing to play. No amount of further analysis substitutes.
+## The game now needs a nudge
+    state menu   screen 'main'   options 0
+Consistently, four reads apart. With zero options every `menu_select` is a no-op, so no automated
+navigation can proceed and the batch will report timeouts until something changes the screen. The
+bridge is up and answering; the game is sitting on a menu that exposes nothing to click.
+
+## Handback
+**Click into the game once** — get it off whatever modal or menu it is parked on, and the batch's
+own walk will take it from there. That is the one thing in this session I cannot reach through the
+bridge, and it is not a workaround for a bug: the bridge is reporting a real menu with no options on
+it.
 
 ## Loop state
-581 tests green - A/B live: 8 buckets, 25/200 samples, modelDelta correctly null
-- first stamped boss WIN under the experiment code - no result claimed
+581 tests green - the iteration-80 regression found and fixed, custom probe made opt-in
+- GAME PARKED ON A MENU WITH ZERO OPTIONS - needs one human click
