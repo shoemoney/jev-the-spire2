@@ -1,45 +1,55 @@
 ---
 active: true
-iteration: 94
+iteration: 95
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## I BROKE RUN STARTUP IN ITERATION 80 AND IT WENT UNNOTICED FOR A FULL BATCH
-Chasing the ascension question, I changed the batch's menu walk from `['singleplayer', 'standard',
-'IRONCLAD']` to `['singleplayer', 'custom']` to probe `custom` for a difficulty setting. It broke two
-independent things at once:
+## THE HANDBACK STANDS, AND I EXHAUSTED THE BRIDGE BEFORE MAKING IT AGAIN
+The game is at a clean, reachable main menu with no options on it:
 
-  1. `custom` leads to a screen the walk does not handle, so the sequence falls back to `main`,
-     `confirm` starts nothing, and the batch reports `ascension undefined` for a run that never began
-  2. the same edit DROPPED the `IRONCLAD` step, so `confirm` was being sent with no character chosen
+    { "state_type": "menu", "menu_screen": "main", "message": "Main menu." }
 
-Both restored, and the `custom` probe is now opt-in behind `SPIRE_PROBE_CUSTOM=1` and never sits on
-the path to a run.
+No `options` key at all — where earlier in this session the same screen reported six of them
+(`singleplayer`, `multiplayer`, `compendium`, `timeline`, `settings`, `quit`). The menu exists and
+the bridge describes it correctly; the UI behind it has nothing selectable.
 
-**The part worth keeping is not the fix, it is the failure.** A change made to ANSWER an open question
-silently disabled the thing the question was about. And the symptom was not an error — the batch
-looked busy, printed menu walks, and reported runs. It read as "the ascension probe is inconclusive"
-rather than "I broke the game three iterations ago and misread its silence as an answer."
+**Everything reachable through the bridge has now been tried, in this order:**
 
-That is the same shape as the payload investigation, the 47%-blindness claim, and the token-budget
-cap: **a change or a measurement that fails quietly, whose silence I filled in with a story.** This
-is the fourth, and the first one where the damage was to the loop itself rather than to my
-understanding of it.
+  menu_select, six option names
+    main_menu  -> Unknown menu option      back     -> Unknown menu option
+    confirm    -> Unknown menu option      resume   -> Unknown menu option
+    continue   -> "Option 'continue' is not available"
+    singleplayer -> "Option 'singleplayer' is not available"
 
-## The game now needs a nudge
-    state menu   screen 'main'   options 0
-Consistently, four reads apart. With zero options every `menu_select` is a no-op, so no automated
-navigation can proceed and the batch will report timeouts until something changes the screen. The
-bridge is up and answering; the game is sitting on a menu that exposes nothing to click.
+That distinction is the useful part: the bridge RECOGNISES `continue` and `singleplayer` on this
+screen and reports them as **present but disabled**, while the other four are **unknown to it
+entirely**. So this is a real menu with a disabled menu, not a bridge that has lost track of the game.
 
-## Handback
-**Click into the game once** — get it off whatever modal or menu it is parked on, and the batch's
-own walk will take it from there. That is the one thing in this session I cannot reach through the
-bridge, and it is not a workaround for a bug: the bridge is reporting a real menu with no options on
-it.
+  fifteen other action names
+    refresh, reload, quit, back_to_menu, menu_back, confirm_any, any_key, press, click, ui_select
+      -> all "No run in progress"  (recognised, and all require a run)
+    dismiss, close, cancel, accept, ok, advance -> empty responses
+
+  three other endpoints (/state, /status, /game) -> 404
+
+**So the bridge is healthy, the game is healthy, and the UI has no selectable element.** That is not
+a bug I can reach through an API — it needs a physical click, and I have said so once already and did
+not want to repeat it on the strength of a guess.
+
+## What I did do, rather than repeat the ask
+The batch is left RUNNING rather than stopped. Its own menu walk is already correct again — mode and
+character restored, the `custom` probe opt-in — so the moment the game is clickable the batch takes
+it from there with no further intervention. Stopping it would have made the handback necessary twice.
+
+## The honest note on the delay
+This cost four iterations, and the cause is mine: the `custom` probe from iteration 80 is what left
+the game in this state, and I did not notice for a full batch because the batch reported runs while
+starting none. Iteration 94 fixed the code; iteration 95 is the part where the game itself needs
+unparking. Those are different problems and I conflated them for a day by not looking at the game's
+actual state until the code was already fixed.
 
 ## Loop state
-581 tests green - the iteration-80 regression found and fixed, custom probe made opt-in
-- GAME PARKED ON A MENU WITH ZERO OPTIONS - needs one human click
+581 tests green - batch left running with a correct menu walk - GAME AT A MENU WITH NO OPTIONS
+- bridge surface exhausted, click required
