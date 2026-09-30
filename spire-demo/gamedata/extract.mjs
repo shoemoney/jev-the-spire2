@@ -44,6 +44,31 @@ function classify(text) {
   return Object.keys(effects).length ? effects : null;
 }
 
+// THE CLAUSE THAT DECIDES WHETHER A CARD IS WORTH PLAYING.
+//
+// Colossus reads "Gain 12 Block. You receive 50% less damage from VULNERABLE enemies this turn.",
+// and the first sentence is the worthless half. The classifier below read only effect keywords, so it
+// recorded Colossus as a plain block card and dropped the sentence that is the entire reason anyone
+// plays it. Measured on a live run: 6 of 9 Colossus plays were made with NO enemy Vulnerable, so the
+// defining clause was inert - and the worst was against the Act 1 boss at 12 incoming with nothing
+// vulnerable on the board.
+//
+// 292 entities carry conditional text. The second clause of a card is routinely the whole card, so it
+// is captured and labelled rather than discarded.
+const CONDITIONS = [
+  [/vulnerable/i, 'an enemy is Vulnerable'],
+  [/weak(?:ened)?/i, 'an enemy is Weak'],
+  [/whenever you play a card/i, 'a card is played'],
+  [/at the end of your turn/i, 'the turn ends'],
+  [/at the start of your turn/i, 'the turn begins'],
+  [/if this is in your hand/i, 'the card stays in hand'],
+  [/each time this is played/i, 'the card is replayed'],
+];
+function conditionOf(text) {
+  for (const [re, needs] of CONDITIONS) if (re.test(text)) return needs;
+  return null;
+}
+
 const index = {};
 for (const [id, entry] of Object.entries(raw)) {
   const description = (entry.description ?? '').replace(CLEAN, ' ').replace(/\s+/g, ' ').trim();
@@ -56,6 +81,9 @@ for (const [id, entry] of Object.entries(raw)) {
     template: entry.description ?? null,
     plain: description || null,
     effects: classify(entry.description ?? ''),
+    // What has to be true for this card to do the thing it is known for. Null means unconditional,
+    // which is a claim about the text and not about how good the card is.
+    requires: conditionOf(entry.description ?? ''),
     confidence: entry.description ? 'game-data' : 'title-only',
   };
 }

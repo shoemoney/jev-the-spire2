@@ -43,7 +43,7 @@ export function perspectiveQuestion(state,candidates,recent=[],seenCards=null) {
   // deck was Strike, Defend, Tremble, Blood Wall and Taunt, which loses 10-for-26 against elites.
   if(state?.state_type==='card_reward'){
     const offer=(state.card_reward?.cards??[]);
-    if(offer.length)payload.state.offered_card_effects=offerEffects(offer);
+    if(offer.length)payload.state.offered_card_effects=offerEffects(offer,state);
     // The bridge sends no deck, so this floor on it is the only deck evidence that exists. It is
     // labelled a floor and never called the deck: a card never drawn does not appear in it.
     const floor=seenCardEvidence(seenCards,offer.length);
@@ -77,7 +77,7 @@ export function reviewQuestion(state,candidates,assessment,recent=[],seenCards=n
   const deck=deckAssessment(state);
   // The review pass carries the same card annotations as the first one, so the offer is described
   // identically in both passes rather than only in the one that happens to be scored.
-  const offerEffectsForReview=state?.state_type==='card_reward'&&(state.card_reward?.cards??[]).length?offerEffects(state.card_reward.cards):undefined;
+  const offerEffectsForReview=state?.state_type==='card_reward'&&(state.card_reward?.cards??[]).length?offerEffects(state.card_reward.cards,state):undefined;
   const seenFloorReview=state?.state_type==='card_reward'?seenCardEvidence(seenCards,(state.card_reward?.cards??[]).length):undefined;
   return {...base,state:{...base.state,deck_assessment:deck,...(offerEffectsForReview?{offered_card_effects:offerEffectsForReview}:{}),...(seenFloorReview?{seen_cards:seenFloorReview}:{}),deck_need_hypothesis:assessment.answers?.deck_need??null,decision_focus:focus.name,jev_recommendations:recommendations,recent_observations:recent,review_note:'Same-model recommendations are fallible, not votes or independent evidence.'},questions:{move:{...base.questions.move,instructions:(deck.available?deckAssessmentInstruction:deckUnavailableInstruction)+' '+focus.instructions.move+' '+focus.instructions.synergy+' '+focus.review+' Choose only a supplied candidate ID.'}}};
  }

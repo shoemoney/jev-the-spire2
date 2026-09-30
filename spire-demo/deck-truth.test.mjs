@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { offerEffects } from './deck-assessment.mjs';
 import {perspectiveQuestion,reviewQuestion} from './deliberation.mjs';
 import {deckAssessment,deckAssessmentInstruction} from './deck-assessment.mjs';
 import {decisionCandidates} from './planner.mjs';
@@ -100,4 +101,30 @@ test('the annotation is absent on a non-reward screen', () => {
              map: {next_options: [{index: 0, col: 0, type: 'Monster', leads_to: []}]}};
   const q = perspectiveQuestion(s, [{id: 'a0', label: 'Travel', command: {action: 'choose_map_node', index: 0}, details: {}}], []);
   assert.equal(q.state.offered_card_effects, undefined, 'card data on a map board is noise');
+});
+
+// Colossus reads "Gain 12 Block. You receive 50% less damage from VULNERABLE enemies this turn."
+// The first sentence is the worthless half and the second is the entire card. The effect classifier
+// read only keywords, recorded Colossus as a plain block card, and threw the clause away — which is
+// how 6 of its 9 plays in a live run happened with nothing Vulnerable on the board.
+test('a conditional card carries its condition, and says so when the board fails it', () => {
+  const cards = [{name: 'Colossus'}, {name: 'Inflame'}];
+  const vulnerable = {battle: {enemies: [{status: [{name: 'Vulnerable', amount: 2}]}]}};
+  const notVulnerable = {battle: {enemies: [{status: [{name: 'Strength', amount: 2}]}]}};
+
+  const good = Object.fromEntries(offerEffects(cards, vulnerable).map(o => [o.name, o]));
+  assert.equal(good.Colossus.requires, 'an enemy is Vulnerable', 'the clause that IS the card is kept');
+  assert.notEqual(good.Colossus.conditionUnmet, true, 'and with a Vulnerable up, it is met');
+
+  const bad = Object.fromEntries(offerEffects(cards, notVulnerable).map(o => [o.name, o]));
+  assert.equal(bad.Colossus.conditionUnmet, true, 'with nothing Vulnerable, that is stated on the card');
+  assert.equal(bad.Inflame.requires, undefined, 'an unconditional card claims no condition');
+  assert.notEqual(bad.Inflame.conditionUnmet, true, 'and is never flagged for having none');
+});
+
+test('a condition the visible state cannot settle is left unclaimed, not assumed met', () => {
+  const state = {battle: {enemies: [{status: []}]}};
+  const [c] = offerEffects([{name: 'Afterimage'}], state);
+  assert.notEqual(c.conditionUnmet, true,
+    'a condition this state cannot see must not be reported as satisfied or as failed');
 });

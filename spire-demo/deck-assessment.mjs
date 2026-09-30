@@ -15,12 +15,39 @@ import {byName as gameData} from './gamedata/game-data.mjs';
 //
 // The one thing this must never become is a hidden policy that quietly picks for the model. It is
 // attached to the payload and named in the instruction; the model can still take Blood Wall.
-export function offerEffects(cards) {
+export function offerEffects(cards, state) {
+  // What has to be TRUE for a card to be worth playing, and whether it currently is.
+  //
+  // Colossus reads "Gain 12 Block. You receive 50% less damage from Vulnerable enemies this turn."
+  // The first sentence is the worthless half; the second is the entire card. The effect classifier
+  // read only keywords, recorded Colossus as a plain block card, and dropped the clause. Measured on a
+  // live run: 6 of 9 Colossus plays were made with NO enemy Vulnerable, so its defining benefit was
+  // inert every time - the worst against the Act 1 boss at 12 incoming with nothing vulnerable up.
+  //
+  // So the condition travels WITH the offer, and when the board visibly fails it, that is stated
+  // rather than left for the reader to notice. `unmet` is derived from the visible state only: an
+  // enemy power is either there or it is not. It is never a judgement that a card is bad.
+  const enemyPowers = (state?.battle?.enemies ?? []).flatMap(e => (e.status ?? []).map(p => String(p.name ?? '')));
+  const conditionMet = requires => {
+    if (!requires) return true;
+    if (/vulnerable/i.test(requires)) return enemyPowers.some(n => /vulnerable/i.test(n));
+    if (/weak/i.test(requires)) return enemyPowers.some(n => /weak/i.test(n));
+    return null;   // not derivable from the visible state - say nothing rather than guess
+  };
   return (cards ?? []).map(card => {
     const entry = gameData(card?.name);
     if (!entry?.effects) return {name: card?.name ?? null, known: false};
     const kinds = Object.keys(entry.effects).filter(k => k !== 'placeholders');
-    return {name: card.name, known: true, effects: kinds.length ? kinds : null, text: entry.plain ?? null};
+    const met = conditionMet(entry.requires);
+    return {
+      name: card.name, known: true,
+      effects: kinds.length ? kinds : null,
+      ...(entry.requires ? {requires: entry.requires} : {}),
+      // `false` only ever means the board visibly fails the condition. `null`/absent means we cannot
+      // tell from what the state gives us, and that is reported as unknown rather than as satisfied.
+      ...(met === false ? {conditionUnmet: true} : {}),
+      text: entry.plain ?? null,
+    };
   });
 }
 
