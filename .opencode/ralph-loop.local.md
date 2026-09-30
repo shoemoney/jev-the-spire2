@@ -1,53 +1,50 @@
 ---
 active: true
-iteration: 98
+iteration: 99
 maxIterations: 100
-sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 keep playing get better every run be bol
 
-## THE UPSTREAM FIX, DONE AND MEASURED — AND IT DID NOT NEED THE GAME
-The planner is a pure function of state, so the new quality distribution can be measured by
-replaying RECORDED states through the new code. That answers "is `calculated` reachable now?" while
-play is blocked on a click.
+## THIRD REVIEW, THIRD REAL BUG: THORNS BLINDED THE WHOLE BOARD
+glm-5.3-flashx, finding 2. Confirmed, and the data is better than the review claimed.
 
-    replayed 2075 distinct recorded combat states through the NEW planner
-      partial      1297   62.5%
-      calculated    776   37.4%     <- was 2.0% before this change
-      unknown         2    0.1%
+  Thorns status objects in the corpus: 105  |  carrying a usable amount: 105
+  {"name":"Thorns","amount":2,"desc":"When hit by an attack, deal 2 damage back."}
 
-**`calculated` went from 2.0% to 37.4% — eighteen-fold — and the quality field now carries
-information.** The recorded `partial` warnings were 7,916 unmodeled relic/power against 462 of any
-other kind, so 94.5% of them were the noise that was making the field constant.
+`retaliationRule` priced retaliation only from one exact sentence ("Whenever this creature is
+attacked, deal N damage back to the attacker."). The corpus sentence is different, so the name match
+caught it and returned `{damage: null}` — and `applyRetaliation` treats any null damage as ambiguous,
+sets `unsupported` and `boundary:'retaliation_unknown'`, which makes **the entire candidate board
+`quality:'unknown'` and `survives:null`**. So every attack into a thorned enemy blinded the agent
+completely. 105 occurrences.
 
-The warnings are still reported to the model on those 776 forecasts (915 unmodeled relic, 69 enemy
-power, 5 player power) — the model should know what it is not simulating. They just no longer
-degrade the forecast's *completeness*, which is the distinction that was missing.
+**Measured, by replaying recorded states as before:**
+  distinct recorded states with a thorned enemy : 43
+  still unknown after the fix                  : 0
+  calculated 37.4% -> 38.3%
 
-## Two existing tests refused the first version, and both were right
-**1. Absence of a description is not evidence of absence.** The first version ran the relevance regex
-over `name + description`, so `{id:'UNKNOWN', name:'Mystery'}` — an effect the game ships with no
-text for — failed to match and was classed harmless. In the one place where being wrong makes the
-agent more confident about a turn it has not simulated. An existing test caught it.
+**What made this a bug and not a design choice.** The function's own comment says "Names alone never
+supply damage," and that principle is right — and this is not it. The number was never coming from
+the name; it was in the state's own `amount` field, on 105 of 105 objects, with the text spelling it
+out. Reading the game's value is not inferring from a name, and the original rule still holds: a
+name with no amount supplies nothing and stays `null`.
 
-**2. Completeness and provenance are different reasons.** `planner-kb.test.mjs` requires that a card
-resolved from a recorded corpus reading is never advertised as `calculated`, and it is right for its
-own reason: a corpus reading is not a simulation however well it matches. So `partial` now means
-*either* something survival-relevant on the board is unmodeled, *or* a number came from a recorded
-reading. Filtering only the unmodeled-relic warnings keeps both intentions instead of picking one.
+Multi-hit, area and modified-player cases are **still unknown**, and now have a test saying so. The
+fix must not turn every thorned board into a confident number, and it does not.
 
-**Twice now this session a test written earlier has refused a plausible change I was about to make.**
-581 green.
+## Three reviews, three real bugs
+| review | finding | outcome |
+|---|---|---|
+| qwen omni | `partial` licenses survival from an incomplete model | real; the obvious fix was a trap; upstream fix done and measured |
+| gemini 3.7 | campfire-before-elite across branches | real at a different scope than reported; fixed, order-independence restored |
+| glm 5.3 | Thorns returns null damage and blinds the board | real, 105 occurrences, 43 states now priced |
 
-## Why I am NOT tightening `statedSurvival` in the same iteration
-It is now *possible* — requiring `calculated` would apply to 37% of decisions rather than 2% — and it
-is still the wrong move today. Changing the vocabulary and the consumer of that vocabulary in one
-step means any effect afterwards is unattributable. The order is: make the field meaningful, play on
-it, confirm the distribution holds on live data, and only then make the gate strict. That is the
-order the review's own suggestion implied and the order I nearly got wrong.
+Each needed a scope correction before fixing, and each was caught mid-implementation by a test written
+before it. **I should have read these in iteration 62 instead of 96.** Two of the three produced a
+real bug that was measurably costing the agent whole boards of information.
 
 ## Loop state
-581 tests green - quality vocabulary fixed upstream: calculated 2.0% -> 37.4% on 2075 replayed states
-- gate NOT tightened, deliberately, pending live confirmation of the new distribution
+590 tests green (7 new) - Thorns priced from the stack, 43 thorned states no longer blind
+- gate NOT tightened, deliberately, pending live confirmation
 - GAME STILL PARKED, click still required
