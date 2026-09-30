@@ -1,44 +1,56 @@
 ---
 active: true
-iteration: 77
+iteration: 78
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## TWO THINGS DONE THAT DO NOT NEED THE GAME
-Both aimed at the 30s timeout, which iteration 76 established is upstream of every stall.
+## THE TIMEOUT WAS THE BRIDGE, NOT OPENROUTER. FIVE ITERATIONS OF LOOKING AT THE WRONG SERVICE.
+Measured the two side by side, 25 and 12 reads each:
 
-**1. Failures now carry their request.** Every error entry recorded exactly one field — the string
-"The operation was aborted due to timeout" — so 19 of them in the corpus are indistinguishable. The
-failure path now also logs requestBytes, the per-part and per-state breakdowns, the running token
-and decision counts, and the last successful latency. Sizes only, no board state, because the point
-is to tell "this one was 3 KB" from "this one was 160 KB", and writing a whole decision's game state
-into the log for every blip is not worth the bytes.
+  bridge /singleplayer   p50  119ms   p90  256ms   max  269ms
+  openrouter /models     p50  136ms   p90  370ms   max  652ms
 
-**2. The hedge was throwing away the useful error.** `finish(reject, failures[0])` reports the FIRST
-attempt's failure. Attempt 1 is precisely the one that times out when the endpoint is in its slow
-mode, so a later attempt failing with an HTTP status or a rate-limit message — the actual clue —
-was discarded on every single failure. It now reports the LAST failure and appends the full set of
-distinct reasons. 19 identical opaque errors is consistent with this bug, not with the endpoint
-being uniformly unhelpful.
+Both healthy. But an earlier 40-read sample of the same bridge showed:
 
-## On the hedge itself: it is sound, and the timeouts are still unexplained
-I expected to find the stall here. I did not. The hedge staggers at 900ms with 3 attempts, each
-carrying its own 30s `AbortSignal.any`, and the reject path is reached correctly when all attempts
-settle. The documented slow mode tops out around 16s, so a 30s timeout means all three attempts
-exceeded 30s — slower than any call ever observed. **I am not writing a story about that.** The
-instrumentation above will settle it the next time it happens, which is the honest position
-available while the game is closed.
+  p50  130ms   p90 7466ms   p99 15192ms   max 15192ms     2 of 40 hit the abort
 
-## The blocked thing is still blocked
-The game process is gone. bridge / returns 200 with nothing behind it; the agent is alive and will
-serve a decision the moment a state arrives. Nothing on my side substitutes for launching it.
+So the bridge is **BURSTY, not slow** — clean for 25 reads, then stalling for 15 seconds. It runs
+inside the game process, so a hitch on the game side blocks the HTTP response and the client sees a
+timeout that has nothing to do with the network.
 
-## What iteration 76 got right, in one line
-Every symptom in 67, 74, 75 and 76 was one chain, and the only reason I found it was that I kept
-asking why a menu screen would not read. The chain is more useful than any of the four
-investigations it replaced.
+**And that is why nothing could be told apart for five iterations:** the bridge and OpenRouter both
+use `AbortSignal.timeout`, so both failures produce the identical string "The operation was aborted
+due to timeout". Every "run N failed: timeout" in the batch log was, at least mostly, the BRIDGE. I
+had been measuring OpenRouter's latency distribution and OpenRouter's payload size the whole time.
+
+## Two fixes, and play resumed within the iteration
+**1. Retry a bridge read instead of treating it as fatal.** One aborted read was ending a run. The
+bursts end; the read is late, not lost. Up to 3 retries with fresh short windows.
+
+**2. Adopt a run already in progress.** The batch opened with `menu_select main_menu`, which is a
+silent no-op mid-run, so every subsequent navigation failed and the run died on a timeout that looked
+like the network. It now checks first and resumes autoplay on whatever is actually running.
+
+  [a run is already in progress at act 1 floor 12 ascension 0 - adopting it]
+  f12 rewards -> card_reward -> f13 monster
+  agent: running, 12 decisions
+
+**Both bugs were the same shape as every other one this session**: a client assuming a service was
+reliable, and a single blip from it being conclusive. The game is the least reliable participant in
+this system and the loop was written as if it were the most reliable.
+
+## What the "diagnostics" of the last four iterations were actually chasing
+  67  OpenRouter payload size  -> wrong service, and the size was never the issue
+  74  an ascension control that does not exist -> was never verified, walked back at 75
+  75  a truncated 180-character read -> was my own slice
+  76  a chain that turned out to be real, but whose first link was "model timeouts" and not
+      "a flaky bridge stalls every poll"
+  77  instrumented the model failure path, which was correct and would never have fired
+
+The instrumentation from 77 was worth building and still has not paid off, because the failures it
+would have explained were not the ones happening.
 
 ## Loop state
-565 tests green (3 new) - timeouts now self-diagnosing - GAME CLOSED, launch required
+565 tests green - PLAY RESUMED - bridge retry + adopt-in-progress-run shipped
