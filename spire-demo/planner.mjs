@@ -395,13 +395,40 @@ function completeTurn(m0, s) {
   // Playing a card always removes it from hand, so the visible hand and potions
   // bound the pass exactly; the counter only stops a pathological cycle.
   const budget = Math.max(8, m0.hand.length + m0.potions.length);
-  let m = m0, played = 0;
+  let m = m0, played = 0, potionSpent = false;
+  // A POTION BECOMES A PLAYABLE STEP, but only once the cards are gone and only
+  // while the forecast still says the turn is lost. Two constraints, both learned:
+  //
+  // It has to be here at all. Every root used to be a single action, so a potion could only ever
+  // be the FIRST thing played and "drink, then block, then survive" could not be proposed — the
+  // potion was on the menu and nothing reached for it. On 2026-09-29 the agent stood at 24 HP
+  // against 39 incoming and ended the turn.
+  //
+  // And it has to wait until the cards are spent. Reaching for a potion while cards are still
+  // affordable would empty the belt on a fight it could have won, which is the same error as never
+  // reaching for one at all — the only difference is which turn it costs you.
+  //
+  // This runs inside the existing pass, so the search is the SAME SIZE. Adding a potion to the
+  // root set instead was tried and multiplied the beam: the suite went from 1.5s to over 200s, on
+  // a path that decides a move every 700ms.
+  const tryPotion = () => {
+    if (potionSpent || m.boundary) return false;
+    const current = forecast(m, s);
+    if (current.survives !== false) return false;          // the turn is still winnable
+    const potion = available(m, s).find(a => a.command.action === 'use_potion');
+    if (!potion) return false;
+    const after = apply(m, potion);
+    if (!after || after.boundary === 'player_dead') return false;
+    if (forecast(after, s).survives !== true) return false; // drinking it must actually help
+    m = after; potionSpent = true; played++;
+    return true;
+  };
   while (!m.boundary && played < budget) {
     const continuations = available(m, s)
       .filter(a => a.command.action === 'play_card')
       .map(a => apply(m, a))
       .filter(Boolean);
-    if (!continuations.length) break;
+    if (!continuations.length) { if (!tryPotion()) break; continue; }
     m = continuations.toSorted((a,b) => preference(b,s,'attack') - preference(a,s,'attack'))[0];
     played++;
   }
