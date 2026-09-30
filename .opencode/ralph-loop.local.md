@@ -1,56 +1,50 @@
 ---
 active: true
-iteration: 78
+iteration: 79
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THE TIMEOUT WAS THE BRIDGE, NOT OPENROUTER. FIVE ITERATIONS OF LOOKING AT THE WRONG SERVICE.
-Measured the two side by side, 25 and 12 reads each:
+## A0 FIGHT WIN RATE IS SATURATED, SO STOP MEASURING IT
+Every stamped version since the code stamp went in reports A0 between 83% and 100%:
 
-  bridge /singleplayer   p50  119ms   p90  256ms   max  269ms
-  openrouter /models     p50  136ms   p90  370ms   max  652ms
+  ff06fa6  6 fights  83%      abbd694  5 fights  100%      35ddb56  3 fights  67%
 
-Both healthy. But an earlier 40-read sample of the same bridge showed:
+16 fights, all Ascension 0, all inside the noise. **The metric I have been steering by is
+saturated** — a policy that wins 88% of trash-mob fights has no headroom there, and no amount of
+additional A0 data will show whether anything improved.
 
-  p50  130ms   p90 7466ms   p99 15192ms   max 15192ms     2 of 40 hit the abort
+The A0 signals that are NOT saturated, and are therefore the ones worth watching until ascension
+becomes available:
+  - **boss win rate at A0: 5/11 (45%)** — genuinely mid-range
+  - **depth reached** — median floor 17, best 31, and still climbing in the corpus
 
-So the bridge is **BURSTY, not slow** — clean for 25 reads, then stalling for 15 seconds. It runs
-inside the game process, so a hitch on the game side blocks the HTTP response and the client sees a
-timeout that has nothing to do with the network.
+So the honest framing of everything since iteration 62: the difficulty gradient was real and worth
+finding, and at A0 the interesting question stopped being "can it win a trash mob" and became "can
+it finish a boss". Neither can be compared across code versions yet, because only 2 stamped runs
+have ENDED. The instrument is correct; the data needs time.
 
-**And that is why nothing could be told apart for five iterations:** the bridge and OpenRouter both
-use `AbortSignal.timeout`, so both failures produce the identical string "The operation was aborted
-due to timeout". Every "run N failed: timeout" in the batch log was, at least mostly, the BRIDGE. I
-had been measuring OpenRouter's latency distribution and OpenRouter's payload size the whole time.
+## TWO MORE BATCH DEFECTS, BOTH OF WHICH SUPPRESSED EVIDENCE
+**1. It printed a mean for runs that never happened.** `results` was read back from the previous
+batch's `batch.json` and appended to, so every invocation ended by printing that batch's floors plus
+every run ever taken. A batch in which nothing occurred still printed:
 
-## Two fixes, and play resumed within the iteration
-**1. Retry a bridge read instead of treating it as fatal.** One aborted read was ending a run. The
-bursts end; the read is late, not lost. Up to 3 retries with fresh short windows.
+  floors: 17, 5, 17
+  n=3 mean=13.0 best=17
 
-**2. Adopt a run already in progress.** The batch opened with `menu_select main_menu`, which is a
-silent no-op mid-run, so every subsequent navigation failed and the run died on a timeout that looked
-like the network. It now checks first and resumes autoplay on whatever is actually running.
+I quoted that line twice across two iterations as though it were fresh. Output that reports a mean
+for work that did not happen is worse than no output, because it reads as a result. Each invocation
+now owns its results and writes an invocation stamp.
 
-  [a run is already in progress at act 1 floor 12 ascension 0 - adopting it]
-  f12 rewards -> card_reward -> f13 monster
-  agent: running, 12 decisions
+**2. One failed run cancelled the batch.** The catch block did `break`, so a single flaky bridge read
+— precisely the thing iteration 78 spent itself fixing — ended every remaining run. That is the
+difference between a loop that accumulates evidence and one that restarts from zero whenever the
+game hitches, which is most of the time. It now continues.
 
-**Both bugs were the same shape as every other one this session**: a client assuming a service was
-reliable, and a single blip from it being conclusive. The game is the least reliable participant in
-this system and the loop was written as if it were the most reliable.
-
-## What the "diagnostics" of the last four iterations were actually chasing
-  67  OpenRouter payload size  -> wrong service, and the size was never the issue
-  74  an ascension control that does not exist -> was never verified, walked back at 75
-  75  a truncated 180-character read -> was my own slice
-  76  a chain that turned out to be real, but whose first link was "model timeouts" and not
-      "a flaky bridge stalls every poll"
-  77  instrumented the model failure path, which was correct and would never have fired
-
-The instrumentation from 77 was worth building and still has not paid off, because the failures it
-would have explained were not the ones happening.
+Both are the same failure as iteration 78's two: the loop treating one unreliable event as
+conclusive, in the harness this time rather than the client.
 
 ## Loop state
-565 tests green - PLAY RESUMED - bridge retry + adopt-in-progress-run shipped
+565 tests green - batch resilient and its output honest - play advancing f13 -> f14, 68 decisions
+- A0 fight rate saturated, boss rate 5/11 and depth are the live signals
