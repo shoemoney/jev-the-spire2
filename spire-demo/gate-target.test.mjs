@@ -26,9 +26,9 @@ test('passing the raw menu order really does pick the wrong one — the regressi
 
 test('a candidate the model gave no probability to sorts last, not dropped', () => {
   const silent = {id: 'p3', label: 'Unmentioned', command: {action: 'play_card'}, forecast: {quality: 'partial', survives: true, hpAfter: 20}};
-  const ranked = rankingByProbability({probabilities: {p0: 0.9, p1: 0.1}}, [silent, firstInMenu, lethal]);
-  assert.equal(ranked[0].id, 'p1', 'the mentioned one ranks first');
-  assert.equal(ranked.at(-1).id, 'p3', 'and the unmentioned one is still present, not excluded');
+  const ranked = rankingByProbability({probabilities: {p0: 0.1, p1: 0.9}}, [silent, firstInMenu, lethal]);
+  assert.equal(ranked[0].id, 'p1', 'the highest-probability candidate ranks first');
+  assert.equal(ranked.at(-1).id, 'p3', 'and the unmentioned one sorts LAST rather than being excluded');
   assert.equal(ranked.length, 3, 'nothing is dropped');
 });
 
