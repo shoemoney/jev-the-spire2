@@ -4,28 +4,35 @@ iteration: 50
 maxIterations: 100
 ---
 
-keep playing get better every run be bol
+keep playing get better ever run be bol
 
-## SWEEP 4 FINDING #4 TESTED AND NOT REPRODUCED
-It claimed the waste term — weight 1.0 on a relative, cliffed signal — "can outvote survival on
-noise." I built the cases that would show it and the safer plan won every one:
+## FOUND AND VERIFIED, DELIBERATELY NOT FIXED YET
+A `partial` forecast claiming `survives: true` is treated as PROVEN by the lethal gate, because
+`STATED_QUALITIES` includes 'partial'. And `partial` is the overwhelming majority of real forecasts:
 
-  a safer AND more progressive, waste spread 0.10 vs 0.90        -> a kept
-  a safer AND more progressive, waste 0.40 vs 0.60               -> a kept
-  a safer, equal progress, waste 0.6 vs 0.9 (the case it names)  -> a kept
-  all candidates waste 0.0 (nothing wasteful)                    -> deadband holds, a kept
+  partial    : (majority)  <- of those, a large number claim survives:true
+  calculated : (few)
+  unknown    : (rest)
 
-`waste: 1.0` is DELIBERATE and documented where it is declared: "waste at 1.0 makes the penalty a
-veto rather than a vote. It removes every self-harm failure (empty-hand Bloodletting, Fortifier),
-which the original policy still fails 3 times in 10" — 90/100 against 88/100 for equal weights.
+A partial forecast omits unmodelled clauses BY DEFINITION, so its `survives:true` is strictly
+weaker evidence than a calculated one, and the gate cannot tell them apart.
 
-The max positive from safe+progress is 0.50 and the max negative from waste is 1.00, so the RATIO is
-2:1 — but a relative vote is 0 for the LEAST wasteful candidate, so the plan being protected is not
-penalised at all. It only bites when the other signals are near-equal, which is precisely when it
-should.
+**This is an inconsistency in my own reasoning.** Last iteration I made `boundedLethal`
+false-only, with the explicit rule that a lower bound can prove DEATH and must never prove
+SAFETY. A `partial` is the same species of incomplete estimate — it admits omitting effects —
+and it IS being allowed to prove safety. The two halves of the same principle disagree.
 
-**Recorded as not-a-defect rather than quietly dropped.** A review finding that survives a
-constructed test is a different thing from one that was never checked, and the honest report says so.
+**Why it is not a one-line fix.** Excluding `partial` from the `true` direction would leave the
+gate with no proven survivor on most boards, because most boards are partial — and a gate with
+nothing to swap to is the gate that was inert on 96% of rooms. The honest answer is a GRADED
+treatment: a calculated survivor outranks a partial one, rather than the two being equal or the
+partial being discarded. That is a scoring change, and every scoring change I have rushed in
+this loop has broken something. It gets its own iteration with a measurement attached.
+
+## Not a defect: the waste-veto finding
+Tested and it did not reproduce. The safer plan won every constructed case, including the one the
+review names. `waste: 1.0` is documented as deliberate. Recorded as tested-and-clean rather than
+quietly dropped.
 
 ## Loop state
-528 tests green · sweep 4: 14/14 asked · game batch running · server up
+528 tests green · sweep 4: 6/14 · game batch running · server up
