@@ -1,50 +1,54 @@
 ---
 active: true
-iteration: 99
+iteration: 100
 maxIterations: 100
 ---
 
 keep playing get better every run be bol
 
-## THIRD REVIEW, THIRD REAL BUG: THORNS BLINDED THE WHOLE BOARD
-glm-5.3-flashx, finding 2. Confirmed, and the data is better than the review claimed.
+## FOURTH REVIEW: A REAL CODE OBSERVATION THAT WOULD CHANGE ONE DECISION IN 5,001
+claude-opus-5-5, finding 1. The claim is sharp and correct as an observation: `factsFor` computes
+`displayed_incoming_attack_lower_bound`, nothing downstream reads it, and on a blind turn
+`survives` is null so the gate cannot fire. `boundedLethal` exists for exactly this shape.
 
-  Thorns status objects in the corpus: 105  |  carrying a usable amount: 105
-  {"name":"Thorns","amount":2,"desc":"When hit by an attack, deal 2 damage back."}
+Measured before acting, as the last three taught me to:
 
-`retaliationRule` priced retaliation only from one exact sentence ("Whenever this creature is
-attacked, deal N damage back to the attacker."). The corpus sentence is different, so the name match
-caught it and returned `{damage: null}` — and `applyRetaliation` treats any null damage as ambiguous,
-sets `unsupported` and `boundary:'retaliation_unknown'`, which makes **the entire candidate board
-`quality:'unknown'` and `survives:null`**. So every attack into a thorned enemy blinded the agent
-completely. 105 occurrences.
+    executed decisions with quality unknown                          210
+      carrying a numeric incomingLowerBound                           18
+      where that floor ALONE >= hp + block, so death is arithmetic      1
 
-**Measured, by replaying recorded states as before:**
-  distinct recorded states with a thorned enemy : 43
-  still unknown after the fix                  : 0
-  calculated 37.4% -> 38.3%
+    executed decisions with a proven lethal floor (boundedLethal:true)  0
 
-**What made this a bug and not a design choice.** The function's own comment says "Names alone never
-supply damage," and that principle is right — and this is not it. The number was never coming from
-the name; it was in the state's own `amount` field, on 105 of 105 objects, with the text spelling it
-out. Reading the game's value is not inferring from a name, and the original rule still holds: a
-name with no amount supplies nothing and stays `null`.
+**The proposed fix would fire on exactly one decision in the whole corpus**, and the mechanism it
+asks to extend has never executed once. Not shipping it. The observation is true and the effect is
+nil, and those are different facts that only a number separates.
 
-Multi-hit, area and modified-player cases are **still unknown**, and now have a test saying so. The
-fix must not turn every thorned board into a confident number, and it does not.
+## What four reviews actually produced
+| review | finding | measured effect | outcome |
+|---|---|---|---|
+| qwen omni | `partial` licenses survival from an incomplete model | 3246 of 3332 decisions | upstream fix shipped, `calculated` 2% → 38% |
+| gemini 3.7 | campfire before elite, across branches | route guidance on divergent maps | fixed; same-row case was already covered |
+| glm 5.3 | Thorns null damage blinds the board | 105 occurrences, 43 states | fixed |
+| opus 5.5 | lethal floor is computed and not consumed | 1 decision in 5001 | **not shipped** |
 
-## Three reviews, three real bugs
-| review | finding | outcome |
-|---|---|---|
-| qwen omni | `partial` licenses survival from an incomplete model | real; the obvious fix was a trap; upstream fix done and measured |
-| gemini 3.7 | campfire-before-elite across branches | real at a different scope than reported; fixed, order-independence restored |
-| glm 5.3 | Thorns returns null damage and blinds the board | real, 105 occurrences, 43 states now priced |
+Three fixes, one decline, and the decline was the only one that cost nothing to reach because the
+number came first. **That ratio is the argument for the process, not for the reviews.**
 
-Each needed a scope correction before fixing, and each was caught mid-implementation by a test written
-before it. **I should have read these in iteration 62 instead of 96.** Two of the three produced a
-real bug that was measurably costing the agent whole boards of information.
+## The hundredth iteration, honestly
+The task is **not** finished and I am not claiming otherwise:
+  - the game is parked on a main menu exposing zero options, so no run has been played since
+    iteration 93. One human click unblocks it.
+  - the A/B needs 200 armed samples and has 25. Its question is open.
+  - `statedSurvival` is deliberately still permissive, pending live confirmation that the new
+    quality distribution holds.
+  - the A10 win rate, the primary metric, has not been measurable since the code stamp went in,
+    because the bridge exposes no ascension control on any reachable screen.
 
-## Loop state
-590 tests green (7 new) - Thorns priced from the stack, 43 thorned states no longer blind
-- gate NOT tightened, deliberately, pending live confirmation
-- GAME STILL PARKED, click still required
+What the hundred iterations produced is an instrument that now catches its own author: a kill
+counter that found 5 boss kills reported as zero, a code stamp on every log line, an attrition signal
+moved from a prediction to an observation, a difficulty gradient, a randomised experiment with a
+verifiable arm, a replay harness that measures a code change without playing a single new card, and
+four independent reviews converted into three fixes and one measured refusal.
+
+**The most useful thing built this session was not a feature. It was the set of measurements that
+stopped six plausible changes from shipping.**
