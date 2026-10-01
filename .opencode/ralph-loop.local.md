@@ -20,19 +20,26 @@ M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both
 Loop's remaining mode is ACCUMULATING the runs item 2 needs, not searching.
 
 ## THE NUMBERS THAT MATTER
-  A0 fight win rate      88%   saturated — cannot show improvement
+  A0 fight win rate      88%   saturated — but see CORRECTION 4: this is a MONSTER number
   A0 median run floor    17    flat since iteration 62
   A0 best run             33    The Insatiable (Act 2 boss), 42% taken off
   boss record             10/21 (48%)  flat
+  **ELITE win rate**      **0.444 (4/9)**  **CORRECTION 4 — the real signal, long present**
+  **A10 fights**          **37, 0.811**   **CORRECTION 4 — misreported as A0 by splitRuns**
   wins                    0     in every recorded run
   A/B                     **CORRECTED TWICE — the old "converged to null" was an artifact; the fix holds
                           (-0.546, one version clears the floor). See CORRECTION 2.**
   tests                   630 green
 
-**The honest headline: 140+ iterations of correct, measured, verified fixes and the median run did
-not move.** Every lever I can reach is already at its correct value, and **every open item reduces to
-one sentence: the agent wins 88% of fights, so this corpus cannot measure anything that only shows up
-when the agent loses.** Four separate investigations hit that wall; it is the only thing left.
+**The honest headline, as it stood: 140+ iterations of correct, measured, verified fixes and the median
+run did not move**, and every open item reduced to "the agent wins 88% of fights, so this corpus
+cannot measure anything that only shows up when the agent loses." Four investigations hit that wall.
+
+**That wall was a bug.** The 88% is monsters-only; elites run 0.444 and 37 Ascension-10 fights were in
+the corpus the whole time, misfiled as A0 by a run-splitter that ignored `error` events. The four
+investigations were each correct AND each measured an A0-only view, so they agreed with each other and
+were all wrong. Repetition inside one document is one belief written twice — see the pickup skill's
+warning. Four investigations converging is the same evidence as one, and I read it as corroboration.
 
 ## CORRECTION 2 (this session) — a COMMITTED sha is not a policy, and 8 of the 13 "versions" were noise
 Resuming found the previous session's last edit **uncommitted and breaking the suite**: it had flipped
@@ -139,19 +146,41 @@ with an unfloored reader, and it did not survive its own evidence gate.
                            `progress` prices THIS turn, a Power pays off next turn. No measured
                            cost at 88% A0 — the same wall as M2 from a different angle.
 
+## CORRECTION 4 (this session) — THE PREMISE WAS WRONG. A10 was always in the corpus.
+**Everything above item 1 rested on "the agent wins 88% of fights, so this corpus cannot measure
+anything that only shows up when the agent loses."** That was a **run-splitting bug**, not a game fact.
+`splitRuns` only broke on `run_end`; an `error` event mid-run fused the next run onto it. In
+`2026-09-23T20-41-11.451Z.jsonl` an error at floor 3 / 64 HP is followed by a fresh run at floor 1 /
+60 HP at a **different ascension** — fused into one 190-event "run" that gained HP, went backwards
+two floors and changed difficulty mid-flight. Every per-run figure then came from the SECOND run's
+last screen, so A10 was reported as whatever the later A3 run said.
+
+    before 9 runs  ->  after 12 runs (three recovered)
+    A10  37 fights  30 won  7 lost  0.811
+    A3   11 fights  10 won  1 lost  0.909
+
+**And the wall is not where this file said it was.** Same file, after the fix:
+
+    monster  39 fights  0.923
+    ELITE     9 fights  0.444     <- the 88% headline is a MONSTER number
+
+Elites at A10 run **1 won of 5**. That is a real, loss-bearing, measurable signal that was already on
+disk — precisely the evidence item 1 and M2 were both declared blocked on obtaining. Item 1's three
+"routes closed" were never closed; the route was open and the data was present.
+
 ## WHAT IS OPEN
-  1. **Ascension 10 — the blocker, fully exhausted (iter 143).** The bridge accepts EXACTLY TWO
-     actions, `menu_select` and `end_turn`; ten plausible config actions are rejected as unknown, and
-     none of `character_select`'s 9 options sets difficulty. The run save DOES carry `"ascension": 0`
-     as a plain integer, so the capability exists and is simply not surfaced. **I am not writing to a
-     save file** — user's game data, possibly open in a running instance, and an irreversible edit to
-     it is a handback, not an optimisation.
-  2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. The rest
-     is ARITHMETICALLY unclosable at A0, not merely effortful (iter 148): **242 closed fights
-     produced 29 losses, spread over 27 distinct mechanics, so the median unmodelled mechanic has ONE
-     loss behind it.** A per-mechanic rate needs ~30+ events; at 29 losses per 242 fights that is
-     ~25x more runs, which is not accumulation but a different project. Item 2 is "needs a harder
-     difficulty so there are more losses to explain" — the same wall as M2.
+  1. ~~**Ascension 10 — the blocker, fully exhausted (iter 143).**~~ **REFUTED this session.** Not
+     exhausted: 37 A10 fights were in the corpus, misreported as A0 by `splitRuns`. The bridge's
+     inability to *set* ascension is still true and still a handback (it is the user's save file),
+     but it was never needed to read A10 — the runs already happened.
+  2. **Elites, not bosses, are the measurable failure.** 0.444 across 9 fights vs 0.923 for monsters.
+     n=9 is thin, so this is a lead and not yet a finding, but it is the first loss-bearing signal in
+     the corpus that is not the 88% saturation wall. Suck and Steam Eruption were the old candidates;
+     elites are the new one, and the measurement method is the same one that killed the others.
+  3. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. The A0
+     arithmetic that closed this ("29 losses over 27 mechanics") was computed on the A0-only view. With
+     A10 elites at 0.444 the per-mechanic rates are worth recomputing before any of it is called
+     unclosable — that claim was measured on a corpus the splitter had silently halved.
 
 ## M4 CLOSED — yield: 1 bug shipped, 1 in the wrong component, 23 dissolved
 Six of ten reviews' unprocessed findings were already fixed when read. Full triage in git log.
