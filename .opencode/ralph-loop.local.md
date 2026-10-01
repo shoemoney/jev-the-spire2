@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 140
+iteration: 141
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -42,28 +42,19 @@ not move.** Every lever I can reach is already at its correct value.
   astra timing bug   real in code, unreachable — the card is never offered as a candidate
   unoffered blocks   0% — Smoggy makes them unplayable, so declining is correct
 
-## M3 FINAL: THE A/B CONVERGED, AND IT CONVERGED TO NOTHING
+## M3 FINAL: THE A/B CONVERGED TO NOTHING
   230 samples (iter 105)  modelDelta  +0.121
   246 samples (iter 116)  modelDelta  -0.121
   379 samples (iter 137)  modelDelta  -0.004     <- 35 depths, both arms
 
-**Randomised, depth-matched, interleaved within the same fights: the scorer's choice and the model's
-own choice deal the same damage per decision.** The progression is a clean convergence to null rather
-than a noisy wobble, which is what a real null looks like and is not what a real effect looks like at
-this sample size.
+Randomised, depth-matched, interleaved within the same fights: **the scorer's choice and the
+model's own choice deal the same damage per decision.** A clean convergence to null, not a noisy
+wobble. The observational estimate that started all of this said -1.501; it was turn depth, and
+correcting for it moved the sign twice before reaching zero.
 
-**So the answer to M3 is stronger than "mildly better": there is no measurable difference**, and the
-factor-scoring layer is not earning its complexity on this metric. The observational estimate that
-started all of this said -1.501; it was turn depth, and correcting for it moved the sign twice before
-reaching zero.
-
-Careful about what this does NOT say: this is damage per decision. The scorer might still help on
-survival, on tempo, or on decisions whose damage is zero either way, and nothing here measures those.
-What it does say is that the layer cannot be justified on damage, and the next thing worth measuring
-is an axis where it might actually differ.
-
-**This is what the randomised arm was built for.** The observational number was confidently wrong by 1.5
-damage/decision and would have been acted on.
+This is damage per decision only. Survival and tempo are not measured, and the layer cannot be
+justified on damage. **The randomised arm was built because the observational number was confidently
+wrong by 1.5 damage/decision and I was one step from acting on it.**
 
 ## ITEM 4, RESOLVED WITH A SOUND CLASSIFIER — AND ONE PART IS STILL UNSOUND
 Classified by the hand entry at `command.card_index` and that card's own `type` (never a label regex):
@@ -88,10 +79,26 @@ Flat. Power cards are not scored as wasteful, so that story is dead.
 parsing `ranking[0].id` as a hand index, and ids are not reliably `p<n>` in this log. That number is
 withdrawn rather than reported with a caveat.
 
-**Where this leaves item 4:** the one part worth chasing is a scorer arm that never plays a Power
-card. If that survives more play it is a real behavioural gap and the mechanism is not the waste axis.
-The 0-power figure is one reading on one classifier and deserves a second before anything is built
-on it — which is exactly the mistake I made twice this session.
+**The second reading, which is the CONTROL: was a Power even available?**
+
+    model   n=199   a power in hand & affordable   65 (32.7%)   played one  17 (8.5%)
+    scorer  n=230   a power in hand & affordable   40 (17.4%)   played one   0 (0.0%)
+    played a power when one was available:   model 17/65 = 26.2%   scorer 0/40 = 0.0%
+
+**The finding survives its own control.** It is not that powers were unavailable to the scorer arm —
+they were affordable on 40 of 230 decisions and the scorer played one, ever. The model plays one 26%
+of the time when it can.
+
+**And the likely mechanism is the scorer's local rationality, not a bug.** `progress` asks whether the
+candidate "makes real progress toward winning, such as securing a kill, applying a debuff that pays
+off, or spending energy efficiently" — a Power does none of those on the turn it is played, so
+`progress` rates it near zero and it loses to a skill that blocks. The scorer is pricing THIS turn; the
+model's own choice is apparently less myopic about a card whose value is next turn.
+
+**So item 4 closes as: a real behavioural gap, correctly caused, with no measured cost.** The A/B
+found no damage or survival difference, and at 88% A0 fight win rate there is very little room for
+a power-play difference to show. Whether playing more powers is actually better is a question this
+corpus cannot answer — and that is the same wall as M2, from a different direction.
 
 ## WHAT IS OPEN
   1. **Ascension 10** — no reachable menu screen sets it. The primary metric is unmeasurable, and at
@@ -99,11 +106,10 @@ on it — which is exactly the mistake I made twice this session.
   2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
      Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
      method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
-  3. **The scorer arm never plays a Power card** (0/227 vs the model's 16/188), classified by the
-     card's own `type`. The A/B shows no damage or survival difference from it. The obvious
-     mechanism — waste punishing a card that does nothing this turn — is REFUTED: waste nouls are
-     flat across types (power 0.627, skill 0.606, attack 0.615). One reading on one classifier;
-     confirm before building anything on it.
+  3. **The scorer never plays a Power** — 0 of 40 opportunities vs the model's 17 of 65. Control
+     passed; the waste mechanism is refuted; the likely cause is `progress` pricing only this turn,
+     which makes it defensible rather than broken. No measured cost at 88% A0. Same wall as M2: the
+     corpus is too easy to show whether playing powers helps.
 
 ## RULES — earned, not negotiable
 - **A zero from a lookup, and a name from a regex, are both evidence about the lookup.** Ten wrong
