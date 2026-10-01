@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 146
+iteration: 147
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -14,7 +14,7 @@ M1 INSTRUMENT  measurement precedes every change              DONE
 M2 EVIDENCE    comparable difficulty signal                    BLOCKED — needs an A10 run
                  Loop's remaining mode is ACCUMULATING the runs item 2 needs, not searching.
 M3 DECISION     override question answered                     DONE — converged to null
-M4 READ         frontier reviews converted                     6 of 10 read
+M4 READ         frontier reviews converted                     10 of 10 read — DONE
 M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both verified live)
 
 ## THE NUMBERS THAT MATTER
@@ -82,6 +82,20 @@ is the difficulty being too low to detect any of it.**
   2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
      Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
      method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
+
+  M4 IS CLOSED. Triage of all ten reviews at iteration 147:
+    astra 2-5   selection reconstruction (fixed 113), attrition (65-66), the debuff-source condition
+                 classifier (105) and the plan-vs-turn scope marker (106) — all already shipped
+    sonnet 3-5   attrition, the `partial` vocabulary, the published numbers (115) — all shipped
+    deepseek 4    the completeFactors fallback — REFUTED at iteration 58, it fires on 0 of 2489
+    deepseek 5    the gate reading the least accurate forecast — a DUPLICATE of the `partial`-as-
+                   proven-survivor finding raised independently by qwen, gemini and sonnet
+    grok / luna / sol   no parseable findings; grok's five were read at iteration 126 and 127
+
+  **Six of the ten reviews' unprocessed findings were already fixed when they were read.** That is
+  the clearest statement of the review-fleet problem: these are snapshots of a codebase that moves
+  faster than the fleet reads, and the two that were genuinely new both needed measuring before
+  acting — one was unreachable and one was a duplicate.
 
 ## RULES — earned, not negotiable
 - **A zero from a lookup, and a name from a regex, are both evidence about the lookup.** Eleven wrong
