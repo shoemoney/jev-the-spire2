@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 107
+iteration: 108
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -64,9 +64,28 @@ failing a decision on the board that kills it - it arrives there having already 
 `survives:false` is the forecast correctly reporting a position that was lost upstream. The review
 is right that the gate is silent and wrong that this is a gate problem.
 
-The lever, if there is one, is in the turns that SPENT the energy, and I have no measurement for
-that yet. Recorded as the open question rather than guessed at, because a plausible story about
-energy discipline is exactly the kind of thing this session has been refuting all project.
+### FOLLOWED THE ENERGY THREAD TO ITS END - AND IT IS NOT A DECISION FAILURE
+  fatal turns with a preceding decision in the same fight : 31
+    the previous decision started with energy to spend    : 28
+    ...and left ZERO for the turn that killed it          : 18  (64%)
+    ...and the previous turn's forecast said it survives :  0  (0%)
+    ...and the previous plan reported energyLeft 0        : 20  (71%)
+
+**`energyBefore` is 1 in every single sample.** The agent is not squandering energy. It spends its
+last point on its last card, and the forecast **never once claimed it would survive** - with one
+energy there was nothing to do but play one card. At 7 HP it plays Strike rather than Defend, and
+that is the rational move: blocking for one energy dies the same way.
+
+So the decision layer is not the bottleneck. Across three iterations of this thread, at every board
+I can measure, the agent's choice is consistent with the forecast it was handed:
+  - the gate is silent because no survivor exists, on all 31
+  - the previous turn never claimed survival, on all 28
+  - the fatal board offers <=1 candidate at 0 energy, on 58%
+
+**The bottleneck is the resource position going in, and there is no instrumentation for it.** That is
+the finding, and it is a boundary: three candidate mechanisms for these deaths have now been measured
+and dissolved (gate failure, decision failure, energy squandering), and the thing that remains is the
+one layer this project has never had a lens on. Recorded as the boundary rather than guessed at.
 
 Note this is the same shape as the elite entry-state lead: a real observation (0 energy at death),
 a real correlation, and a mechanism that is one step earlier than the finding suggests.
