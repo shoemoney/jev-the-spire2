@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 129
+iteration: 130
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -545,6 +545,47 @@ including every pre-existing one — the change is narrow, which is what the con
 refuted since iteration 107 was a mechanism I could not observe. This one is observed, isolated to a
 named mechanic, and quantified at 0.28x. It is the first thing in a long while that is worth
 building rather than measuring.
+
+## THE PER-POWER MEASUREMENT, AND IT CORRECTS BOTH OF MY OWN HEADLINES
+I said the next step was the per-power win rate that prioritised Stun. Run across the whole
+inventory:
+
+  231 closed combat fights, baseline win rate 88%
+
+    power             n   with   without   ratio
+    Intangible        2    0%      89%     0.00x
+    Shriek            1    0%      88%     0.00x
+    Vigor             1    0%      88%     0.00x
+    Thievery          3   33%      89%     0.38x
+    Surprise          3   33%      89%     0.38x
+    Steam Eruption    5   40%      89%     0.45x
+    Reattach          2   50%      88%     0.57x
+    Infested          3   67%      88%     0.76x
+    Stun             29   76%      90%     0.85x
+    Suck              6   83%      88%     0.95x
+    Plating           9   89%      88%     1.01x
+    Ravenous         15  100%      87%     1.15x
+
+**Two of my own claims are wrong, and both were stated with numbers.**
+
+1. **Stun is 0.85x, not 0.28x.** The 0.28x came from BOSS fights only — 6 of them. Across all 29
+   fights carrying Stun it is 76% against 90%. So the mechanic was genuinely unmodelled and the fix
+   is still right, but I overstated what it cost by measuring on the smallest available sample and
+   calling it the effect size. The boss-only figure is real; it is not the general one.
+
+2. **Suck is 0.95x — neutral.** I named it last iteration as a top candidate, and the reason was its
+   DESCRIPTION ("gains 3 Strength whenever it deals unblocked attack damage") plus its frequency. The
+   data says fights carrying it are won essentially as often as fights without. A plausible mechanic
+   plus a large log count is not a prioritisation, and I treated it as one.
+
+**And the ratios are mostly small-sample noise.** Only Stun has a usable sample (29 fights). Everything
+else is n=1 to 6, where 0.00x means "two fights were lost" and nothing more. Ranking a to-do list by
+these numbers would be inventing a priority out of six observations, which is the same mistake as
+reading a correlation as a mechanism.
+
+**What survives is the method, not the ordering:** inventory the mechanics, measure each one against
+the baseline, and fix the ones where the sample is real. Stun qualified. Nothing else has yet, and the
+right next step is more runs rather than a longer list.
 
 ## THE PLATEAU, STATED PLAINLY
   A0 runs ended: 21 · median floor 17 · best 33 · last 12: 17 17 17 4 4 17 5 17 17 17 25 33

@@ -76,6 +76,33 @@ mistook the result for a fact: descriptor, move probabilities, deck piles, `GAME
 
 The counts are from the last two log files only, so they are the *recent* rate, not the whole corpus.
 
+## Per-power win rate: run, and it corrects two of my own claims
+
+231 closed combat fights, baseline 88%:
+
+| power | n | with | without | ratio |
+|---|---|---|---|---|
+| Intangible | 2 | 0% | 89% | 0.00x |
+| Shriek | 1 | 0% | 88% | 0.00x |
+| Vigor | 1 | 0% | 88% | 0.00x |
+| Thievery | 3 | 33% | 89% | 0.38x |
+| Surprise | 3 | 33% | 89% | 0.38x |
+| Steam Eruption | 5 | 40% | 89% | 0.45x |
+| Reattach | 2 | 50% | 88% | 0.57x |
+| Infested | 3 | 67% | 88% | 0.76x |
+| **Stun** | **29** | **76%** | **90%** | **0.85x** |
+| Suck | 6 | 83% | 88% | 0.95x |
+| Plating | 9 | 89% | 88% | 1.01x |
+| Ravenous | 15 | 100% | 87% | 1.15x |
+
+**Stun is 0.85x, not the 0.28x the Stun section quotes.** That figure is BOSS fights only (6 of
+them). The mechanic was genuinely unmodelled and the fix stands, but the effect size was read off
+the smallest available sample. **Suck is 0.95x — neutral** — and was named a top candidate on the
+strength of its description and its log count, which is not a prioritisation.
+
+Everything except Stun is n=1 to 6, where 0.00x means "two fights were lost". **The method survives;
+the ordering does not.** More runs, not a longer list.
+
 ## What would prioritise the rest
 
 Stun was prioritised because the log said Stun boards are won at **0.28×** the rate of boards without
