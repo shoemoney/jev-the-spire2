@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 126
+iteration: 127
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -495,6 +495,48 @@ rescue behaviour is byte-for-byte unchanged.
 **This is the shape of a good change on a guarded file: the guards fire, the change is deliberate,
 the substance is preserved, and the reasoning goes in the test rather than into a commit message
 nobody will read in six months.**
+
+## THE FIRST REAL GAMEPLAY DEFECT IN A LONG TIME: STUN IS NOT MODELLED AT ALL
+Per-boss record, whole corpus:
+    Vantom              7 fights  6w 1l   86%
+    Waterfall Giant     5 fights  2w 3l   40%
+    Ceremonial Beast    3 fights  0w 3l    0%
+    Soul Fysh           3 fights  1w 2l   33%
+    The Insatiable      2 fights  1w 1l   50%
+
+And the difference between the boss it beats 86% of and the one it beats 0% of:
+
+    Vantom            173 HP  telegraph 30  Attack/StatusCard/Buff
+    Ceremonial Beast  252 HP  telegraph 32  Buff/Attack/**Stun**/**Debuff**
+
+Vantom has neither Stun nor Debuff. Ceremonial Beast has both. So I checked the obvious:
+
+    const knownEnemyPowers = new Set(['strength','weak','vulnerable','slippery','plow','artifact']);
+
+**There is no `stun` in it, and the only `Stun` anywhere in planner.mjs is `bossStunned` — the BOSS
+being stunned by Plow, not the enemy stunning the PLAYER.** Nothing in the forecast represents
+losing a turn.
+
+    boss fights where the boss telegraphed Stun : 6 fights  1w 5l   17%
+    boss fights with no Stun telegraph         : 15 fights  9w 6l   60%
+    win rate ratio, stunned vs not             : 0.28x
+
+**The agent forecasts as though it gets a turn on every Stun board, and it dies.** That is a
+modelling gap of exactly the kind the whole knowledge-base effort was supposed to close, it survived
+three frontier reviews because none of them looked for it, and it is quantified rather than
+suspected.
+
+**Not shipped in the same breath, and that is the discipline.** The fix is well specified — a Stun
+telegraph means the incoming attack recurs before the player can block, so the survival calculation
+has to carry one more enemy turn — but it is a change to the forecast's survival path, which is the
+most safety-critical code in the project, and the affected population is 6 boss fights. A finding
+this good deserves a test that fails before the change, not a plausible patch at the end of a long
+session with a game running.
+
+**This is the plateau's exception, and it is worth being precise about the difference:** everything
+refuted since iteration 107 was a mechanism I could not observe. This one is observed, isolated to a
+named mechanic, and quantified at 0.28x. It is the first thing in a long while that is worth
+building rather than measuring.
 
 ## THE PLATEAU, STATED PLAINLY
   A0 runs ended: 21 · median floor 17 · best 33 · last 12: 17 17 17 4 4 17 5 17 17 17 25 33
