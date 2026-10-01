@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 121
+iteration: 122
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -369,6 +369,28 @@ session and the comparison is confounded by run length; the boss rate is flat at
 
 What is NOT confounded: bosses. 10/21 against 5/11 is the same rate with twice the sample, and boss
 fights are one per run, so run length does not flatter them.
+
+### AND THEN I DID THE COMPARISON THAT REMOVES THE CONFOUND, AND THE IMPROVEMENT WENT AWAY
+Last iteration's number was fights, and I said the fix was per-run. Here it is:
+
+  runs that ended: 32, of which Ascension 0: 21
+    older half   n=10   median floor 17   best 31
+    recent half  n=11   median floor 17   best 33
+
+**The median is identical: 17 and 17.** The best improved, 31 to 33, and that improvement is two
+runs. The fight-rate rise from last iteration was run length, exactly as suspected, and per-run depth
+is FLAT.
+
+**So the corrected answer to "did the fixes help" is: no measurable change in the median run.** The
+best run got deeper, the median did not move, and the boss rate is flat at 48%. Three independent
+measures now agree, and the flattering one was the confounded one.
+
+The last twelve runs to end, which is the shape of it:
+  a1f17 a1f17 a1f17  a1f4 a1f4  a1f17  a1f5  a1f17 a1f17 a1f17  a2f25 a2f33
+
+Recent runs are BIMODAL - several die on floors 4 and 5, and two go past floor 25. Whatever changed
+in the last twenty iterations widened the spread rather than lifting the floor. That is a different
+claim from "it got better", and it is the one the data supports.
 
 ## Loop state
 M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure
