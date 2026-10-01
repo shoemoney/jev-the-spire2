@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 119
+iteration: 120
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -329,6 +329,24 @@ duplication was real, correlated with deep reading, and is largely resolved in t
 decision so the trend is monitorable rather than reconstructed from a corpus that spans dozens of code
 versions. The LABEL was deliberately not changed - nothing here is wrong, and whether clearer labels
 would help is unmeasured, and this project has spent a hundred iterations refusing those.
+
+## THE RUN ENDED AT THE ACT 2 BOSS — THE DEEPEST IN THE CORPUS
+  act 2 floor 33 · The Insatiable, 321 HP · entered at hp 89, died at hp 0
+  the boss went 321 -> 188 (134 damage, 42%) before the agent fell
+
+**This is a record depth and a first**: no run in this corpus has reached an Act 2 boss before, and
+none has passed floor 31. The Act 1 boss is Vantom/Ceremonial Beast at 172-252 HP; The Insatiable
+at 321 is a materially larger fight, and the agent took 42% of it off before dying.
+
+**What it is and is not, once more and then I will stop saying it:** a record at Ascension 0, on a
+budget of 90M tokens, with no comparison run at that difficulty. It says the agent plays a long,
+clean, deep run and can meaningfully damage a boss it has never seen. It does not say the fixes
+raised the win rate, because the win rate is still 0 wins in every recorded run and the boss rate is
+flat at 9/19.
+
+The honest summary of where 120 iterations have actually landed: the agent can now reach and hurt
+the Act 2 boss, and cannot yet kill anything past Act 1. Everything I would change next is either
+blocked on an A10 run, or waiting on the experiment I am deliberately not disturbing.
 
 ## Loop state
 M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure
