@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 132
+iteration: 133
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -76,6 +76,34 @@ common case rather than a decision failure.
 So the item-3 question — do the early deaths share a distinct shape — is answered: **they do not**,
 and what looked like an early-game failure mode is the same resource position the rest of the corpus
 has.
+
+## M4: ASTRA'S "INVENTING THE REST OF A CARD'S OUTCOME" — CHECKED, AND IT DOES NOT FIRE
+astra's claim is sharp and grounded: line 245 admits any recognised game-data effect, and line 342's
+`number(text,/Gain (\d+) Strength/i)` credits a start-of-turn buff on the turn it is played, because
+`grep "start of your turn" planner.mjs` returns nothing.
+
+**But the card is never simulated in the first place.** On a real Demon Form board the planner
+offers only:
+
+    End turn · Mind Blast -> Nibbit · Bully -> Nibbit x2
+
+No Demon Form candidate, so `apply()` never runs and the timing error cannot fire on it. The
+admission check rejects it before the bug is reachable. That narrows the finding considerably: the
+mechanism is real in the code and unreachable in play for this card.
+
+Measuring the gap that IS reachable — a genuinely usable card in hand with no candidate offering it:
+
+    distinct combat boards examined                                          1848
+    boards where a usable card is never offered                            29  (1.6%)
+      Spoils Map 23 · Defend 4 · Battle Trance 2 · Forgotten Ritual 2 · Shrug It Off 1
+
+**79% of that is `Spoils Map`** — "Marks a site of +20 Gold in the next Act", a card with no combat
+action, so declining to offer it is CORRECT. The genuine defect is `Defend` and `Shrug It Off`
+occasionally unoffered: **5 boards in 1848, 0.27%.** Small, real, and not what the review described.
+
+**This is the second review whose headline is wrong in a way measurement settles** (the first was the
+partial-survivor one, where the log rather than the gate was at fault). Both were found by running
+the claim instead of reading it.
 
 ## LOOP STATE
 Play running on the batch's real budget (90M tokens, 20k decisions). `labelAmbiguity` and
