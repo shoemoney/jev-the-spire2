@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 116
+iteration: 117
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -267,6 +267,23 @@ when the association looked strong enough to act on.
 - A quiet failure is not a result
 - An existing test refusing a plausible change is the system working
 - Record what was NOT done and why
+
+## THE STRONGEST RUN IN THE CORPUS, AND WHAT IT DOES AND DOES NOT SHOW
+  act 2 floor 30, hp 94, mid-run
+  last 12 fights: Brute Raider:w  Nibbit:w  Vantom:w  Vantom:w  Thieving Hoppe:w
+                  Bowlbug:w  Myte:w  Myte:w  Ovicopter:w  Bowlbug:w  Bowlbug:w  Hunter Killer:w
+  boss record overall: 9 won / 19
+
+**Twelve consecutive fight wins including two Vantom kills**, and the run is deep and healthy. This is
+the first time the agent has looked genuinely strong rather than merely functional, and it is the
+first run with the Vulnerable-direction fix, the Thorns fix, the forecast scope marker and the
+card-pick neutrality all live at once.
+
+**What it does not show, stated before anyone else says it:** this is Ascension 0, it is one run, and
+the boss win RATE has not moved — 9/19 (47%) against 5/11 (45%) earlier. More bosses killed, same
+proportion. A twelve-win streak at a difficulty the agent already won 88% of is a nice evening, not
+evidence about the changes. The changes are justified by what they fixed, which was measured
+directly; this run is a sanity check that they did not break anything, and on that count it passes.
 
 ## Loop state
 M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with loud failure
