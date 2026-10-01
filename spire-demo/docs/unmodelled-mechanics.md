@@ -103,6 +103,31 @@ strength of its description and its log count, which is not a prioritisation.
 Everything except Stun is n=1 to 6, where 0.00x means "two fights were lost". **The method survives;
 the ordering does not.** More runs, not a longer list.
 
+## CORRECTION (2026-10-01) — this list's priority order is wrong, and it was computed on a broken view
+The per-power rates above were measured on an A0-only corpus. That was not a choice: `splitRuns` broke
+only on `run_end`, so an `error` event mid-run fused the following run onto it and every per-run figure
+was read off the wrong run's last screen. 37 Ascension-10 fights were in the corpus and reported as A3.
+With that fixed, the whole corpus gives **35 deaths**, and the cause is now measured end to end:
+
+    fatal board: 2.63 cards, 2.31 of them can_play=false
+      EnergyCostTooHigh 59 | HasUnplayableKeyword 17 | BlockedByHook 14
+    the agent KNOWS: 0 of 39 fatal boards claimed survives=true
+    it does not quit early: end-turn 0.489 losing vs 0.522 winning
+    and in 12 of 12 cases where it COULD have reserved a block, the forecast had already warned it
+
+**So the deaths are a correctly-priced position the agent cannot pay to escape** — it ends at 0 energy
+facing a 16-damage attack (16.4 mean in lost fights vs 11.4 in won). No decision-layer change fixes
+that, and the unmodelled-power work below is therefore *not* the highest-value thing in the project.
+
+**Stun specifically: 0 occurrences on the 35 fatal boards.** The fix shipped at iteration 128 and was
+correct to ship — 0.85x is a real if modest effect, and the doc's own retraction of the 0.28x figure
+was right. But it addresses a mechanic absent from every board the agent died on.
+
+**The two "measure first" candidates below are now LOWER priority, not higher.** Suck (0.95x, already
+measured neutral) and Steam Eruption (n=5) should be re-measured only after the deck question — whether
+the run can hold more 0-cost defence by the late turns — is addressed, since that is what the deaths
+actually turn on.
+
 ## What would prioritise the rest
 
 Stun was prioritised because the log said Stun boards are won at **0.28×** the rate of boards without
