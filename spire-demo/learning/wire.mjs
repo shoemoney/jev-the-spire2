@@ -170,7 +170,16 @@ export async function recallingDeliberate({state, candidates, ask, onStage = () 
       weights: WEIGHTS,
       factorsComplete,
       factorFallback: !factorsComplete,
-      jevMove: {choice: jevMove.choice, confidence: jevMove.confidence},
+      // The model's own per-candidate probabilities, recorded rather than discarded. `normalise()`
+      // rescales every factor to [0,1] by its own spread, so a factor whose raw spread is 0.16
+      // carries the same weight as one at 0.9 — and the log recorded the RESCALED nouls only, so
+      // the raw spreads could not be checked at all. A review raised exactly this and then said the
+      // packet does not measure it; the honest answer was that the data was never written down.
+      //
+      // With them recorded, `move`'s spread becomes measurable per decision and the question closes
+      // either way. Confidence is the model's own margin and is kept separate from the score margin
+      // below, which is a different quantity and was being published under a similar name.
+      jevMove: {choice: jevMove.choice, confidence: jevMove.confidence, probabilities: jevMove.probabilities ?? null},
       changed: jevMove.choice !== gate.choice,
       // Which side the A/B actually played. Null when the experiment is off, or when the scorer and
       // the model agreed and there was nothing to choose between. Distinguishing those two matters:
