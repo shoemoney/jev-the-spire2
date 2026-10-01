@@ -259,6 +259,26 @@ card it would need is one of the 59 `EnergyCostTooHigh` cards from FINDING 2. Th
 chain: it ends with 0 energy, its basic defends cost 1-2, and it faces a 16-damage hit. It is not
 misjudging the board. **It cannot pay for the answer.**
 
+**THE ACTIONABLE TEST, and its answer: this is NOT a policy bug.** On the board BEFORE each death:
+
+    35 deaths had a readable previous board
+    12 had energy > 0 AND an affordable block available
+    ...and in 12 of 12 the forecast had ALREADY warned (survives=false or quality unknown)
+
+So in every case where the agent *could* have reserved a block, it knew beforehand it would die
+anyway and spent the energy on something it judged better. In the other 23 it never had both. The
+agent sees this coming, prices it correctly, and the position is genuinely lost — which is the one
+conclusion that cannot be fixed by choosing differently, and the reason four separate "decision
+failure" investigations all dissolved.
+
+Corpus context: 54.8% of 5,676 combat boards hold an affordable block, so the resource is normally
+there and its absence at death is a consequence of the fight, not a permanent deck gap.
+
+**What this means for the loop:** the death mechanism is now understood and it is not an agent defect.
+What remains genuinely open is only whether the DECK can be built to hold more 0-cost defence by the
+late turns — a run-level policy question, which is PLAN.md M4 ("deck-building policy across a run, not
+per-screen myopia") and the one item on that list this evidence actually supports.
+
 **Stun: 0 occurrences in the 35 deaths.** The shipped Stun fix addressed a mechanic that does not
 appear on any board the agent died on. It was still correct to ship (0.85x is a real, if modest,
 effect) but it is not why these runs end, and the doc's own "0.85x, not 0.28x" retraction was right
