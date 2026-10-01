@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 138
+iteration: 139
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -85,17 +85,42 @@ change is not compensated by anything we can see. That is a stronger and more ac
 than "no difference": it means there IS a behavioural lever there, and the layer is currently
 spending it for nothing.
 
+## THE AGGRESSION NUMBERS CONTRADICT THEMSELVES, AND NEITHER IS REPORTABLE
+Two measurements of the same thing, same log files, opposite sign:
+
+  iteration 138   MODEL 53.3% attack   SCORER 61.8% attack   -> scorer more aggressive
+  iteration 139   MODEL 49.1% attack   SCORER 45.3% attack   -> scorer LESS aggressive
+
+**The cause is my own classifier, not the agent.** `Bash` appears in BOTH the attack list and the
+block list in each version, and the two runs differed in which list was tested first. One card, two
+guesses, and the sign of the result follows the guess.
+
+So neither number is being reported, and the tidy mechanism I was about to write up — "attack plans
+carry higher progress nouls (0.612 vs 0.401), so the scorer's aggression is correct" — is **not
+being reported either**, because it was measured with the classifier that just contradicted itself.
+The progress/waste numbers may well be right; the basis is not sound yet.
+
+**This is the eleventh wrong field, and the most-cited rule in this file is the one it breaks.** The
+fix is not another regex: classify a plan by the hand entry its `command.card_index` points at, and
+read that card's own `type`. A label is prose; `type` is data.
+
+**What is worth saying is how nearly this shipped.** The contradiction surfaced only because I
+measured the same quantity twice for two different purposes and the numbers disagreed. Had either
+been reported alone, a confident story about the scorer would have gone into the state file, and the
+next iteration would have built on it.
+
 ## WHAT IS OPEN
   1. **Ascension 10** — no reachable menu screen sets it. The primary metric is unmeasurable, and at
      88% on A0 no improvement is even detectable in principle. THIS IS THE ONLY REAL BLOCKER.
   2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
      Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
      method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
-  4. **The scorer's aggression bias** — ANSWERED above. It attacks 8 points more and blocks 4 less
-     than the model's own choice, and that buys no measurable damage or survival. Either the weight
-     on `waste` is pushing toward aggression without cause, or aggression is right and the
-     `progress` axis is under-weighted. Those are testable, and they are the first thing in a long
-     while that is a live hypothesis rather than a dead end.
+  4. **The scorer's aggression bias** — UNRESOLVED, and it is the one live thing left. Two
+     measurements disagree in sign because my classifier put `Bash` in both lists. The A/B found
+     NO damage or survival difference between arms; whether the arms differ in aggression at all is
+     not yet established, and it is worth establishing because the scorer is the only place a
+     behavioural lever is visible. Classify by the hand entry at `command.card_index`, never by a
+     regex on a label.
 
 ## RULES — earned, not negotiable
 - **A zero from a lookup, and a name from a regex, are both evidence about the lookup.** Ten wrong
