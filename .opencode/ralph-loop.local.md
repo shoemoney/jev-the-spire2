@@ -1,7 +1,8 @@
 ---
 active: true
-iteration: 142
+iteration: 143
 maxIterations: 100000
+sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 Autonomous operation. Play, measure, improve the agent. Keep the loop and the batch running.
@@ -54,9 +55,20 @@ dissolved under measurement. The consistent result is that **almost everything l
 until it is measured, and the thing that is left is the difficulty being too low to detect any of it.**
 
 ## WHAT IS OPEN
-  1. **Ascension 10** — no reachable menu screen sets it. At 88% A0 fight win rate no improvement is
-     even detectable in principle, which is why items 2 and 3 both ran out of room. THE ONLY REAL
-     BLOCKER, and it is not mine to clear.
+  1. **Ascension 10 — the blocker, now fully exhausted (iter 143).** Three routes, all closed:
+       - the bridge accepts EXACTLY TWO actions: `menu_select` and `end_turn`. Ten plausible
+         configuration actions (`set_ascension`, `set_difficulty`, `ascension`, `start_run`, …) are
+         all rejected as unknown.
+       - `character_select` exposes 9 options — IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT,
+         RANDOM_CHARACTER, confirm, embark, back — and none sets difficulty. `custom` on the
+         singleplayer screen never resolved to a menu with options; the walk falls back to `main`.
+       - but the game's own run save carries `"ascension": 0` as a plain integer, so the capability
+         exists in the data model and is simply not surfaced. **I am not writing to a save file**:
+         it is the user's game data, it may be open in a running instance, and an irreversible edit to
+         it is a handback, not an optimisation.
+
+     At 88% A0 fight win rate no improvement is even detectable in principle, which is why items 2
+     and 3 both ran out of measurement room. This is the only real blocker and it is not mine.
   2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
      Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
      method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
