@@ -105,11 +105,16 @@ test('a single bucket never pools, however extreme its delta', () => {
   // than the assertion being relaxed. One bucket of one sample is still not a pool, and now the
   // read-out also says how many policy builds the samples came from — which is how a caller learns
   // that "one bucket" might be one bucket of SEVEN different policies.
-  assert.deepEqual(r.evidence, { buckets: 1, minBuckets: 8, samples: 2, minSamples: 200, versions: 1, versionsComparable: 0 },
+  assert.deepEqual(r.evidence, { buckets: 1, minBuckets: 8, samples: 2, minSamples: 200, versions: 1, versionsWithSamples: 1, versionsComparable: 0 },
     'and the read-out says why, so a reader need not re-derive it');
   // versionsComparable is 0, not 1, and the distinction matters: this version IS two-armed, but its
   // single bucket is below the floor so it cannot contribute to a pool. "Comparable" therefore means
   // "can contribute a figure", not merely "has both arms" — the count is about pooling, not balance.
+  // versionsWithSamples was added because versions and versionsComparable were the same number on the
+  // real corpus whenever every logged version had produced arms — and were NOT when the experiment
+  // was off for part of the log, where 13 versions were reported and 8 held zero samples. Two counts
+  // that are equal when they happen to coincide, and different when it matters, are what a reader
+  // needs; one number silently covering both cases is what made "13 policy versions" wrong.
 });
 
 test('an unarmed decision is excluded rather than counted as either arm', () => {
@@ -163,20 +168,21 @@ test('the floors clear once there are enough depths AND enough samples, and then
 // It is not a null. It is opposing signs at magnitudes spanning 13x, averaged into a number that
 // reads like a clean result. Depth-matching was supposed to control for fight length; it cannot
 // control for the policy having CHANGED, because the bucket key is depth and depth is not version.
-const versioned = (type, hp, arm, sha, name = 'X') => ({
-  kind: 'decision', outcome: 'executed', code: { sha, dirty: 0 },
+const versioned = (type, hp, arm, sha, name = 'X', dirty = 0) => ({
+  kind: 'decision', outcome: 'executed', code: { sha, dirty },
   deliberation: { changed: arm === 'scorer', abArm: arm },
   state: { state_type: type, battle: { enemies: [{ name, hp }] } },
 });
 
-// `depths` distinct depths for one version, `perArm` samples per arm per depth.
-function buildVersion(sha, depths, perArm, modelDamage, scorerDamage) {
+// `depths` distinct depths for one version, `perArm` samples per arm per depth. `dirty` is the
+// working-tree dirtiness the run was logged on, which is part of the policy's identity.
+function buildVersion(sha, depths, perArm, modelDamage, scorerDamage, dirty = 0) {
   const ev = [];
   for (const [arm, dmg] of [['model', modelDamage], ['scorer', scorerDamage]]) {
     for (let d = 0; d < depths; d++) {
       let hp = 1000 + d * 10;
-      ev.push(versioned('elite', hp, arm, sha, `${arm}${sha}${d}`));
-      for (let i = 0; i < perArm; i++) { hp -= dmg; ev.push(versioned('elite', hp, arm, sha, `${arm}${sha}${d}`)); }
+      ev.push(versioned('elite', hp, arm, sha, `${arm}${sha}${d}`, dirty));
+      for (let i = 0; i < perArm; i++) { hp -= dmg; ev.push(versioned('elite', hp, arm, sha, `${arm}${sha}${d}`, dirty)); }
       ev.push({ kind: 'decision', outcome: 'executed', state: { state_type: 'rewards' } });
     }
   }
@@ -255,4 +261,38 @@ test('within-version deltas are reported even when the pooled figure is withheld
     assert.equal(typeof v.modelDelta, 'number', `${v.sha} has its own figure`);
     assert.ok(v.buckets >= 8, `${v.sha} cleared the bucket floor on its own`);
   }
+});
+
+// A COMMITTED sha is not a policy. `server.mjs` records `dirty` beside every sha precisely because a
+// run logged on a commit with uncommitted edits cannot be reproduced from that commit, and says so
+// in its own comment. Keying versions on sha alone therefore treats one commit with two different
+// working trees as ONE policy — the same class of error as depth-matching a policy that had changed,
+// only one level up, and invisible for the same reason: the key looked finer-grained than it was.
+//
+// On the real corpus `abbd694` appears at dirty=2 and dirty=5, so it is two policies under one name.
+test('one sha at two dirty counts is TWO policy versions, not one', () => {
+  const events = [
+    ...buildVersion('ccc3333', 10, 20, 1, 8),
+    ...buildVersion('ccc3333', 10, 20, 8, 1, 5),   // SAME sha, different working tree, OPPOSITE sign
+  ];
+  const r = abImpact(events);
+  const rows = r.byVersion.filter(v => v.sha === 'ccc3333');
+  assert.equal(rows.length, 2, `the dirty split is visible, got ${rows.length} row(s)`);
+  assert.deepEqual(rows.map(v => v.dirty).sort(), [0, 5], 'and each row names its own dirty count');
+  assert.equal(r.modelDelta, null, 'opposite signs across two policies must not average into a result');
+});
+
+// `versions` and `versionsComparable` were the same number whenever every logged version happened to
+// have produced arms, and diverged when it did not: 13 versions reported, 8 of them holding zero
+// armed samples because the experiment was off for those runs. A reader counting versions to judge
+// how much evidence exists was counting bookkeeping as if it were evidence.
+test('versions that produced no armed samples are counted apart from versions that did', () => {
+  // One version with both arms, and one logged entirely while the experiment was off.
+  const withArms = buildVersion('ddd4444', 10, 20, 1, 8);
+  const unarmed = withArms.map(e => ({ ...e, deliberation: { ...e.deliberation, abArm: null } }));
+  unarmed.forEach(e => { e.code = { ...e.code, sha: 'eee5555' }; });
+  const r = abImpact([...withArms, { kind: 'decision', outcome: 'executed', state: { state_type: 'rewards' } }, ...unarmed]);
+  assert.equal(r.evidence.versions, 2, 'both versions appear in the log');
+  assert.equal(r.evidence.versionsWithSamples, 1, 'only one of them produced a single armed decision');
+  assert.equal(r.evidence.versionsComparable, 1, 'and only one can back the pooled figure');
 });

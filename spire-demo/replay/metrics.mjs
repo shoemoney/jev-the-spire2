@@ -667,7 +667,7 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
     // because the bucket key is depth and depth is not version. 1,302 armed decisions spanning eight
     // shas were pooled into "-0.004, converged to null" while the per-version figures were -0.546,
     // +0.227, -1.001, -3.313 and -7.250 — opposing signs across a 13x magnitude range.
-    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, arm: ev.deliberation?.abArm ?? null, sha: ev?.code?.sha ?? null });
+    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, arm: ev.deliberation?.abArm ?? null, sha: ev?.code?.sha ?? null, dirty: ev?.code?.dirty ?? null });
   }
   if (open) fights.push(open);
 
@@ -697,20 +697,38 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
   // Per-version figures. A version with only one arm cannot be compared to anything, so it is
   // reported and marked rather than pooled: on the real corpus three of eight shas were scorer-only,
   // and pooling them put their samples opposite a model sample from a different build.
+  // The version key is (sha, dirty), NOT sha. `server.mjs` records `dirty` for exactly this reason
+  // and says so in a comment: a run logged on a commit with uncommitted edits cannot be reproduced
+  // from that commit, so the working tree IS part of the policy identity. Keying on sha alone let
+  // one sha contribute two different code states as a single version, which is the same class of
+  // error as the depth-vs-version mix this function was written to remove - a coarser key than the
+  // thing being controlled for. Measured on the real corpus: `abbd694` appears at dirty=2 AND
+  // dirty=5, so it is two policy versions sharing one name.
   const bySha = new Map();
   for (const f of fights) for (const r of f.rows) {
     const sha = r.sha ?? 'unknown';
     if (!bySha.has(sha)) bySha.set(sha, []);
     bySha.get(sha).push(r);
   }
-  const byVersion = [...bySha].map(([sha, rows]) => {
+  // Split each sha by dirty count, so a version row is one reproducible policy.
+  const split = new Map();
+  for (const [sha, rows] of bySha) {
+    const groups = new Map();
+    for (const r of rows) {
+      const dirty = r.dirty ?? 'unknown';
+      if (!groups.has(dirty)) groups.set(dirty, []);
+      groups.get(dirty).push(r);
+    }
+    for (const [dirty, groupRows] of groups) split.set(`${sha} dirty=${dirty}`, { sha, dirty, rows: groupRows });
+  }
+  const byVersion = [...split.values()].map(({ sha, dirty, rows }) => {
     const vb = bucketsOf(rows);
     const nModel = rows.filter(r => r.dealt != null && r.arm === 'model').length;
     const nScorer = rows.filter(r => r.dealt != null && r.arm === 'scorer').length;
     const comparable = nModel > 0 && nScorer > 0;
     // `buckets` is a COUNT here, matching `evidence.buckets` and `matched.length`. It was an array
     // on the first attempt, which is the same name meaning two things in one return value.
-    return { sha, buckets: vb.length, bucketDetail: vb, modelDelta: comparable ? pooled(vb) : null, nModel, nScorer, comparable, samples: nModel + nScorer };
+    return { sha, dirty, version: `${sha} dirty=${dirty}`, buckets: vb.length, bucketDetail: vb, modelDelta: comparable ? pooled(vb) : null, nModel, nScorer, comparable, samples: nModel + nScorer };
   }).sort((a, b) => b.samples - a.samples);
 
   const comparableVersions = byVersion.filter(v => v.comparable && v.modelDelta !== null);
@@ -733,7 +751,15 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
     depthsWithBothArms: buckets.length,
     byVersion, signsAgree, poolingValid,
     // So a reader can see WHY the pooled figure is null without re-deriving it.
-    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: m.length + sc.length, minSamples: MIN_SAMPLES, versions: byVersion.length, versionsComparable: comparableVersions.length },
+    //
+    // `versions` counts every version key seen in the log. `versionsWithSamples` counts the ones
+    // that produced at least one armed decision. These were THE SAME NUMBER on the first fix, and
+    // that was a lie a reader could not detect: on the real corpus 13 versions were reported and 8
+    // of them carried zero armed samples at all, because they were logged while the experiment was
+    // off. "13 policy versions" reads as thirteen pieces of evidence about the policy when five
+    // produced any. `versionsComparable` is the one that clears the floor and can therefore back the
+    // pooled figure, so a reader needs all three to tell evidence from bookkeeping.
+    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: m.length + sc.length, minSamples: MIN_SAMPLES, versions: byVersion.length, versionsWithSamples: byVersion.filter(v => v.samples > 0).length, versionsComparable: comparableVersions.length },
   };
 }
 

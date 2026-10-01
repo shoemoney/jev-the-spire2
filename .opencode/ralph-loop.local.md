@@ -1,3 +1,13 @@
+---
+active: true
+iteration: 0
+maxIterations: 100
+---
+
+ scan for todo items place them in a large plan and execute it do not stop until finished
+
+---
+
 # Spire agent — loop state
 
 ## PLAN
@@ -15,13 +25,46 @@ Loop's remaining mode is ACCUMULATING the runs item 2 needs, not searching.
   A0 best run             33    The Insatiable (Act 2 boss), 42% taken off
   boss record             10/21 (48%)  flat
   wins                    0     in every recorded run
-  A/B                     **CORRECTED at iter 151 — the old "converged to null" was an artifact**
-  tests                   610 green
+  A/B                     **CORRECTED TWICE — the old "converged to null" was an artifact; the fix holds
+                          (-0.546, one version clears the floor). See CORRECTION 2.**
+  tests                   630 green
 
 **The honest headline: 140+ iterations of correct, measured, verified fixes and the median run did
 not move.** Every lever I can reach is already at its correct value, and **every open item reduces to
 one sentence: the agent wins 88% of fights, so this corpus cannot measure anything that only shows up
 when the agent loses.** Four separate investigations hit that wall; it is the only thing left.
+
+## CORRECTION 2 (this session) — a COMMITTED sha is not a policy, and 8 of the 13 "versions" were noise
+Resuming found the previous session's last edit **uncommitted and breaking the suite**: it had flipped
+`changed: ev.deliberation?.changed === true` to `!== true`, inverting the flag. Measured first:
+1,043 combat executed decisions carry **400 true / 643 false / 0 missing**, so the flag is a real
+boolean on every row and `=== true` was correct. Reverted; 628 green again. The crash destroyed an
+experiment mid-flight — nothing in it was worth keeping.
+
+Two further defects in the version reader, both found by measuring the corpus rather than reading code:
+
+**1. The version key was sha alone.** `server.mjs:100` records `dirty` beside every sha and says why:
+*a run recorded on a commit with uncommitted edits cannot be reproduced from that commit.* So the
+working tree is part of the policy's identity and sha is not the whole of it. Measured: **abbd694
+appears at dirty=2 AND dirty=5** — two different policies sharing one name. This is the same error as
+the depth-vs-version mix, one level up: a key that looked finer-grained than it was.
+
+**2. `evidence.versions` counted bookkeeping as evidence.** Of the 13 versions, **8 carried zero armed
+samples at all** — logged while the A/B experiment was off. A reader counting versions to judge how
+much evidence existed was counting runs that produced none. `versions` and `versionsComparable` were
+the same number whenever that coincidence held and diverged when it mattered. Now `versionsWithSamples`
+sits beside them.
+
+The corrected headline is **unchanged**, which is the useful part — the previous fix was right:
+
+    versions 14   withSamples 5   comparable 1
+    6b97d6b dirty=3  n=282/309  33 buckets  delta=-0.546   <- still the only version clearing the floor
+    ed4e395 d=1 / 740dad9 d=2 / ab28c5e d=2 / 44188b6 d=4      null, below floor
+    pooled modelDelta = -0.5464644044024436   poolingValid = true
+
+Two tests added, **both verified to FAIL on the old code** (3 failures) and pass on the new (630 green).
+One existing `evidence` deepEqual refused the added key — the system working — so it was widened
+explicitly with the reason in the test, per this file's own rule.
 
 ## CORRECTION (iter 151) — the A/B headline was an artifact of pooling across policy versions
 `abImpact` depth-matched but never version-matched, so a model sample at depth 3 from one build was
