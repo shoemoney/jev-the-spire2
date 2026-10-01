@@ -379,7 +379,34 @@ async function step(token, preview = false) {
     // the agent reasons with could not be audited, replayed, or measured after the fact, and a bug
     // in it would have been invisible forever. The fix that made `dealt` observed in iteration 65
     // was unfalsifiable until this was logged: there was no way to check it on real data.
-    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, requestStateBytes:view.requestStateBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
+    // DECK COMPOSITION, summarised. The deck is in NONE of the 5,662 recorded decisions - `player.deck`
+    // is absent on every screen - and the resource layer is now the measured bottleneck: 74% of
+    // combat deaths happen holding a hand with no block card in it. Whether that is draw order or a
+    // deck built without defence cannot be told apart from the log, because the deck was never
+    // written down.
+    //
+    // Counts rather than the card list, for the same reason the rest of this record carries sizes
+    // and not payloads: the question is "is this deck able to block", and the answer is three
+    // integers. The full list is a round trip away whenever someone actually needs it.
+    // The deck is not a `deck` field. It is hand + draw_pile + discard_pile + exhaust_pile, and every
+    // one of those is present on every combat decision. The first version of this read
+    // `player.deck` and reported the deck as absent on 100% of decisions, which looked like a
+    // bridge limitation and would have been the same mistake as the unrecorded move probabilities:
+    // a field is not missing because it is not where you expected it.
+    const piles = ['hand', 'draw_pile', 'discard_pile', 'exhaust_pile'];
+    const deckComposed = piles.some(p => Array.isArray(s?.player?.[p]))
+      ? piles.flatMap(p => (Array.isArray(s?.player?.[p]) ? s.player[p].map(c => c?.name ?? '') : []))
+      : null;
+    const deckComposition = deckComposed
+      ? {
+        size: deckComposed.length,
+        blocking: deckComposed.filter(n => /defend|bash|shrug|barricade|feed|body slam|ghostly|ward|impulse|panic button/i.test(n)).length,
+        attacking: deckComposed.filter(n => /strike|bash|claw|slash|pummel|stab|sucker|thunderclap|cleave|heavy blade|uppercut|searing/i.test(n)).length,
+        present: true,
+      }
+      : { present: false, size: null, blocking: null, attacking: null };
+
+    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deckComposition, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, requestStateBytes:view.requestStateBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
     if (token !== generation) { await log({ ...event, outcome: 'cancelled' }); return; }
     if (preview) { await log({ ...event, outcome: 'preview' }); view.message = `Preview: ${chosen.label}`; return; }
     const fresh = await observe();

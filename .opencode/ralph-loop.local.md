@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 109
+iteration: 110
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -90,6 +90,30 @@ one layer this project has never had a lens on. Recorded as the boundary rather 
 Note this is the same shape as the elite entry-state lead: a real observation (0 energy at death),
 a real correlation, and a mechanism that is one step earlier than the finding suggests.
 
+## M4 - THE DECK IS NOT MISSING. I LOOKED IN THE WRONG PLACE, AGAIN.
+Followed iteration 109's finding (74% of deaths hold no block card) to the question that decides
+the lever: is that the HAND or the DECK?
+
+First answer: `player.deck` is absent on **0 of 5,662 recorded decisions** - every screen. Which
+would make the deck invisible to the agent, the logger and every measurement ever made, and would
+be a startling architectural finding.
+
+It is also wrong, and wrong in the way I have now been wrong six times: **the deck is not a `deck`
+field.** It is `hand` + `draw_pile` + `discard_pile` + `exhaust_pile`, and on combat decisions ALL
+FOUR are present - 1,404 of 1,404 sampled. The piles just have different names than the one I
+reached for. A field is not missing because it is not where you expected it, which is now the
+third time that exact error has cost me an iteration (the other two: the descriptor, and the move
+probabilities).
+
+So the resource layer is measurable after all, and `deckComposition` is now recorded on every
+decision: deck size, blocking count, attacking count, and an explicit `present:false` rather than a
+null that could be mistaken for a zero. **As of this writing it is written but unverified on a
+combat board** - the run is at a card_select and had not reached a fight since the restart.
+
+The card-pick question stays NOT ESTABLISHED. The 135 recorded picks are 16% attacking, 9%
+defensive, 75% unclassified by a regex whose top hit is Shrug It Off, a block card. That classifier
+is too crude to argue from, and I am not going to.
+
 ## M2 EVIDENCE - the binding constraint
 Ascension 10 cannot be set from the bridge: no reachable menu screen exposes a difficulty control,
 confirmed in full (IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT, RANDOM_CHARACTER, confirm, embark,
@@ -131,5 +155,5 @@ when the association looked strong enough to act on.
 
 ## Loop state
 M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with loud failure
-grok read: 5 findings, 2 already fixed by other reviewers, 2 shipped (Vulnerable direction, forecast
-scope), 1 dissolved into an upstream question. reviews 5 of 10
+grok read: 5 findings, 2 already fixed by others, 2 shipped, 1 dissolved. reviews 5 of 10
+deckComposition shipped, awaiting a combat board to verify it against
