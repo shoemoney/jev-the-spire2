@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 148
+iteration: 149
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -27,7 +27,9 @@ M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both
   tests                   610 green
 
 **The honest headline: 140+ iterations of correct, measured, verified fixes and the median run did
-not move.** Every lever I can reach is already at its correct value.
+not move.** Every lever I can reach is already at its correct value, and **every open item reduces to
+one sentence: the agent wins 88% of fights, so this corpus cannot measure anything that only shows
+up when the agent loses.** Four separate investigations hit that wall; it is the only thing left.
 
 ## RULED OUT — with the number that killed each. Do not re-investigate.
   gate failure       correct on all 31 deaths; no survivor existed to move to
@@ -50,6 +52,17 @@ not move.** Every lever I can reach is already at its correct value.
   scorer plays no Power  0 of 40 opportunities vs the model's 17 of 65 — real, and defensible:
                            `progress` prices THIS turn, and a Power pays off next turn. No measured
                            cost at 88% A0, which is the same wall as M2 from a different angle.
+
+## M4 CLOSED — ALL TEN REVIEWS, AND WHAT THEY WERE WORTH
+Triage at iteration 147: astra 2-5 and sonnet 3-5 were all already shipped (fixes at 65-66, 105,
+106, 113, 115); deepseek #4 was refuted at iteration 58 (fires on 0 of 2489); deepseek #5 duplicates
+the `partial` finding three other models raised independently. **Six of ten reviews' unprocessed
+findings were already fixed when read** — these are snapshots of a codebase that moves faster than
+the fleet reads.
+
+Across ~25 findings in ten reviews: **1 real bug shipped, 1 real bug found in the wrong component
+(the log, not the gate), 23 that dissolved** as unreachable, duplicate, stale, or refuted. The yield
+is worth remembering before commissioning another sweep.
 
 ## THE SHAPE OF THE LAST TWELVE ITERATIONS
 M3's randomised A/B converged to null (230 -> 246 -> 379 samples, +0.121 -> -0.121 -> -0.004) after
@@ -95,20 +108,6 @@ is the difficulty being too low to detect any of it.**
      more losses to explain"** — the same wall as M2, and the same wall as the power-card question
      and the scorer-aggression question. Every open item reduces to one sentence: the agent wins 88%
      of fights, so the corpus cannot measure anything that only shows up when the agent loses.
-
-  M4 IS CLOSED. Triage of all ten reviews at iteration 147:
-    astra 2-5   selection reconstruction (fixed 113), attrition (65-66), the debuff-source condition
-                 classifier (105) and the plan-vs-turn scope marker (106) — all already shipped
-    sonnet 3-5   attrition, the `partial` vocabulary, the published numbers (115) — all shipped
-    deepseek 4    the completeFactors fallback — REFUTED at iteration 58, it fires on 0 of 2489
-    deepseek 5    the gate reading the least accurate forecast — a DUPLICATE of the `partial`-as-
-                   proven-survivor finding raised independently by qwen, gemini and sonnet
-    grok / luna / sol   no parseable findings; grok's five were read at iteration 126 and 127
-
-  **Six of the ten reviews' unprocessed findings were already fixed when they were read.** That is
-  the clearest statement of the review-fleet problem: these are snapshots of a codebase that moves
-  faster than the fleet reads, and the two that were genuinely new both needed measuring before
-  acting — one was unreachable and one was a duplicate.
 
 ## RULES — earned, not negotiable
 - **A zero from a lookup, and a name from a regex, are both evidence about the lookup.** Eleven wrong
