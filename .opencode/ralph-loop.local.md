@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 110
+iteration: 111
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -114,6 +114,35 @@ The card-pick question stays NOT ESTABLISHED. The 135 recorded picks are 16% att
 defensive, 75% unclassified by a regex whose top hit is Shrug It Off, a block card. That classifier
 is too crude to argue from, and I am not going to.
 
+## M5 (SECOND PASS) - THE RECOVERY MECHANISM WAS PREVENTING THE LOOP FROM EVER BEING STUCK
+The deckComposition verification never came, because the run stopped progressing: **20+ minutes
+parked on one `card_select`** while the agent sat on "Waiting for the game to finish the last
+action". Not a slow game - a wedge.
+
+Chased it to the cause and the cause is the harness:
+
+  the server stops after 45s when the game has not changed
+  the batch saw `paused` and resumed it
+  resuming resets the server's own 45s timer
+  -> stop, resume, wait 45s, stop, resume, forever
+
+**One batch log shows 8 such bounces on a single screen.** A recovery mechanism that never gives up
+is not a recovery mechanism; it is a way of guaranteeing the system can never report that it is
+stuck. This is the same shape as every other finding this session: something that fails quietly,
+whose silence the harness then fills with apparent progress.
+
+Now bounded: 3 resumes of the same unchanged screen, then it STOPS resuming, prints the screen and
+the message, and writes `.private/loop/BATCH-STUCK.txt`. Verified live:
+
+  [auto-paused: The game did not change after the last action] -> resumed (1/3)
+  [auto-paused: The game did not change after the last action] -> resumed (2/3)
+  [STUCK: resumed 3x on the same unchanged screen - not resuming again; the game needs attention]
+  BATCH-STUCK.txt: screen 22|2|card_select|0
+
+A stall that clears itself still gets its three attempts. A stall that does not now gets reported in
+a sentence. That is the whole difference between a loop that can be trusted unattended and one that
+merely looks busy.
+
 ## M2 EVIDENCE - the binding constraint
 Ascension 10 cannot be set from the bridge: no reachable menu screen exposes a difficulty control,
 confirmed in full (IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT, RANDOM_CHARACTER, confirm, embark,
@@ -156,4 +185,5 @@ when the association looked strong enough to act on.
 ## Loop state
 M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with loud failure
 grok read: 5 findings, 2 already fixed by others, 2 shipped, 1 dissolved. reviews 5 of 10
-deckComposition shipped, awaiting a combat board to verify it against
+deckComposition shipped, still awaiting a combat board - the run wedged on a card_select first
+M5 second pass: bounded the auto-resume, verified it now reports a stall instead of absorbing it
