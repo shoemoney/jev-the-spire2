@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 137
+iteration: 138
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -65,14 +65,37 @@ is an axis where it might actually differ.
 **This is what the randomised arm was built for.** The observational number was confidently wrong by 1.5
 damage/decision and would have been acted on.
 
+## OPEN ITEM 4 ANSWERED: THE SCORER CHANGES BEHAVIOUR AND BUYS NOTHING MEASURABLE
+  MODEL arm   n=197   survives=true 94.9%   damage/decision 9.61   attacking 53.3%  blocking 19.8%
+  SCORER arm  n=228   survives=true 93.9%   damage/decision 7.63   attacking 61.8%  blocking 16.2%
+
+**Three readings, and they point one way.**
+
+1. **Survival: 94.9% vs 93.9%.** No difference. The scorer is not buying safety.
+2. **Damage: 7.63 vs 9.61 raw — but the depth-matched A/B says -0.004.** The raw comparison is not
+   matched and the matched one is the correct comparison, so the honest statement is that the two arms
+   are indistinguishable on damage, and the raw gap is depth, not effect. (Noting the conflict rather
+   than quietly dropping the unflattering number.)
+3. **Behaviour DOES differ, and this is the finding: the scorer attacks 61.8% against the model's
+   53.3%, and blocks 16.2% against 19.8%.** The scoring layer systematically pushes the agent
+   toward aggression — and that shift shows up in no outcome measured here.
+
+**So the scoring layer is not inert; it is unmotivated.** It changes what the agent does and the
+change is not compensated by anything we can see. That is a stronger and more actionable statement
+than "no difference": it means there IS a behavioural lever there, and the layer is currently
+spending it for nothing.
+
 ## WHAT IS OPEN
   1. **Ascension 10** — no reachable menu screen sets it. The primary metric is unmeasurable, and at
      88% on A0 no improvement is even detectable in principle. THIS IS THE ONLY REAL BLOCKER.
-  3. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
+  2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
      Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
      method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
-  4. **An axis where the scorer might differ at all** — damage is now null, so the scoring layer has
-     to justify itself elsewhere or be simplified. Survival and tempo are the candidates.
+  4. **The scorer's aggression bias** — ANSWERED above. It attacks 8 points more and blocks 4 less
+     than the model's own choice, and that buys no measurable damage or survival. Either the weight
+     on `waste` is pushing toward aggression without cause, or aggression is right and the
+     `progress` axis is under-weighted. Those are testable, and they are the first thing in a long
+     while that is a live hypothesis rather than a dead end.
 
 ## RULES — earned, not negotiable
 - **A zero from a lookup, and a name from a regex, are both evidence about the lookup.** Ten wrong
