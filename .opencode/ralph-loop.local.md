@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 111
+iteration: 112
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -143,6 +143,35 @@ A stall that clears itself still gets its three attempts. A stall that does not 
 a sentence. That is the whole difference between a loop that can be trusted unattended and one that
 merely looks busy.
 
+## M4/M5 - THE CARD_SELECT DEADLOCK IS A REAL AGENT BUG, NOT A GAME WEDGE
+Before asking for another click I checked whether the agent was doing something wrong on that screen.
+It was, and it is the same screen it has been on for 25+ minutes:
+
+    a0 Select Stampede | a1 Select Inflame | a2 Select Aggression
+    CHOSE a1 {"action":"select_card","index":1}
+    result {"status":"ok","message":"Toggling card selection: Inflame"}
+    ...repeated 76 times
+
+**There is no Confirm candidate at all**, and the labels never change to "Deselect". The agent toggles
+the same card on, then off, then on, forever. The game is not wedged - the agent cannot find the way
+out of a screen it keeps re-selecting.
+
+Root cause, and it is a real bug in `selectionState()`: the reconstruction walked `view.events`
+oldest-first, which STARTS on some earlier screen whose signature differs, so the loop broke on its
+first iteration having learned nothing, and returned the state untouched on every card grid that
+omits `is_selected` - which is every one of them. A previous fix had reversed the iteration order to
+stop exactly that, and so turned a wrong-direction walk into a no-op walk.
+
+Boundary check is now two-sided: skip until this screen is reached, then stop the moment it is left.
+Four tests, one of which is the live `NDeckEnchantSelectScreen` shape.
+
+**Verified false: this is NOT yet fixed in play.** After the fix and a server restart the agent still
+selected and re-selected, and Confirm still did not appear. I cannot close it end to end because
+`/api/status` returns COMPACTED decisions rather than `view.events`, so the reconstruction cannot be
+probed from outside, and the game is on the stuck screen so no new combat data is arriving either.
+Unit-tested and reasoned, NOT proven in situ, and saying so rather than banking a fix I have not
+seen work.
+
 ## M2 EVIDENCE - the binding constraint
 Ascension 10 cannot be set from the bridge: no reachable menu screen exposes a difficulty control,
 confirmed in full (IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT, RANDOM_CHARACTER, confirm, embark,
@@ -187,3 +216,4 @@ M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with lou
 grok read: 5 findings, 2 already fixed by others, 2 shipped, 1 dissolved. reviews 5 of 10
 deckComposition shipped, still awaiting a combat board - the run wedged on a card_select first
 M5 second pass: bounded the auto-resume, verified it now reports a stall instead of absorbing it
+card_select deadlock root-caused and unit-tested, NOT yet verified in play - needs the game clicked
