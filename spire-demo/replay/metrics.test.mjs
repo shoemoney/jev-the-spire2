@@ -323,3 +323,32 @@ test('the error event is kept on the run it ended rather than discarded',()=>{
   const runs=splitRuns(events);
   assert.equal(runs[0].filter(e=>e.kind==='error').length,1,'retained, not dropped');
 });
+
+// REGRESSION against my own fix. Splitting on EVERY `error` was wrong and I shipped it: the corpus
+// holds 39 errors and only 4 end a run. The other 35 are transient — "Decision cancelled.", "fetch
+// failed [3 attempts]", "TypeSafe HTTP 520; paused. Retry with Resume." — and the very next board
+// carries the SAME floor, ascension and HP. Splitting them produced 63 runs where 40 exist, 19 of
+// them phantom `unfinished` fragments the report then listed by name.
+test('a transient error mid-run does NOT split the run',()=>{
+  // Same floor, same ascension, same hp after the error: the run plainly continued.
+  const events=[
+    dec({hp:64,floor:3,ascension:10}), {kind:'error',message:'The operation was aborted due to timeout'},
+    dec({hp:64,floor:3,ascension:10}), dec({hp:64,floor:3,ascension:10}), end({hp:0,floor:3,ascension:10}),
+  ];
+  assert.equal(splitRuns(events).length,1,'one run — the error was operational, not terminal');
+  const only=splitRuns(events)[0];
+  assert.equal(only.filter(e=>e.kind==='decision').length,3,'and no decision was orphaned into a fragment');
+});
+
+// The boundary test itself. Measured across all 39 errors in the corpus: `next floor === 1` catches
+// 4 of 4 real restarts and 0 of 35 continuations. Ascension-change alone catches only 1 of 4, so the
+// conjunction is kept rather than relying on the more obvious signal.
+test('an error followed by floor 1 IS a restart, same ascension or not',()=>{
+  // Same ascension, floor 12 -> 1. Ascension is unchanged here, so an ascension test would miss it.
+  const events=[
+    dec({hp:64,floor:12,ascension:10}), {kind:'error',message:'Game bridge unavailable'},
+    dec({hp:64,floor:1,ascension:10}), end({hp:0,floor:2,ascension:10}),
+  ];
+  assert.equal(splitRuns(events).length,2,'two runs');
+  assert.equal(splitRuns(events)[0].filter(e=>e.kind==='decision').length,1,'the first keeps only its own decision');
+});

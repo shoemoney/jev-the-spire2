@@ -1,5 +1,16 @@
 ---
 active: true
+iteration: 1
+maxIterations: 100
+sessionId: ses_f068797efffevZVo505LEAZvGA
+---
+
+scan for todo items place them in a large plan and execute it do not stop until finished
+
+---
+
+---
+active: true
 iteration: 0
 maxIterations: 100
 ---

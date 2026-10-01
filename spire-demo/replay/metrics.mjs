@@ -84,17 +84,39 @@ const roomLabel = key => { const [act, floor, type] = String(key).split(':'); re
 export function splitRuns(events) {
   const out = [];
   let cur = [];
-  for (const e of events) {
-    // An `error` event ends the run it interrupts. Measured on the real corpus: one `error` at
-    // floor 3 / 64 HP is followed by a fresh run at floor 1 / 60 HP with a DIFFERENT ascension, and
-    // splitting only on `run_end` fused the two into one 190-event "run" — a run that gained 4 HP,
-    // went backwards two floors, and changed difficulty mid-flight. None of that is possible in a
-    // run, and every per-run figure derived from it (outcome, final floor, ascension) was taken
-    // from the SECOND run's last screen. That is how 37 Ascension-10 fights went unreported while the
-    // state file recorded the corpus as A0-only.
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    // An `error` ends the run ONLY if the log shows a fresh run after it. Splitting on every
+    // `error` was my own regression, caught by measurement: the corpus holds 39 errors and only 4
+    // of them end a run. The other 35 are transient operational failures — "Decision cancelled.",
+    // "fetch failed [3 attempts]", "TypeSafe HTTP 520; paused. Retry with Resume." — after which
+    // the very next board carries the SAME floor, ascension and HP. Splitting those produced 63 runs
+    // where 40 exist, 19 of them phantom `unfinished` fragments that the report then listed, and it
+    // truncated `fatalDecisions` death windows because a death's last-5 decisions were cut in half.
+    //
+    // A restart is unambiguous: a new run begins at floor 1. Measured across all 39 errors, the test
+    // `next floor === 1` catches 4 of 4 real restarts and 0 of 35 continuations. Ascension changes
+    // alone catches only 1 of 4, and "floor decreased" is equivalent here because every restart in
+    // this corpus also lands on floor 1 — the conjunction is kept so the test does not depend on
+    // that coincidence.
     //
     // The event is pushed onto the run it ends, so a consumer counting events still sees it.
-    if (e?.kind === 'error' && cur.some(x => x?.kind === 'decision')) { cur.push(e); out.push(cur); cur = []; continue; }
+    const startsFreshRun = e?.kind === 'error'
+      && cur.some(x => x?.kind === 'decision')
+      && (() => {
+        let j = i + 1;
+        while (j < events.length && !events[j]?.state) j++;
+        const next = events[j]?.state?.run;
+        let k = i - 1;
+        while (k >= 0 && !events[k]?.state) k--;
+        const prev = events[k]?.state?.run;
+        if (!next) return false;
+        if (next.floor === 1) return true;
+        return Number.isFinite(prev?.floor) && Number.isFinite(next?.floor)
+          && next.floor < prev?.floor
+          || (prev?.ascension != null && next?.ascension != null && next.ascension !== prev.ascension);
+      })();
+    if (startsFreshRun) { cur.push(e); out.push(cur); cur = []; continue; }
     cur.push(e);
     if (e?.kind === 'run_end') { out.push(cur); cur = []; }
   }
