@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 147
+iteration: 148
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -79,9 +79,22 @@ is the difficulty being too low to detect any of it.**
 
      At 88% A0 fight win rate no improvement is even detectable in principle, which is why items 2
      and 3 both ran out of measurement room. This is the only real blocker and it is not mine.
-  2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
-     Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
-     method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
+  2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. And the
+     reason it cannot be closed is ARITHMETIC, not effort (iter 148):
+
+         closed fights                                242
+         LOSSES (the only events that carry signal)     29
+         distinct mechanics present in a LOSS            27
+         per mechanic: Strength 21 · Vulnerable 11 · Plow 3 · Steam Eruption 3 · Intangible 3
+
+     **Twenty-nine losses spread over twenty-seven mechanics — so the median unmodelled mechanic has
+     ONE loss behind it.** A per-mechanic rate needs ~30+ events to be decidable. At 29 losses per
+     242 fights that is roughly 25x more runs, which is not accumulation, it is a different project.
+
+     So item 2 is not "needs more runs" at this rate. It is **"needs a harder difficulty so there are
+     more losses to explain"** — the same wall as M2, and the same wall as the power-card question
+     and the scorer-aggression question. Every open item reduces to one sentence: the agent wins 88%
+     of fights, so the corpus cannot measure anything that only shows up when the agent loses.
 
   M4 IS CLOSED. Triage of all ten reviews at iteration 147:
     astra 2-5   selection reconstruction (fixed 113), attrition (65-66), the debuff-source condition
