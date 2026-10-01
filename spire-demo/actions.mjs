@@ -119,10 +119,22 @@ export function actionsFor(s) {
     case 'map': {
       // LABEL ENRICHMENT ONLY. Nothing here drops, vetoes, reorders or filters an option, and the
       // candidate count is byte-identical to before. A veto is a DIFFERENT change and is not made:
-      // four of the six elites taken in the recorded run were forced (no alternative existed), a
-      // filter could only have changed 2 of 6 decisions, and none of the five runs ever reached a
-      // boss, so there is no evidence in the corpus that skipping elites is right. Act-1 elite
-      // relics are the main source of scaling damage. Adding the consequence can only inform.
+      // four of the six elites taken in the recorded run were forced (no alternative existed), and a
+      // filter could only have changed 2 of 6 decisions. Act-1 elite relics are the main source of
+      // scaling damage. Adding the consequence can only inform.
+      //
+      // The previous version of this comment also claimed "none of the five runs ever reached a
+      // boss, so there is no evidence in the corpus that skipping elites is right". Both halves were
+      // stale and a review caught it. The corpus now holds boss kills, an Act 2 floor 31 death, and
+      // a measured elite record.
+      //
+      // What the record actually says, from the tested fight-outcome module rather than from a
+      // summary: 20 elite fights, 12 won, 8 lost - 60%, not the 32% the review quoted. Elites are
+      // not close to unwinnable. The measured pattern is ENTRY, not the fight: 12 of 20 elite
+      // fights were entered at 20 HP or less, against a monster win rate near 92%. So the lever is
+      // not "elites are bad" and the fix is not a blanket veto, which the forced-elite count rules
+      // out; it is the state the agent is in when it commits. That is a claim worth measuring
+      // before acting on, and it is not what either this comment or the review said.
       const health = hp(s);
       for (const n of s.map?.next_options ?? []) {
         const risk = routeAhead(n);
