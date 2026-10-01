@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 144
+iteration: 146
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -14,7 +14,7 @@ M1 INSTRUMENT  measurement precedes every change              DONE
 M2 EVIDENCE    comparable difficulty signal                    BLOCKED — needs an A10 run
                  Loop's remaining mode is ACCUMULATING the runs item 2 needs, not searching.
 M3 DECISION     override question answered                     DONE — converged to null
-M4 READ         frontier reviews converted                     5 of 10 read
+M4 READ         frontier reviews converted                     6 of 10 read
 M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both verified live)
 
 ## THE NUMBERS THAT MATTER
@@ -41,6 +41,9 @@ not move.** Every lever I can reach is already at its correct value.
   Stun               0.85x across 29 fights — unmodelled, fix SHIPPED, effect modest
   label ambiguity    69% was old code; 7.8% in the last 30 decisions
   astra timing bug   real in code, unreachable — the card is never offered as a candidate
+  deepseek #2 gate    STALE — the review quotes refuseLethalChoice(..., candidates, candidates); the
+                      tree passes rankingByProbability(...) at BOTH call sites (deliberation.mjs 103
+                      and 155). The fix predates the review.
   unoffered blocks   0% — Smoggy makes them unplayable, so declining is correct
   waste punishes powers   0.627 power vs 0.606 skill vs 0.615 attack — flat, story dead
   scorer's aggression    attacks LESS (0.90x), not more; the 61.8% reading was a broken classifier
@@ -52,8 +55,14 @@ not move.** Every lever I can reach is already at its correct value.
 M3's randomised A/B converged to null (230 -> 246 -> 379 samples, +0.121 -> -0.121 -> -0.004) after
 the observational estimate said -1.501, which was turn depth. Item 4 found a real behavioural gap whose
 cause turned out to be correct behaviour with no measurable cost. Three of four review headlines
-dissolved under measurement. The consistent result is that **almost everything looks like a defect
-until it is measured, and the thing that is left is the difficulty being too low to detect any of it.**
+dissolved under measurement. A FOURTH (deepseek #2) describes a bug that was fixed before the review
+was written: it quotes `refuseLethalChoice(..., candidates, candidates)` and the tree passes
+`rankingByProbability(...)` at both call sites. **One real bug, one real bug in the wrong component,
+and two stale** — because a code review is a snapshot and this codebase changes faster than the review
+fleet runs. Every claim has to be checked against the tree AND measured against the corpus.
+
+The consistent result: **almost everything looks like a defect until it is measured, and what is left
+is the difficulty being too low to detect any of it.**
 
 ## WHAT IS OPEN
   1. **Ascension 10 — the blocker, now fully exhausted (iter 143).** Three routes, all closed:
