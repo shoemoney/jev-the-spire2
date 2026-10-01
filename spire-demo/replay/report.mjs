@@ -117,6 +117,16 @@ function calibrationSection(c) {
   console.log(`    exact                     ${n(t.exact)}   (${pct(t.exactRate) ?? 'n/a'})`);
   console.log(`    mean absolute error       ${f(t.meanAbsoluteError)} hp`);
   console.log(`    mean signed error         ${f(t.meanSignedError)} hp   (negative = forecast predicted more damage than landed)`);
+  // Per policy version. This section is the one a reader opens to answer "is the agent's
+  // forecasting getting better", and the figures above average every version that has ever run.
+  // Measured on a single corpus file: 13 versions, pooled exactRate 0.8801, per-version exactRate
+  // 0.739-1.000 and MAE 0.000-1.957. The pooled number moves when the version MIX moves, with no
+  // change in behaviour at all.
+  if (t.byVersion?.length) {
+    console.log(`  BY POLICY VERSION (${t.versions} versions pooled into the figures above):`);
+    for (const v of t.byVersion)
+      console.log(`    ${v.version.padEnd(24)}${String(v.scored).padStart(6)} scored   ${(pct(v.exactRate) ?? 'n/a').padStart(7)} exact   MAE ${f(v.meanAbsoluteError)}`);
+  }
   // The headline. Half the corpus is "predicted 0, 0 landed", which agrees whether or not the
   // planner understood the board, so it is excluded here and kept above.
   const nt = t.nonTrivial;

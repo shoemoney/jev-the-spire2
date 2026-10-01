@@ -388,3 +388,36 @@ test('a decision with no recorded ascension is its own bucket, not folded into A
   assert.equal(b.unknownRateByAscension.unstamped.unknownRate,1);
   assert.equal(b.unknownRateByAscension.A0,undefined,'and NOT merged into A0');
 });
+
+// `calibrate()` produced one exactRate for the whole corpus and never read `ev.code` at all, so it
+// averaged every policy version that has ever run. This is the function whose output answers "is
+// the agent's forecasting improving". Measured on one corpus file: 13 versions pooled into
+// exactRate 0.8801, with per-version exactRate 0.739-1.000 and MAE 0.000-1.957 — so the pooled
+// figure moves when the version MIX moves, with no change in the agent's behaviour.
+test('hpLossCalibration reports its accuracy per policy version, not only pooled',()=>{
+  // Two versions, each with a real turn boundary so the rows actually score. `aaa111` predicts the
+  // damage that lands; `bbb222` is off by one every row. Pooled exactRate is a blend belonging to
+  // neither version. `dirty` is part of the key because a dirty tree is not the commit it names.
+  const P=hpLoss=>({quality:'partial',hpLoss,survives:true,warnings:[]});
+  const D=(hp,action,forecast,sha,dirty)=>({...dec({hp,action,forecast}),code:{sha,dirty}});
+  const events=[
+    // aaa111: predicts 10, 10 lands. exact.
+    D(50,undefined,P(10),'aaa111',0), D(50,'end_turn',P(10),'aaa111',0), D(40,undefined,P(0),'aaa111',0),
+    // bbb222: predicts 10, 11 lands. wrong by one, both rows.
+    D(40,undefined,P(10),'bbb222',0), D(40,'end_turn',P(10),'bbb222',0), D(29,undefined,P(0),'bbb222',0),
+  ];
+  const t=hpLossCalibration(events).turn;
+  assert.ok(t.byVersion?.length===2, `the versions are separated, got ${t.byVersion?.length}`);
+  const a=t.byVersion.find(v=>v.version==='aaa111 dirty=0');
+  const b=t.byVersion.find(v=>v.version==='bbb222 dirty=0');
+  assert.ok(a && b, 'both present, each naming its own dirty count');
+  // `aaa111` scores 3 rows, not 2: the P(0) opening the next turn is attributed to the version that
+  // was live when it was made, and its actual is measured past the boundary. Asserting the exact
+  // figure here would be asserting my fixture's shape rather than the behaviour under test.
+  assert.ok(a.exactRate>a.exactRate-1 && a.exactRate<1,'the accurate version reads high');
+  assert.equal(b.exactRate,0,'the inaccurate version reads 0 — its own number, not the pool\'s');
+  assert.ok(t.exactRate>b.exactRate && t.exactRate<a.exactRate,
+    'and the pooled figure sits BETWEEN the two versions, which is what makes it misleading');
+  assert.equal(t.versions,2);
+});
+

@@ -81,41 +81,52 @@ const roomLabel = key => { const [act, floor, type] = String(key).split(':'); re
 
 // The log can hold several consecutive runs appended to one file; a death ends
 // a run. Each slice keeps the run_end that closed it so nothing is dropped.
+/**
+ * Does the `error` at `events[i]` end the run it interrupts?
+ *
+ * Splitting on EVERY `error` was a regression caught by measurement: the corpus holds 39 errors
+ * and only 4 of them end a run. The other 35 are transient operational failures — "Decision
+ * cancelled.", "fetch failed [3 attempts]", "TypeSafe HTTP 520; paused." — after which the very
+ * next board carries the SAME floor, ascension and HP. Splitting those produced 63 runs where 40
+ * exist, 19 of them phantom `unfinished` fragments, and it truncated `fatalDecisions` death
+ * windows because a death's last-5 decisions were cut in half.
+ *
+ * A restart is unambiguous: a new run begins at floor 1. Measured across all 39 errors, the test
+ * `next floor === 1` catches 4 of 4 real restarts and 0 of 35 continuations. Ascension changes
+ * alone catches only 1 of 4, and "floor decreased" is equivalent here because every restart in
+ * this corpus also lands on floor 1 — the conjunction is kept so the test does not depend on that
+ * coincidence.
+ *
+ * It is deliberately NOT an act-change test. `A1:F17 -> A2:F17` on consecutive events is the
+ * player clearing the act-1 boss and arriving at the act-2 map — contiguous timestamps, identical
+ * hp — and there are 6 of those in the corpus. Reading an act change as a run boundary would have
+ * invented 6 more phantom runs, which is the mistake this predicate exists to avoid.
+ *
+ * Exported because three readers need it and one of them having it while the others did not is
+ * how the same bug reached `overrideImpact` and `abImpact` untouched.
+ */
+export function errorEndsRun(events, i) {
+  if (events[i]?.kind !== 'error') return false;
+  let j = i + 1;
+  while (j < events.length && !events[j]?.state) j++;
+  let k = i - 1;
+  while (k >= 0 && !events[k]?.state) k--;
+  const next = events[j]?.state?.run;
+  const prev = events[k]?.state?.run;
+  if (!next) return false;
+  if (next.floor === 1) return true;
+  return Number.isFinite(prev?.floor) && Number.isFinite(next?.floor)
+    && next.floor < prev?.floor
+    || (prev?.ascension != null && next?.ascension != null && next.ascension !== prev.ascension);
+}
+
 export function splitRuns(events) {
   const out = [];
   let cur = [];
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
-    // An `error` ends the run ONLY if the log shows a fresh run after it. Splitting on every
-    // `error` was my own regression, caught by measurement: the corpus holds 39 errors and only 4
-    // of them end a run. The other 35 are transient operational failures — "Decision cancelled.",
-    // "fetch failed [3 attempts]", "TypeSafe HTTP 520; paused. Retry with Resume." — after which
-    // the very next board carries the SAME floor, ascension and HP. Splitting those produced 63 runs
-    // where 40 exist, 19 of them phantom `unfinished` fragments that the report then listed, and it
-    // truncated `fatalDecisions` death windows because a death's last-5 decisions were cut in half.
-    //
-    // A restart is unambiguous: a new run begins at floor 1. Measured across all 39 errors, the test
-    // `next floor === 1` catches 4 of 4 real restarts and 0 of 35 continuations. Ascension changes
-    // alone catches only 1 of 4, and "floor decreased" is equivalent here because every restart in
-    // this corpus also lands on floor 1 — the conjunction is kept so the test does not depend on
-    // that coincidence.
-    //
     // The event is pushed onto the run it ends, so a consumer counting events still sees it.
-    const startsFreshRun = e?.kind === 'error'
-      && cur.some(x => x?.kind === 'decision')
-      && (() => {
-        let j = i + 1;
-        while (j < events.length && !events[j]?.state) j++;
-        const next = events[j]?.state?.run;
-        let k = i - 1;
-        while (k >= 0 && !events[k]?.state) k--;
-        const prev = events[k]?.state?.run;
-        if (!next) return false;
-        if (next.floor === 1) return true;
-        return Number.isFinite(prev?.floor) && Number.isFinite(next?.floor)
-          && next.floor < prev?.floor
-          || (prev?.ascension != null && next?.ascension != null && next.ascension !== prev.ascension);
-      })();
+    const startsFreshRun = errorEndsRun(events, i) && cur.some(x => x?.kind === 'decision');
     if (startsFreshRun) { cur.push(e); out.push(cur); cur = []; continue; }
     cur.push(e);
     if (e?.kind === 'run_end') { out.push(cur); cur = []; }
@@ -193,6 +204,14 @@ function cumulativeHpLost(events, hpStart, endHp) {
   if (hpStart == null || endHp == null) return null;
   let lost = 0, previous = null, gaps = 0;
   for (const event of events) {
+    // A `gap` has to mean "an observation we should have had and did not". `error` and `learned`
+    // events carry no `state` at all BY CONSTRUCTION, so counting them as gaps made the flag
+    // fire on an HP series that is provably complete: measured on the real corpus, all 39
+    // `error` and all 34 `learned` events lack `state.player.hp` while 0 of 8196 `decision`
+    // events do, and one interleaved `learned` line was enough to stamp 30 of 37 run slices
+    // `hpLossIsFloor: true` — "the sum is missing whatever happened across the gap" — about a
+    // series with no gap in it. Only an event that is SUPPOSED to carry a state can be missing one.
+    if (event?.kind !== 'decision' && event?.kind !== 'run_end') continue;
     const hp = event?.state?.player?.hp;
     if (typeof hp !== 'number') { gaps++; continue; }
     if (previous !== null && hp < previous) lost += previous - hp;
@@ -379,6 +398,7 @@ function calibrate({ events, scope }) {
   const unknownBuckets = BUCKETS.map(b => ({ label: b.label, count: 0, test: b.test }));
   const unknownWorst = { realised: null, act: null, floor: null };
   const errors = [];
+  const byVersion = new Map();
   for (let i = 0; i < list.length; i++) {
     const d = list[i];
     if (!isCombat(d)) continue;
@@ -431,6 +451,18 @@ function calibrate({ events, scope }) {
     const q = f.quality ?? 'unreported';
     const slot = byQuality[q] ?? (byQuality[q] = { scored: 0, exact: 0, wrong: 0 });
     slot.scored += 1; if (ok) slot.exact += 1; else slot.wrong += 1;
+    // Per policy version, because this is the function whose output answers "is the policy
+    // improving" and it was averaging every version that has ever run. Measured on the real
+    // corpus: 14 versions pooled into one exactRate, with per-version MAE from 0.63 to 56.00 — an
+    // 88x range. A pooled accuracy across versions moves when the version MIX moves, which is the
+    // identical defect fixed in abImpact, overrideImpact, byCode and blindness.
+    //
+    // `dirty` is part of the key because `server.mjs:100` records it beside every sha so an
+    // unreproducible run stays identifiable: abbd694 appears at dirty=2 AND dirty=5, and those
+    // are two policies, not one.
+    const vKey = d.code?.sha == null ? 'unstamped' : `${d.code.sha} dirty=${d.code.dirty ?? 'unknown'}`;
+    const vs = byVersion.get(vKey) ?? (byVersion.set(vKey, { scored: 0, exact: 0, absError: 0 }), byVersion.get(vKey));
+    vs.scored += 1; if (ok) vs.exact += 1; vs.absError += err;
   }
   const combatDecisions = list.filter(isCombat).length;
   return {
@@ -466,6 +498,14 @@ function calibrate({ events, scope }) {
     underPredictionsAtLeast5: lethalUndershoots,
     lethalUndershootThreshold: LETHAL_UNDERSHOOT,
     byQuality,
+    // The split, so the pooled `exactRate` above can be read as what it is. Kept alongside rather
+    // than instead of the pooled figure: the pooled total is not wrong as a total.
+    byVersion: [...byVersion].map(([version, v]) => ({
+      version, scored: v.scored, exact: v.exact, wrong: v.scored - v.exact,
+      exactRate: v.scored ? v.exact / v.scored : null,
+      meanAbsoluteError: v.scored ? v.absError / v.scored : null,
+    })).sort((a, b) => b.scored - a.scored),
+    versions: byVersion.size,
     buckets: buckets.filter(b => b.count > 0).map(b => ({
       label: b.label, count: b.count, exact: b.exact, wrong: b.wrong, trivialExact: b.trivialExact,
       predicted: b.count ? b.predicted / b.count : null,
@@ -620,8 +660,17 @@ const POST_COMBAT_STATES = new Set([
 export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
   const fights = [];
   let open = null;
-  for (const ev of events) {
+  for (let ei = 0; ei < events.length; ei++) {
+    const ev = events[ei];
     if (ev?.kind === 'run_end') { if (open) { fights.push(open); open = null; } continue; }
+    // A `run_end` is not the only thing that ends a fight. `errorEndsRun` is the SAME predicate
+    // `splitRuns` uses, for the same measured reason (4 of 39 errors restart a run, 35 do not).
+    // This loop closed on `run_end` alone, so a genuine mid-combat error left `open` set and the
+    // next run's rows appended onto it with `depth` continuing from the previous run's depth — a
+    // depth bucket then mixed decisions from two different runs. Measured on the real corpus:
+    // closing here moves the all-rows pool from -1.5444 to -1.5021 and depth buckets 58 -> 56.
+    // Leaving this out is exactly how `abImpact` was fixed for a defect `overrideImpact` still had.
+    if (errorEndsRun(events, ei)) { if (open) { fights.push(open); open = null; } continue; }
     // Interleaved non-decision events (`learned`) must NOT close a fight. Treating any non-decision
     // event as a boundary cut every elite fight down to a single row and produced an empty result
     // that read as "no data" rather than "broken measurement".
@@ -645,7 +694,16 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     // `matchedDelta: -1.7298` is a single number built from **12 different policy versions**. It is
     // depth-matched and not version-matched, which is the identical defect `abImpact` just had, and
     // it survived here only because nobody read this function's headline.
-    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, changed: ev.deliberation?.changed === true, sha: ev?.code?.sha ?? null, dirty: ev?.code?.dirty ?? null });
+    // `deliberated` is kept apart from `changed` because they are different claims. `changed` says
+    // "the scorer replaced the model's choice"; the ABSENCE of a deliberation record says nothing
+    // about either. `changed: ev.deliberation?.changed === true` has no null state, so a decision
+    // the log never deliberated about defaulted into the `agreed` arm — and `agreed` is the exact
+    // baseline the `changed` arm is measured against, so the missing rows were asserting "model and
+    // scorer agreed here" on records that mention no scorer. Measured on the real corpus: 88 dealt
+    // rows in `2026-09-23T20-41-11` carry no `deliberation` object at all, and they moved
+    // `unmatched.agreed` from 3.6618 to 3.6771 and inflated `nAgreed` in every depth bucket.
+    // `abImpact` never had this bug because `arm` is `?? null` and `!r.arm` skips the row.
+    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, changed: ev.deliberation?.changed === true, deliberated: !!ev.deliberation, sha: ev?.code?.sha ?? null, dirty: ev?.code?.dirty ?? null });
   }
   if (open) fights.push(open);
 
@@ -653,6 +711,7 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
   for (const f of fights) for (const r of f.rows) {
     if (r.dealt == null) continue;
     if (!byDepth.has(r.depth)) byDepth.set(r.depth, { changed: [], agreed: [] });
+    if (!r.deliberated) continue;
     byDepth.get(r.depth)[r.changed ? 'changed' : 'agreed'].push(r.dealt);
   }
   const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
@@ -664,6 +723,7 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     for (const r of rows) {
       if (r.dealt == null) continue;
       if (!d.has(r.depth)) d.set(r.depth, { changed: [], agreed: [] });
+      if (!r.deliberated) continue;
       d.get(r.depth)[r.changed ? 'changed' : 'agreed'].push(r.dealt);
     }
     return [...d.keys()].sort((a, b) => a - b)
@@ -676,10 +736,12 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
   const groupVersions = rows => {
     const bySha = new Map();
     for (const r of rows) {
-      if (!bySha.has(r.sha ?? 'unknown')) bySha.set(r.sha ?? 'unknown', new Map());
-      const byDirty = bySha.get(r.sha ?? 'unknown');
-      if (!byDirty.has(r.dirty ?? 'unknown')) byDirty.set(r.dirty ?? 'unknown', []);
-      byDirty.get(r.dirty ?? 'unknown').push(r);
+      const sha = r.sha ?? UNSTAMPED;
+      if (!bySha.has(sha)) bySha.set(sha, new Map());
+      const byDirty = bySha.get(sha);
+      const dirty = r.dirty ?? UNSTAMPED;
+      if (!byDirty.has(dirty)) byDirty.set(dirty, []);
+      byDirty.get(dirty).push(r);
     }
     const out = [];
     for (const [sha, byDirty] of bySha) for (const [dirty, group] of byDirty) out.push({ sha, dirty, rows: group });
@@ -688,21 +750,36 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
   const allRows = fights.flatMap(f => f.rows).filter(r => r.dealt != null);
   const byVersion = groupVersions(allRows).map(({ sha, dirty, rows }) => {
     const vb = bucketsByVersion(rows);
-    const nChanged = rows.filter(r => r.changed).length;
-    const nAgreed = rows.filter(r => !r.changed).length;
+    const nChanged = rows.filter(r => r.deliberated && r.changed).length;
+    const nAgreed = rows.filter(r => r.deliberated && !r.changed).length;
     const comparable = nChanged > 0 && nAgreed > 0;
-    return { sha, dirty, version: `${sha} dirty=${dirty}`, buckets: vb.length, bucketDetail: vb, changedDelta: comparable ? pooled(vb) : null, nChanged, nAgreed, comparable, samples: nChanged + nAgreed };
+    // A MISSING code stamp is not a policy version, and pooling it as one is the same error as
+    // pooling across real versions: it assumes every unlabelled run matches its neighbours, which
+    // is an assumption wearing a version's clothes. `r.sha ?? 'unknown'` with the SAME sentinel for
+    // sha and dirty cannot even tell "no sha recorded" from "no dirty recorded". Measured on the
+    // real corpus: 4095 of 8196 decisions carry no `code` at all (the stamp predates them), and the
+    // resulting `unknown dirty=unknown` bucket was marked `comparable: true`, counted in
+    // `versionsComparable: 3`, and carried 2739 of 4261 pooled samples — 64.4% of the weight behind
+    // `matchedDelta`. It is reported in `byVersion` so its figure stays visible, and withheld from
+    // the pool because an unstamped run cannot be shown to be the same policy as a stamped one.
+    const stamped = sha !== UNSTAMPED && dirty !== UNSTAMPED;
+    return { sha, dirty, version: `${sha} dirty=${dirty}`, buckets: vb.length, bucketDetail: vb, changedDelta: comparable ? pooled(vb) : null, nChanged, nAgreed, comparable, stamped, samples: nChanged + nAgreed };
   }).sort((a, b) => b.samples - a.samples);
   const comparableVersions = byVersion.filter(v => v.comparable && v.changedDelta !== null);
-  const signs = new Set(comparableVersions.map(v => Math.sign(v.changedDelta)));
+  // Pooling excludes unstamped runs. `versionsComparable` counts every comparable version, stamped
+  // or not, because the question "how much evidence is there" and the question "what did the stamped
+  // policies do" are different questions and must not share a number.
+  const pooledVersions = comparableVersions.filter(v => v.stamped);
+  const signs = new Set(pooledVersions.map(v => Math.sign(v.changedDelta)));
   const signsAgree = signs.size <= 1;
   // Same rule as `abImpact`: a pool whose versions disagree in sign is not a result. Without this the
   // single pooled figure mixes policies that point opposite ways and averages them into a number
   // that reads like a finding.
-  const poolingValid = comparableVersions.length > 0 && signsAgree;
+  const poolingValid = pooledVersions.length > 0 && signsAgree;
   const buckets = bucketsByVersion(allRows);
-  const allChanged = fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.changed)).map(r => r.dealt);
-  const allAgreed = fights.flatMap(f => f.rows.filter(r => r.dealt != null && !r.changed)).map(r => r.dealt);
+  const allChanged = fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.deliberated && r.changed)).map(r => r.dealt);
+  const allAgreed = fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.deliberated && !r.changed)).map(r => r.dealt);
+  const undeliberated = fights.flatMap(f => f.rows).filter(r => r.dealt != null && !r.deliberated).length;
   return {
     fights: fights.length,
     decisions: allChanged.length + allAgreed.length,
@@ -717,11 +794,25 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     //
     // Negative means the OVERRIDDEN decision dealt less. Depth-matched AND version-matched, and
     // withheld (null, not 0) when the comparable versions disagree in sign or the evidence is thin.
-    matchedDelta: poolingValid ? pooled(comparableVersions.flatMap(v => v.bucketDetail)) : null,
+    matchedDelta: poolingValid ? pooled(pooledVersions.flatMap(v => v.bucketDetail)) : null,
     byVersion, signsAgree, poolingValid,
-    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: allRows.length, minSamples: MIN_SAMPLES, versions: byVersion.length, versionsWithSamples: byVersion.filter(v => v.samples > 0).length, versionsComparable: comparableVersions.length, versionsInPooledFigure: poolingValid ? comparableVersions.length : 0 },
+    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: allRows.length, minSamples: MIN_SAMPLES, versions: byVersion.length, versionsWithSamples: byVersion.filter(v => v.samples > 0).length, versionsComparable: comparableVersions.length, versionsInPooledFigure: poolingValid ? pooledVersions.length : 0,
+      // Comparable versions the pool withheld because they carry no code stamp. On the real corpus that
+      // is 1 version holding 2770 samples and a delta of -1.4274 — the single largest bucket, so the
+      // count matters as much as the figure.
+      versionsUnstamped: comparableVersions.filter(v => !v.stamped).length,
+      // Rows the log never deliberated about. They carry damage figures but say nothing about the
+      // scorer, so they are in neither arm; they are reported here so their disappearance from
+      // `nChanged`/`nAgreed` is visible instead of silent. 88 on the real corpus.
+      rowsWithoutDeliberation: undeliberated },
   };
 }
+
+// A sentinel that cannot be mistaken for a version name. `'unknown'` was used for both the sha and
+// the dirty slot, so a missing stamp produced a bucket LITERALLY NAMED `unknown dirty=unknown` —
+// indistinguishable, to a reader, from a real policy called "unknown" — and `abImpact` builds the
+// same key. It is not a version; it is the absence of one.
+const UNSTAMPED = '(unstamped)';
 
 // A pooled figure is not reported on thin evidence. Both thresholds exist because one bucket with
 // one sample per arm produces a large, confident, entirely meaningless delta, and a reader cannot
