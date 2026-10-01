@@ -85,6 +85,16 @@ export function splitRuns(events) {
   const out = [];
   let cur = [];
   for (const e of events) {
+    // An `error` event ends the run it interrupts. Measured on the real corpus: one `error` at
+    // floor 3 / 64 HP is followed by a fresh run at floor 1 / 60 HP with a DIFFERENT ascension, and
+    // splitting only on `run_end` fused the two into one 190-event "run" — a run that gained 4 HP,
+    // went backwards two floors, and changed difficulty mid-flight. None of that is possible in a
+    // run, and every per-run figure derived from it (outcome, final floor, ascension) was taken
+    // from the SECOND run's last screen. That is how 37 Ascension-10 fights went unreported while the
+    // state file recorded the corpus as A0-only.
+    //
+    // The event is pushed onto the run it ends, so a consumer counting events still sees it.
+    if (e?.kind === 'error' && cur.some(x => x?.kind === 'decision')) { cur.push(e); out.push(cur); cur = []; continue; }
     cur.push(e);
     if (e?.kind === 'run_end') { out.push(cur); cur = []; }
   }

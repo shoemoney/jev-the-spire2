@@ -297,3 +297,29 @@ test('no metric invents a number where the log recorded none',()=>{
   assert.equal(t.meanAbsoluteError,null);assert.equal(t.meanSignedError,null);
   assert.equal(fatalDecisions([])[0],undefined);
 });
+
+// An `error` event ends the run it interrupts, and splitting only on `run_end` fused two of them.
+// Measured on the real corpus: an error at floor 3 / 64 HP is followed by a fresh run at floor 1 /
+// 60 HP at a DIFFERENT ascension. Fused, that became one 190-event "run" which gained 4 HP, went
+// backwards two floors and changed difficulty mid-flight — none of which a run can do. Every
+// per-run figure was then read off the SECOND run's last screen, so the Ascension-10 half of the
+// file was reported as whatever the later A3 run happened to say.
+test('an error event ends the run it interrupts, so the next run is not fused onto it',()=>{
+  const events=[
+    dec({hp:64,floor:3,ascension:10}), dec({hp:64,floor:3,ascension:10,action:'end_turn'}),
+    {kind:'error',time:'2026-01-01T00:00:30.000Z',message:'bridge timed out'},
+    dec({hp:60,floor:1,ascension:3}), end({hp:0,floor:14,ascension:3}),
+  ];
+  assert.equal(splitRuns(events).length,2,'two runs, not one 5-event run');
+  const first=summarizeRun(splitRuns(events)[0]);
+  assert.equal(first.ascension,10,'the interrupted run keeps ITS OWN ascension, not the next run"s');
+  assert.equal(first.finalFloor,3,'and its own floor');
+  assert.equal(first.outcome,'unfinished','an error is not a death and never becomes a win');
+});
+
+// The event belongs to the run it ended, so a consumer counting events does not lose it.
+test('the error event is kept on the run it ended rather than discarded',()=>{
+  const events=[dec({hp:64,floor:3}),{kind:'error',message:'x'},dec({hp:60,floor:1}),end({hp:0,floor:9})];
+  const runs=splitRuns(events);
+  assert.equal(runs[0].filter(e=>e.kind==='error').length,1,'retained, not dropped');
+});
