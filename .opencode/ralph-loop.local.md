@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 143
+iteration: 144
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -12,6 +12,7 @@ again and the rules below are crowded out. Condensing is an iteration's work, no
 ## PLAN
 M1 INSTRUMENT  measurement precedes every change              DONE
 M2 EVIDENCE    comparable difficulty signal                    BLOCKED — needs an A10 run
+                 Loop's remaining mode is ACCUMULATING the runs item 2 needs, not searching.
 M3 DECISION     override question answered                     DONE — converged to null
 M4 READ         frontier reviews converted                     5 of 10 read
 M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both verified live)
