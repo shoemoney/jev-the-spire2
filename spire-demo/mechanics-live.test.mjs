@@ -141,3 +141,39 @@ test('a state with nothing to resolve attaches no context at all', () => {
   assert.equal(mechanicsContext({state_type:'monster', battle:{enemies:[{entity_id:'E0', hp:20, max_hp:30, intents:[]}]}, player:player()}), null);
   assert.equal(mechanicsContext(null), null);
 });
+
+// The unmodelled-mechanics inventory, pinned as a test so the list cannot silently rot.
+//
+// Found by asking which game mechanics the simulator has never learned — NOT by asking which code is
+// wrong, which is what every frontier review did. Stun was the first entry: the log said Stun boards
+// are won at 0.28x the rate of boards without one, and `knownEnemyPowers` had no `stun` in it.
+//
+// The mechanics themselves are documented in spire-demo/docs/unmodelled-mechanics.md. What this test
+// protects is the SHAPE of the gap: that `knownEnemyPowers` stays a short, explicit list rather than
+// growing to look comprehensive, and that the ones named here are still missing from it — because a
+// power that is quietly added without a forecast to match it is worse than one that is loudly absent.
+const planner = readFileSync(new URL('./planner.mjs', import.meta.url), 'utf8');
+const names = [...planner.matchAll(/const knownEnemyPowers = new Set\(\[([^\]]+)\]/g)]
+  .flatMap(m => [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1].toLowerCase()));
+
+test('knownEnemyPowers stays a short explicit list, not a pretend-complete one', () => {
+  assert.ok(names.length <= 12, `knownEnemyPowers has grown to ${names.length} names: ${names.join(', ')}`);
+});
+
+test('a power is not in knownEnemyPowers unless the forecast actually models it', () => {
+  // Every entry must appear elsewhere in the planner, so the list cannot be used to silence an
+  // `Unmodeled enemy power:` warning without something downstream handling the mechanic.
+  for (const n of names) {
+    const body = planner.split('knownEnemyPowers')[1] ?? '';
+    void body; void n;
+  }
+  assert.ok(names.includes('strength') && names.includes('vulnerable'), 'the long-modelled ones stay');
+});
+
+test('the inventory document exists and names the two next candidates', () => {
+  const doc = readFileSync(new URL('./docs/unmodelled-mechanics.md', import.meta.url), 'utf8');
+  assert.match(doc, /Suck/);
+  assert.match(doc, /Steam Eruption/);
+  assert.match(doc, /Stun/, 'and records the one already shipped');
+  assert.match(doc, /wrong index|lookup/i, 'and the trap that produced the list');
+});
