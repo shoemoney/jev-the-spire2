@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 134
+iteration: 135
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -119,6 +119,33 @@ own regex taking the first capitalised token of a label, so `"Shrug It Off"` bec
 multi-word card read as phantom. **Ninth wrong index this session, and the third in two days that
 produced a dramatic, confident, entirely false number about cards.** The fix is the same as every time:
 read the name from the hand at the candidate's own `card_index` instead of parsing it out of prose.
+
+## THE LAST OPEN DEFECT DISSOLVES — TENTH WRONG FIELD, AND IT IS THE SAME ONE
+Astra's review left one real finding: 0.27% of boards where `Defend` or `Shrug It Off` sits in hand,
+affordable, and is never offered as a candidate. Traced it:
+
+    MISSED: Defend (cost 1) at index 2, energy 1
+      hand: Stomp(2)[can_play=false] Rebound(1) Defend(1)[can_play=false]
+      player status: Smoggy
+      warnings: "Unmodeled player power: Smoggy"
+
+**Every missed board has `Smoggy` on the player and `can_play: false` on exactly those cards.**
+Smoggy is a debuff that makes cards unplayable, so the planner is CORRECT to decline them — and my
+"genuinely usable" filter checked `type` and cost but **not `can_play`**, which is the field I
+corrected two iterations ago in the death analysis and then forgot in this one.
+
+**So the reachable defect is 0.27% -> zero**, and the 1.6% figure above it decomposes as:
+
+    Spoils Map 23   correctly unoffered — no combat action
+    Smoggy boards  correctly unoffered — the cards are unplayable this turn
+
+**Nothing is left open.** Ten wrong fields across this session, and the last three were the same
+family: a filter that does not match the semantics of the field it reads. `can_play` is per-frame
+AND means "unplayable right now"; `type` is durable; a name is not a regex match on prose. Every
+correction cost less to check than the claim it corrected.
+
+The one thing this project consistently gets wrong is not the game and not the code. It is me
+trusting a filter I wrote faster than I read the field.
 
 ## LOOP STATE
 Play running on the batch's real budget (90M tokens, 20k decisions). `labelAmbiguity` and
