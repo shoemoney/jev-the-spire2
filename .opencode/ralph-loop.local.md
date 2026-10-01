@@ -1,7 +1,8 @@
 ---
 active: true
-iteration: 136
+iteration: 137
 maxIterations: 100000
+sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 Autonomous operation. Play, measure, improve the agent. Keep the loop and the batch running.
@@ -11,7 +12,7 @@ past ~90 lines it is being used as a diary again and the rules at the bottom are
 ## PLAN
 M1 INSTRUMENT  measurement precedes every change              DONE
 M2 EVIDENCE    comparable difficulty signal                    BLOCKED — needs an A10 run
-M3 DECISION     override question answered                     DONE — scorer mildly better, do not disable
+M3 DECISION     override question answered                     DONE — no measurable difference
 M4 READ         frontier reviews converted                     5 of 10 read
 M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both verified live)
 
@@ -21,7 +22,7 @@ M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both
   A0 best run             33    The Insatiable (Act 2 boss), 42% of it taken off
   boss record             10/21 (48%)  flat
   wins                    0     in every recorded run
-  A/B                     230 samples, scorer +0.12 damage/decision (shrinking as n grows)
+  A/B                     379 samples, scorer -0.004 damage/decision — CONVERGED TO NULL
   tests                   610 green
 
 **The honest headline: 135+ iterations of correct, measured, verified fixes and the median run did
@@ -41,12 +42,37 @@ not move.** Every lever I can reach is already at its correct value.
   astra timing bug   real in code, unreachable — the card is never offered as a candidate
   unoffered blocks   0% — Smoggy makes them unplayable, so declining is correct
 
+## M3 FINAL: THE A/B CONVERGED, AND IT CONVERGED TO NOTHING
+  230 samples (iter 105)  modelDelta  +0.121
+  246 samples (iter 116)  modelDelta  -0.121
+  379 samples (iter 137)  modelDelta  -0.004     <- 35 depths, both arms
+
+**Randomised, depth-matched, interleaved within the same fights: the scorer's choice and the model's
+own choice deal the same damage per decision.** The progression is a clean convergence to null rather
+than a noisy wobble, which is what a real null looks like and is not what a real effect looks like at
+this sample size.
+
+**So the answer to M3 is stronger than "mildly better": there is no measurable difference**, and the
+factor-scoring layer is not earning its complexity on this metric. The observational estimate that
+started all of this said -1.501; it was turn depth, and correcting for it moved the sign twice before
+reaching zero.
+
+Careful about what this does NOT say: this is damage per decision. The scorer might still help on
+survival, on tempo, or on decisions whose damage is zero either way, and nothing here measures those.
+What it does say is that the layer cannot be justified on damage, and the next thing worth measuring
+is an axis where it might actually differ.
+
+**This is what the randomised arm was built for.** The observational number was confidently wrong by 1.5
+damage/decision and would have been acted on.
+
 ## WHAT IS OPEN
   1. **Ascension 10** — no reachable menu screen sets it. The primary metric is unmeasurable, and at
      88% on A0 no improvement is even detectable in principle. THIS IS THE ONLY REAL BLOCKER.
-  2. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
+  3. **Unmodelled mechanics** — `spire-demo/docs/unmodelled-mechanics.md`. Stun shipped. Ravenous 335,
      Steam Eruption 207, Ritual 156, Plating 148 are next. Per-power win rate is the prioritisation
      method and most ratios are n<6 noise, so MORE RUNS is the lever, not more analysis.
+  4. **An axis where the scorer might differ at all** — damage is now null, so the scoring layer has
+     to justify itself elsewhere or be simplified. Survival and tempo are the candidates.
 
 ## RULES — earned, not negotiable
 - **A zero from a lookup, and a name from a regex, are both evidence about the lookup.** Ten wrong
