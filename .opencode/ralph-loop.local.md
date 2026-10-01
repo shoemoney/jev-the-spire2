@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 123
+iteration: 124
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -427,6 +427,31 @@ incoming, so ending the turn is choosing among equals rather than a failure.
 The pattern across five: descriptor, move probabilities, deck piles, GAME_DATA keys, and now
 `can_play`. Four of the five were a field that existed, said something, and that I read past.
 **A count that looks like a defect is a claim about the filter before it is a claim about the system.**
+
+## THE PLATEAU, STATED PLAINLY
+  A0 runs ended: 21 · median floor 17 · best 33 · last 12: 17 17 17 4 4 17 5 17 17 17 25 33
+
+**Every fix shipped in the last twenty iterations was correct. None of them made the agent better
+at the game.** The median run is 17 floors and has been 17 floors since iteration 62.
+
+The evidence says why, and it converges from three directions:
+  - the gate is CORRECT on all 31 deaths (no survivor existed to move to)
+  - the agent blocks 9 times in 10 when a block is affordable, and 0 times when one is not
+  - the card picks are neutral at 1.01x the offered rate, and the deck's 24% block share IS the
+    game's own distribution
+
+Every lever I could reach is already at its correct value. The deaths are resource positions the
+game dealt, and the decision layer is doing the right thing with them.
+
+**So the remaining work is not harder, it is blocked.** Two things would change what we can
+conclude, and neither is mine:
+  1. an Ascension 10 run - without it every number here is measured at a difficulty the agent
+     already wins 88% of, and no improvement is even detectable in principle
+  2. a decision about whether the resource layer gets a lens - the one layer with no instrumentation
+     on it, which is where the deaths actually live
+
+I am not going to keep generating hypotheses to fill iterations. The honest state is that the loop
+has reached the end of what it can measure on its own.
 
 ## Loop state
 M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure
