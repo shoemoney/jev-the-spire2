@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 118
+iteration: 119
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -300,6 +300,35 @@ measurement of what they repaired.
 Batch note: two runs are recorded as "timeout waiting for death" - those are the card_select stalls
 before the deadlock fix, correctly reported rather than hidden. The batch recovered and adopted the
 live run, which is the adopt-in-progress path working.
+
+## M4 - LABEL AMBIGUITY: A REAL CORRELATION THAT THE CURRENT CODE HAS MOSTLY FIXED
+Revisited iteration 70's observation (60 near-identical "Strike -> Wriggler -> Setup Strike" entries)
+with the better tooling now in place:
+
+  decisions with 5+ candidates                        3308
+    with a REPEATED label among the candidates         2281  (69.0%)
+    candidates repeating another candidate's label   19959/56278  (35.5%)
+  chosen beyond position 10 : 687, of which on a repeated-label board  546  (79.5%)
+
+The plans are **0.0% duplicated** (iteration 70, measured on the same corpus), so the label is
+discarding a distinction the state genuinely makes, and deep picks concentrate on exactly those
+boards. A correlation with an obvious mechanism: a model cannot compare sixty entries that all read
+the same. Then the same discipline as iteration 63, applied to my own finding:
+
+    ALL history          : 35.3% of candidates repeat a label
+    stamped runs only    : 33.9%   (n=1079)
+    the most recent 400 : 28.1%
+    the last 30         :  7.8%
+
+**It is decaying, and my 69% was dominated by old runs** - the historical-code trap for the seventh
+time this session. The 79.5% deep-pick correlation is computed on the same pooled corpus and is
+inflated the same way, so it is not being carried forward as a finding. What survives is narrow: label
+duplication was real, correlated with deep reading, and is largely resolved in the current code.
+
+`labelAmbiguity` (candidates, distinctLabels, repeatedLabels, repeatedCandidates) is now recorded per
+decision so the trend is monitorable rather than reconstructed from a corpus that spans dozens of code
+versions. The LABEL was deliberately not changed - nothing here is wrong, and whether clearer labels
+would help is unmeasured, and this project has spent a hundred iterations refusing those.
 
 ## Loop state
 M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure

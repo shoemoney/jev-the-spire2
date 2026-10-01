@@ -406,7 +406,24 @@ async function step(token, preview = false) {
       }
       : { present: false, size: null, blocking: null, attacking: null };
 
-    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deckComposition, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, requestStateBytes:view.requestStateBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
+    // LABEL AMBIGUITY, recorded rather than fixed. 69% of decisions with 5+ candidates contain a
+    // repeated label and 35.5% of all candidates are a repeat of another candidate's label, while
+    // the PLANS are 0.0% duplicated - so the label is discarding a distinction the state actually
+    // makes, and 79.5% of picks beyond position 10 land on exactly those boards. That is a
+    // correlation with an obvious mechanism (a model cannot compare sixty entries that all read
+    // "Strike -> Wriggler -> Setup Strike") and it is also a POLICY question, not a bug: nothing
+    // here is wrong, and whether clearer labels would help is unmeasured.
+    //
+    // So the number is recorded and the label is left alone. Changing it would be a ship without a
+    // measurement, and this project has spent a hundred iterations refusing those. One integer per
+    // decision makes the question answerable on the next batch of play.
+    const labelCounts = new Map();
+    for (const c of actions) { const l = String(c?.label ?? ''); labelCounts.set(l, (labelCounts.get(l) ?? 0) + 1); }
+    const labelAmbiguity = actions.length
+      ? { candidates: actions.length, distinctLabels: labelCounts.size, repeatedLabels: [...labelCounts.values()].filter(v => v > 1).length, repeatedCandidates: actions.length - labelCounts.size }
+      : null;
+
+    const event = { kind: 'decision', adviser:result.adviser??null, runAdviser:view.adviser, policy: POLICY_VERSION, ...stamp, memory, deckComposition, labelAmbiguity, deliberation:result.deliberation, attrition:attrition(view.fightAccum), fightAccum:view.fightAccum, requestBytes:view.requestBytes??null, requestPartBytes:view.requestPartBytes??null, requestStateBytes:view.requestStateBytes??null, state: s, chosen, candidates: actions, answer, factors: rawFactors(result.answers), model: result.model, usage: result.usage, latencyMs: view.latencyMs, preview };
     if (token !== generation) { await log({ ...event, outcome: 'cancelled' }); return; }
     if (preview) { await log({ ...event, outcome: 'preview' }); view.message = `Preview: ${chosen.label}`; return; }
     const fresh = await observe();
