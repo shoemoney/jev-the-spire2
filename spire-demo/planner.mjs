@@ -568,7 +568,21 @@ function forecast(m, s) {
   // unmodeled card or an unreadable label each widen what the reading supports,
   // and each is reported rather than absorbed into the number.
   const incomingExact = ceilingKnown && !mismatched && !m.unsupported;
-  const uncertain = lethalTurnRule || (positioningUnknown&&!facingUsable) || m.unsupported || m.deathUnresolved || defeatedEnemies.some(e=>e.deathRules.length) || !parsed;
+  // A living enemy telegraphing STUN means the player loses the NEXT turn, so this attack lands
+  // again before any new block can be raised. The next attack is not visible, and this project
+  // never invents a number it cannot read — so the consequence is not an invented extra incoming
+  // figure, it is the withdrawal of the survival claim: the turn can no longer be shown to be
+  // survivable, so `survives` goes to null and the turn is unscoreable on that axis rather than
+  // confidently wrong.
+  //
+  // Measured cost of leaving it unmodelled: boss fights where the boss telegraphs Stun are won 17%
+  // of the time against 60% without it — a 0.28x ratio, and Ceremonial Beast (Stun + Debuff, 252
+  // HP) is 0 for 3 while Vantom (neither, 173 HP) is 6 for 7. `knownEnemyPowers` had no `stun` in
+  // it and the only Stun in this file was `bossStunned`, the BOSS being stunned by Plow.
+  const enemyStuns = (s.battle?.enemies ?? [])
+    .filter(e => (e.hp ?? 0) > 0)
+    .some(e => (e.intents ?? []).some(i => /^stun$/i.test(i.type ?? '')));
+  const uncertain = lethalTurnRule || (positioningUnknown&&!facingUsable) || m.unsupported || m.deathUnresolved || defeatedEnemies.some(e=>e.deathRules.length) || !parsed || enemyStuns;
   const endTurnCardDamage = m.enemies.some(e=>e.hp>0) ? m.hand.reduce((sum,c)=>sum+(/At the end of your turn, if this is in your Hand, take (\d+) damage/i.test(c.description??'') ? number(c.description,/take (\d+) damage/i) : 0),0) : 0;
   const endTurnCardHpLoss = m.enemies.some(e=>e.hp>0) ? m.hand.reduce((sum,c)=>sum+number(c.description,/At the end of your turn, if this is in your Hand,\s+lose (\d+) HP/i),0) : 0;
   // Two loss figures, never one: what the readable intents prove will land, and
@@ -593,6 +607,7 @@ function forecast(m, s) {
   const scope = turn.turnComplete
     ? `Forecast for a WHOLE turn: this plan plays out the cards worth playing until ${TURN_REASONS[turn.completionReason]}, so the figures below are this turn's end state and not a prefix. A potion still held is a separate decision this plan does not make.`
     : `Forecast for a TRUNCATED prefix, NOT a whole turn: this plan stops early because ${cut[0]}, so ${cut[1]}, and the figures below end the turn at this exact point. Extend it from a fresh observation before treating it as the turn.`;
+  if(enemyStuns)warnings.push('A living enemy telegraphs Stun, so the turn AFTER this one is lost and its attack lands with no new block. That next attack is not visible and is not estimated here, so this forecast does not claim survival: treat any plan here as unable to prove it lives through the pair of turns.');
   if(lethalTurnRule)warnings.push('A visible rule says the enemy taking its turn kills you regardless of ordinary block. Attack-only HP estimates cannot establish survival; prevent that turn using a supported kill or stated interruption.');
   if(positioningUnknown&&!facingUsable)warnings.push('Position-dependent incoming damage is not modeled; targeting can change orientation. Survival is uncertain.');
   if (!parsed) warnings.push(unreadable.length ? `Some incoming attacks could not be read from either the intent label or its description, so this turn has no damage ceiling: ${unreadable.join('; ')}.` : 'Some incoming attacks could not be parsed.');

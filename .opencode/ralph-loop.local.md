@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 127
+iteration: 128
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -526,12 +526,20 @@ modelling gap of exactly the kind the whole knowledge-base effort was supposed t
 three frontier reviews because none of them looked for it, and it is quantified rather than
 suspected.
 
-**Not shipped in the same breath, and that is the discipline.** The fix is well specified — a Stun
-telegraph means the incoming attack recurs before the player can block, so the survival calculation
-has to carry one more enemy turn — but it is a change to the forecast's survival path, which is the
-most safety-critical code in the project, and the affected population is 6 boss fights. A finding
-this good deserves a test that fails before the change, not a plausible patch at the end of a long
-session with a game running.
+**SHIPPED, test-first, one iteration later.** The test went in before the change and FAILED — a Stun
+board was claiming survival — and the control board (a plain 30-damage telegraph, no Stun) was
+asserted to keep its claim, so the change could not be a blanket pessimism.
+
+**The design rule that decided the shape:** this project never invents a number it cannot read. The
+NEXT attack is not visible, so the fix is NOT an invented extra incoming figure — it is the
+WITHDRAWAL of the survival claim. A Stun telegraph sets `uncertain`, so `survives` goes to null and
+the turn is unscoreable on that axis rather than confidently wrong. The warning names the mechanic
+and the consequence: the turn after this one is lost and its attack lands with no new block.
+
+  distinct combat states with a Stun telegraph : 32 of 1801  (1.8%)
+
+**1.8% blast radius**, confined to boards where a living enemy telegraphs Stun. 607 tests green,
+including every pre-existing one — the change is narrow, which is what the control test was for.
 
 **This is the plateau's exception, and it is worth being precise about the difference:** everything
 refuted since iteration 107 was a mechanism I could not observe. This one is observed, isolated to a
