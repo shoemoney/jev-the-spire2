@@ -87,8 +87,28 @@ const CONDITIONS = [
   [/if this is in your hand/i, 'the card stays in hand'],
   [/each time this is played/i, 'the card is replayed'],
 ];
+
+// "Apply Vulnerable" is an EFFECT. "Vulnerable enemies take an additional 25% damage" is a
+// PREREQUISITE. A bare /vulnerable/i on the whole template cannot tell them apart, so Bash,
+// Tremble, Uppercut and Thunderclap - the cards that APPLY Vulnerable - were recorded as requiring
+// an enemy to already be Vulnerable. Inverted semantics on the four cards that make the debuff the
+// rest of the deck cashes in: a deck that never takes the applicator cannot use Colossus, Dominate
+// or Cruelty at all, and the Colossus record ("6 of 9 plays with no enemy Vulnerable") was partly
+// this bug rather than the agent ignoring the card.
+//
+// The discriminator is the verb in the same sentence, not a list of prerequisite phrasings. An
+// enumeration would have to be kept in step with every new card wording, and would miss the next
+// Colossus variant the same way this missed the first one. Measured over the corpus, 20 of the 27
+// sentences mentioning Vulnerable are applications and 7 are genuine prerequisites.
+const APPLYING = /\bapply|applies|applying\b/i;
 function conditionOf(text) {
-  for (const [re, needs] of CONDITIONS) if (re.test(text)) return needs;
+  // Sentence by sentence, because a card's effect and its condition routinely sit in different
+  // sentences: "Deal 6 damage and apply Vulnerable. If the enemy is Vulnerable, hits twice." is one
+  // card with one effect and one prerequisite, and only the second is a condition.
+  for (const sentence of String(text ?? '').split(/(?<=[.!?])\s+|\n/)) {
+    if (APPLYING.test(sentence)) continue;                 // an instruction to apply is not a prerequisite
+    for (const [re, needs] of CONDITIONS) if (re.test(sentence)) return needs;
+  }
   return null;
 }
 
