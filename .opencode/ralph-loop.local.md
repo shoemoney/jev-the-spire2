@@ -128,6 +128,13 @@ with an unfloored reader, and it did not survive its own evidence gate.
 ## RULED OUT — with the number that killed each. Do not re-investigate.
   gate failure       correct on all 31 deaths; no survivor existed to move to
   decision failure   blocks 9-in-10 when affordable, 0-in-10 when not
+                     ^ REOPENED this session: measured on the WHOLE corpus, in all 9 deaths where the
+                     fatal board DID hold a block card, ZERO were affordable. Not "rarely affordable" —
+                       never, 9 of 9. The entry above and the one below are not independent evidence.
+  energy exhaustion  23.8% won fights vs 25.0% lost — indistinguishable
+                     ^ REOPENED: the corpus-wide fatal-board energy histogram is 0 in 27 of 35 deaths,
+                       1 in 3, 2 in 5. A fight lost at ZERO energy is not "indistinguishable" from one
+                       lost with energy in hand; it is a hand that cannot pay for anything.
   energy exhaustion  23.8% won fights vs 25.0% lost — indistinguishable
   deck thinning      24% block share IS the game's distribution; picks neutral at 1.01x
   card-pick bias     none; the game offers 23% block and the agent takes 24%
@@ -145,6 +152,33 @@ with an unfloored reader, and it did not survive its own evidence gate.
   scorer plays no Power  0 of 40 opportunities vs the model's 17 of 65 — real, and defensible:
                            `progress` prices THIS turn, a Power pays off next turn. No measured
                            cost at 88% A0 — the same wall as M2 from a different angle.
+
+## FINDING (this session) — 25 of 35 deaths are a hand that cannot pay for anything
+Measured with the existing tested reader `fatalPosition`, across **all 5 corpus files** — not a
+sample, and not one session's log:
+
+    deaths                     35
+    hand held NO block card    25
+    hand held a block card      9   -> affordable in 0 of 9
+    empty hand                  1
+    fatal-board energy          0 in 27, 1 in 3, 2 in 5
+    agent chose a block on the fatal board   0 of 35
+
+**CONTROL, because a 0 needs one:** the same BLOCKING regex matches "Defend" on **297 of 823**
+ordinary combat decisions in one file (0.361). So the matcher works, and `choseBlock = 0` on every
+fatal board is a real absence and not a broken pattern. This is the file's own rule applied — a zero
+from a lookup is evidence about the lookup.
+
+Two RULED OUT entries are reopened above. "blocks 9-in-10 when affordable, 0-in-10 when not" is
+*consistent* with 0 of 9 affordable, and "energy exhaustion is indistinguishable" is not consistent
+with 27 of 35 deaths happening at zero energy. Neither was wrong on its own data; both were computed
+on an A0-only view that `splitRuns` had silently halved, and this is the same lesson as CORRECTION 4
+arriving through a third door.
+
+**What this is NOT yet:** a mechanism. 25 deaths without a block card is a DECK question — the hand
+holds 3.7 cards and about 1 of them blocks, so a bad draw is common by construction. Whether the
+death is caused by the deck, the draw, or the choice is not answered by this table, and the next
+thing worth measuring is the *drawn hand's* block share on fatal boards against non-fatal ones.
 
 ## CORRECTION 4 (this session) — THE PREMISE WAS WRONG. A10 was always in the corpus.
 **Everything above item 1 rested on "the agent wins 88% of fights, so this corpus cannot measure
