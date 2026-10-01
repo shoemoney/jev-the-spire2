@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 124
+iteration: 125
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -427,6 +427,38 @@ incoming, so ending the turn is choosing among equals rather than a failure.
 The pattern across five: descriptor, move probabilities, deck piles, GAME_DATA keys, and now
 `can_play`. Four of the five were a field that existed, said something, and that I read past.
 **A count that looks like a defect is a claim about the filter before it is a claim about the system.**
+
+## THE RESOURCE LENS, BUILT — AND IT SAYS 0 ENERGY IS NOT WHAT KILLS YOU
+I said the resource layer was the one layer without instrumentation and that building the lens was
+mine to do. So I did. The question it answers: is running out of energy a cause of death or a
+symptom of losing?
+
+  energy present across 4,176 combat decisions
+    0 energy  25.0%   ·  1 energy 23.0%  ·  2 energy 22.9%  ·  3 energy 28.2%  ·  4+ 1.0%
+
+  share of decisions taken at ZERO energy
+    in WON fights  : 24.7%   (199 fights)
+    in LOST fights : 25.9%   ( 28 fights)
+
+  per-FIGHT median zero-energy share, which removes the run-length confound entirely
+    won  : 23.8%
+    lost : 25.0%
+
+**Essentially identical.** The agent reaches zero energy just as often in the fights it wins as in the
+fights it loses, so zero energy is ordinary play and not a death marker. My iteration-109 observation
+that 74% of fatal boards sat at 0 energy was TRUE and NOT DISTINGUISHING — a real number that
+separates nothing, which is the most dangerous kind of finding and the reason it needed the lens
+rather than more staring.
+
+**That completes the accounting on these deaths.** Four candidate mechanisms, all measured, all
+dissolved:
+    gate failure        - correct on all 31, no survivor existed
+    decision failure    - the agent blocks 9 in 10 when it can afford to, 0 in 10 when it cannot
+    energy exhaustion   - 23.8% won fights vs 25.0% lost, indistinguishable
+    deck thinning       - 24% block share IS the game's own distribution, picks are neutral at 1.01x
+
+Nothing observable explains the deaths. That is either an unobserved layer or the game's own
+difficulty at Ascension 0, and I cannot distinguish those from here.
 
 ## THE PLATEAU, STATED PLAINLY
   A0 runs ended: 21 · median floor 17 · best 33 · last 12: 17 17 17 4 4 17 5 17 17 17 25 33
