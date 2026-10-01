@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 112
+iteration: 113
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -165,12 +165,41 @@ stop exactly that, and so turned a wrong-direction walk into a no-op walk.
 Boundary check is now two-sided: skip until this screen is reached, then stop the moment it is left.
 Four tests, one of which is the live `NDeckEnchantSelectScreen` shape.
 
-**Verified false: this is NOT yet fixed in play.** After the fix and a server restart the agent still
-selected and re-selected, and Confirm still did not appear. I cannot close it end to end because
-`/api/status` returns COMPACTED decisions rather than `view.events`, so the reconstruction cannot be
-probed from outside, and the game is on the stuck screen so no new combat data is arriving either.
-Unit-tested and reasoned, NOT proven in situ, and saying so rather than banking a fix I have not
-seen work.
+### IT WAS NOT THE BOUNDARY. IT WAS PARITY.
+Replaying the REAL 76-toggle deadlock through the fixed function (the log holds the raw decision
+events, which is exactly what `selectionState` consumes, so this needed neither the game nor a
+synthetic fixture) showed the boundary fix working and the deadlock intact. All 60 events are selects
+on one screen, the signatures match exactly - and a Set toggled 60 times lands EMPTY. **Parity is a
+deadlock, not a reading.**
+
+The game really did apply every toggle, so "nothing is selected" is a faithful model - and a faithful
+model is what left three `Select` entries on offer and no `Confirm`, forever. Reconstructing the
+state correctly is not the same as getting unstuck.
+
+So a grid that omits `is_selected` and has an ACKNOWLEDGED toggle is now marked `selection_ambiguous`
+and treated as awaiting confirmation, which is the only other truth consistent with "a toggle was
+acknowledged and the screen is still here". `Confirm` leads, and the cards stay offered.
+
+**Verified in play, not just in principle:** the screen advanced NDeckEnchantSelectScreen -> monster
+on the first cycle after the fix, and the agent resumed normal play (End turn, Cinder+, Pact's End,
+Strike). The first version of this fix I recorded as NOT proven; it is now proven, and the thing
+that proved it was replaying the deadlock rather than a fixture.
+
+An existing test did refuse the first attempt, correctly: it guards "never mark the same card
+selected twice", which this change preserves exactly. It asserted object identity incidentally, so it
+now asserts the invariant the comment names - parity still yields no selection - plus the new marker.
+
+### AND THE RESOURCE LENS, FINALLY PRODUCING A NUMBER
+  deckComposition verified on 7 combat boards
+  block share of the DECK: 35/148 = 24%
+
+**24% is the answer to three iterations of chasing this.** Against a 24% block share, a two or three
+card hand has roughly a 40% chance of holding one at all - so the 74% of fatal hands with no block
+card is largely ARITHMETIC, not bad luck and not a decision failure. The deck is thin on defence and
+the hands reflect the deck.
+
+The card-pick question is measurable for the first time, and the next number is whether the agent's
+picks reproduce that 24% or make it worse.
 
 ## M2 EVIDENCE - the binding constraint
 Ascension 10 cannot be set from the bridge: no reachable menu screen exposes a difficulty control,
@@ -216,4 +245,4 @@ M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with lou
 grok read: 5 findings, 2 already fixed by others, 2 shipped, 1 dissolved. reviews 5 of 10
 deckComposition shipped, still awaiting a combat board - the run wedged on a card_select first
 M5 second pass: bounded the auto-resume, verified it now reports a stall instead of absorbing it
-card_select deadlock root-caused and unit-tested, NOT yet verified in play - needs the game clicked
+CARD_SELECT DEADLOCK FIXED AND VERIFIED IN PLAY - play resumed, deckComposition verified at 24% block share

@@ -4,7 +4,7 @@ export function selectionState(state,events=[]){
  const c=state.card_select;
  if(state.state_type!=='card_select'||!c?.cards?.length||c.cards.some(x=>'is_selected' in x))return state;
  const signature=s=>JSON.stringify([s.run?.act,s.run?.floor,s.card_select?.prompt,s.card_select?.cards?.map(x=>[x.index,x.id,x.name])]);
- const key=signature(state),selected=new Set();
+ const key=signature(state),selected=new Set(),toggleCounts=new Map();
  // OLDEST FIRST. `view.events.unshift(entry)` puts the NEWEST event at index 0, so walking
  // `events` in order walks BACKWARDS through time — and the `break` below then fired on the newest
  // event, which is never a select_card, so the reconstruction bailed immediately and always
@@ -35,8 +35,24 @@ export function selectionState(state,events=[]){
   onThisScreen=true;
   if(e.chosen?.command?.action==='confirm_selection')continue;
   if(e.chosen?.command?.action!=='select_card')break;
-  const i=e.chosen.command.index;if(selected.has(i))selected.delete(i);else selected.add(i);
+  const i=e.chosen.command.index;
+  toggleCounts.set(i,(toggleCounts.get(i)??0)+1);
+  if(selected.has(i))selected.delete(i);else selected.add(i);
  }
- if(!selected.size)return state;
- return {...state,card_select:{...c,selection_source:'Successful selection toggles in this uninterrupted screen',cards:c.cards.map(x=>({...x,is_selected:selected.has(x.index)}))}};
+ // PARITY IS A DEADLOCK, NOT A READING. The game applied every toggle, so modelling it as a
+ // toggle really does mean parity - and with the agent re-selecting the same card, parity lands on
+ // "nothing selected" every time, so the grid keeps offering three "Select" entries and never a
+ // Confirm. Measured on a live NDeckEnchantSelectScreen: 76 toggles, even, and the agent had no way
+ // out of the screen it was on. Reconstructing the state faithfully is not the same as helping.
+ //
+ // So when the agent has demonstrably made a selection on this screen and the grid does not report
+ // one, the screen is treated as SATISFIED - the only other truth consistent with "a toggle was
+ // acknowledged and the screen is still here" is that the screen is waiting on a confirm. That
+ // gives actionsFor a `ready` to lead with Confirm, which is the move that actually advances it.
+ const ambiguous = toggleCounts.size>0 && selected.size===0;
+ if(!selected.size&&!ambiguous)return state;
+ const marked=c.cards.map(x=>({...x,is_selected:selected.has(x.index)}));
+ return {...state,card_select:{...c,
+  selection_source:selected.size?'Successful selection toggles in this uninterrupted screen':'A selection was acknowledged but the grid reports none; treating the screen as awaiting confirmation',
+  ...(ambiguous?{selection_ambiguous:true}:{}),cards:marked}};
 }

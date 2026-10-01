@@ -10,7 +10,17 @@ test('bridge missing selection flags preserves observed toggle without selecting
  const fx=actionsFor(fixed);assert.equal(fx.filter(x=>x.command.index===0).length,1);assert.match(fx.find(x=>x.command.index===0).label,/Deselect/);assert.equal(fx.some(x=>x.command.index===1),true);
  assert.equal(selectionState(s,[{...e,outcome:'preview'}]),s);
  assert.equal(selectionState(s,[{...e,state:{...s,run:{act:1,floor:13}}}]),s);
- assert.equal(selectionState(s,[e,e]),s);
+ // Two toggles of the same card still means NOTHING is selected - that is the invariant this test
+ // names, and it is preserved exactly. What changed is that the state is now MARKED ambiguous
+ // rather than returned untouched, because a grid that omits is_selected and has acknowledged a
+ // toggle is a screen waiting on a confirm, and returning it untouched is what left the agent
+ // re-selecting the same card 76 times with no Confirm ever on offer. Asserted on the invariant the
+ // comment names, not on object identity, which was incidental to how the case was written.
+ const twice=selectionState(s,[e,e]);
+ assert.deepEqual(twice.card_select.cards.filter(x=>x.is_selected),[], 'parity is still a real reading: nothing is selected');
+ assert.equal(twice.card_select.selection_ambiguous,true);
+ assert.equal(actionsFor(twice).some(x=>x.command.action==='confirm_selection'),true,'and a Confirm is finally offered');
+ assert.equal(selectionState(s,[e,e,e]).card_select.cards.filter(x=>x.is_selected).length,1,'an odd count still reconstructs a selection');
 });
 
 test('enchant confirmation requires the prompted count despite premature bridge flag',()=>{

@@ -211,7 +211,10 @@ export function actionsFor(s) {
       // TWENTY-TWO decisions while `confirm_selection` sat at the bottom of thirteen identical-looking
       // "Select Strike" entries. Confirming alone advances the screen, verified by hand against the
       // bridge. The cards stay offered, because on an unsatisfied screen picking one is the whole task.
-      if (ready) add('confirm_selection', {}, 'Confirm selected cards');
+      // A grid that omits is_selected and has an acknowledged-but-unreported selection is still a
+      // screen waiting on a confirm. Without this the Confirm option never appears and the agent
+      // re-selects the same card forever.
+      if (ready || c?.selection_ambiguous) add('confirm_selection', {}, 'Confirm selected cards');
       for (const x of c?.cards ?? []) {
         if (x?.index === undefined || x?.index === null) continue;
         add('select_card', {index: x.index},
