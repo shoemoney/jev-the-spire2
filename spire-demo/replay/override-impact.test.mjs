@@ -100,8 +100,16 @@ test('a single bucket never pools, however extreme its delta', () => {
   assert.equal(d1.scorer, 10, 'the scorer arm dealt 10');
   assert.equal(d1.delta, 30, 'the per-bucket delta is always reported');
   assert.equal(r.modelDelta, null, 'but one bucket does not pool');
-  assert.deepEqual(r.evidence, { buckets: 1, minBuckets: 8, samples: 2, minSamples: 200 },
+  // `versions`/`versionsComparable` were added by the cycle-2 fix. This assertion refusing the
+  // change is the system working: the shape is load-bearing, so it is widened here explicitly rather
+  // than the assertion being relaxed. One bucket of one sample is still not a pool, and now the
+  // read-out also says how many policy builds the samples came from — which is how a caller learns
+  // that "one bucket" might be one bucket of SEVEN different policies.
+  assert.deepEqual(r.evidence, { buckets: 1, minBuckets: 8, samples: 2, minSamples: 200, versions: 1, versionsComparable: 0 },
     'and the read-out says why, so a reader need not re-derive it');
+  // versionsComparable is 0, not 1, and the distinction matters: this version IS two-armed, but its
+  // single bucket is below the floor so it cannot contribute to a pool. "Comparable" therefore means
+  // "can contribute a figure", not merely "has both arms" — the count is about pooling, not balance.
 });
 
 test('an unarmed decision is excluded rather than counted as either arm', () => {
@@ -138,4 +146,113 @@ test('the floors clear once there are enough depths AND enough samples, and then
   assert.ok(thick.evidence.samples >= 200, `and the sample floor (got ${thick.evidence.samples})`);
   assert.equal(typeof thick.modelDelta, 'number', 'so a pooled figure is finally reported');
   assert.ok(Math.abs(thick.modelDelta) < 5, 'and here the two arms are identical, so it is near zero');
+});
+
+// ─── CYCLE 2. The pooled A/B number was comparing different versions of the policy ───────────────
+//
+// MEASURED on the real corpus (2026-10-01): 1,302 armed decisions spanning EIGHT code shas, three
+// of which contributed scorer samples only (model=0). Depth-matched per version:
+//
+//   6b97d6b  buckets=33  model=267 scorer=300  delta=-0.546
+//   ed4e395  buckets=20  model= 54 scorer= 54  delta=+0.227   <-- OPPOSITE SIGN
+//   740dad9  buckets=14  model= 30 scorer= 35  delta=-1.001
+//   ab28c5e  buckets=10  model= 15 scorer= 18  delta=-3.313
+//   44188b6  buckets= 4  model= 10 scorer=  7  delta=-7.250
+//
+// Pooled, that averages to -0.004 — which is what the state file reported as "CONVERGED TO NULL".
+// It is not a null. It is opposing signs at magnitudes spanning 13x, averaged into a number that
+// reads like a clean result. Depth-matching was supposed to control for fight length; it cannot
+// control for the policy having CHANGED, because the bucket key is depth and depth is not version.
+const versioned = (type, hp, arm, sha, name = 'X') => ({
+  kind: 'decision', outcome: 'executed', code: { sha, dirty: 0 },
+  deliberation: { changed: arm === 'scorer', abArm: arm },
+  state: { state_type: type, battle: { enemies: [{ name, hp }] } },
+});
+
+// `depths` distinct depths for one version, `perArm` samples per arm per depth.
+function buildVersion(sha, depths, perArm, modelDamage, scorerDamage) {
+  const ev = [];
+  for (const [arm, dmg] of [['model', modelDamage], ['scorer', scorerDamage]]) {
+    for (let d = 0; d < depths; d++) {
+      let hp = 1000 + d * 10;
+      ev.push(versioned('elite', hp, arm, sha, `${arm}${sha}${d}`));
+      for (let i = 0; i < perArm; i++) { hp -= dmg; ev.push(versioned('elite', hp, arm, sha, `${arm}${sha}${d}`)); }
+      ev.push({ kind: 'decision', outcome: 'executed', state: { state_type: 'rewards' } });
+    }
+  }
+  return ev;
+}
+
+test('two versions with OPPOSITE effects must not average into a clean null', () => {
+  // Version A: the scorer deals far more damage. Version B: the model deals more. Pooled by depth
+  // alone these cancel to ~0 and the reader reports "no difference found", which is the exact shape
+  // of the bad headline. A reader that cannot see this is worse than no reader.
+  const events = [
+    ...buildVersion('aaa1111', 10, 20, 1, 8),   // scorer much better here
+    ...buildVersion('bbb2222', 10, 20, 8, 1),   // model better here
+  ];
+  const r = abImpact(events);
+  assert.ok(r.byVersion.length === 2, `both versions are reported separately (got ${r.byVersion.length})`);
+  const a = r.byVersion.find(v => v.sha === 'aaa1111');
+  const b = r.byVersion.find(v => v.sha === 'bbb2222');
+  assert.ok(a.modelDelta < 0, 'version A: scorer dealt more, so modelDelta is negative');
+  assert.ok(b.modelDelta > 0, 'version B: model dealt more, so modelDelta is positive');
+  assert.equal(r.signsAgree, false, 'and the reader says the signs disagree');
+  assert.equal(r.poolingValid, false, 'so a pooled figure over these versions is not a result');
+});
+
+test('a single version reports no byVersion split and stays pooling-valid', () => {
+  // The existing behaviour must survive for the ordinary case: one policy version, signs trivially
+  // agree. Otherwise this fix breaks every reader that was working.
+  const r = abImpact(buildVersion('ccc3333', 10, 20, 1, 1));
+  assert.equal(r.byVersion.length, 1);
+  assert.equal(r.signsAgree, true);
+  assert.equal(r.poolingValid, true);
+});
+
+test('a scorer-only version is reported rather than silently pooled in', () => {
+  // Three of the eight shas in the real corpus had model=0. Pooled, their samples still counted
+  // toward the comparison against a model sample from a DIFFERENT version, which is not a
+  // comparison at all. They must be visible as unbalanced.
+  const events = [
+    ...buildVersion('ddd4444', 10, 20, 1, 1),
+    ...buildVersion('eee5555', 10, 20, 1, 1).map(e => (e.deliberation ? { ...e, deliberation: { ...e.deliberation, abArm: 'scorer' } } : e)),
+  ];
+  const r = abImpact(events);
+  const solo = r.byVersion.find(v => v.sha === 'eee5555');
+  assert.equal(solo.nModel, 0, 'the scorer-only version is visible');
+  assert.equal(solo.nScorer > 0, true);
+  assert.equal(solo.comparable, false, 'and marked not comparable');
+  // The first version of this test asserted poolingValid === false here, on the reasoning that a
+  // dropped version invalidates the read. That is backwards, and the test was wrong rather than the
+  // code: excluding a one-armed build from the pool is what makes the remaining pool valid. The
+  // honest signal is not "invalid" but "fewer versions than you think" — which is why the count is
+  // reported rather than a boolean.
+  assert.equal(r.poolingValid, true, 'excluding a one-armed build makes the remaining pool valid, not invalid');
+  assert.equal(r.evidence.versions, 2, 'but both builds are visible');
+  assert.equal(r.evidence.versionsComparable, 1, 'and the read-out says only one of them counted');
+});
+
+test('the headline number is null when pooling is invalid, so it cannot be quoted', () => {
+  const events = [
+    ...buildVersion('fff6666', 10, 20, 1, 8),
+    ...buildVersion('9998888', 10, 20, 8, 1),
+  ];
+  const r = abImpact(events);
+  assert.equal(r.modelDelta, null, 'a null that means "do not read this", not "no difference"');
+  assert.equal(r.evidence.versions, 2);
+  assert.equal(r.evidence.versionsComparable, 2, 'both are fully two-armed — it is the SIGN that voids the pool');
+});
+
+test('within-version deltas are reported even when the pooled figure is withheld', () => {
+  // The per-version numbers ARE the result. Withholding the pool must not withhold the evidence.
+  const events = [
+    ...buildVersion('aaa1111', 10, 20, 1, 8),
+    ...buildVersion('bbb2222', 10, 20, 8, 1),
+  ];
+  const r = abImpact(events);
+  for (const v of r.byVersion) {
+    assert.equal(typeof v.modelDelta, 'number', `${v.sha} has its own figure`);
+    assert.ok(v.buckets >= 8, `${v.sha} cleared the bucket floor on its own`);
+  }
 });

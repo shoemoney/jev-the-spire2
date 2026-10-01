@@ -3,7 +3,7 @@
 ## PLAN
 M1 INSTRUMENT  measurement precedes every change              DONE
 M2 EVIDENCE    comparable difficulty signal                    BLOCKED — needs an A10 run
-M3 DECISION     override question answered                     DONE — converged to null
+M3 DECISION     override question answered                     DONE — but see CORRECTION below
 M4 READ         frontier reviews converted                     10 of 10 read — DONE
 M5 HARDEN       no unmeasured change ships; failures visible   DONE (twice, both verified live)
 
@@ -15,13 +15,34 @@ Loop's remaining mode is ACCUMULATING the runs item 2 needs, not searching.
   A0 best run             33    The Insatiable (Act 2 boss), 42% taken off
   boss record             10/21 (48%)  flat
   wins                    0     in every recorded run
-  A/B                     379 samples, scorer -0.004 damage/decision — CONVERGED TO NULL
+  A/B                     **CORRECTED at iter 151 — the old "converged to null" was an artifact**
   tests                   610 green
 
 **The honest headline: 140+ iterations of correct, measured, verified fixes and the median run did
 not move.** Every lever I can reach is already at its correct value, and **every open item reduces to
 one sentence: the agent wins 88% of fights, so this corpus cannot measure anything that only shows up
 when the agent loses.** Four separate investigations hit that wall; it is the only thing left.
+
+## CORRECTION (iter 151) — the A/B headline was an artifact of pooling across policy versions
+`abImpact` depth-matched but never version-matched, so a model sample at depth 3 from one build was
+compared against a scorer sample at depth 3 from another. 1,302 armed decisions span **8 shas**,
+three of them scorer-only. Pooled, the per-version figures (-0.546, +0.227, -1.001, -3.313, -7.250)
+averaged to **-0.004**, which the state file carried as "CONVERGED TO NULL".
+
+With the reader fixed (per-version buckets, floor applied per version, pool withheld when signs
+disagree) the honest reading is:
+
+    policy versions in corpus   13   (comparable: 1)
+    6b97d6b  n=591  buckets=33  delta=-0.546   <- the only version that clears the floor
+    ed4e395  n=139  20 buckets   null (below floor)
+    740dad9  n= 91  14 buckets   null (below floor)
+    ab28c5e  n= 56  10 buckets   null (below floor)
+    44188b6  n= 25   4 buckets   null (below floor)
+
+**So the override is not neutral: in the one version with enough evidence the scorer deals 0.546
+MORE damage per decision than the model.** The old null was two incompatible things averaged. Note
+the earlier "+0.227 opposite sign" was itself below the sample floor — the sign claim was mine, made
+with an unfloored reader, and it did not survive its own evidence gate.
 
 ## RULED OUT — with the number that killed each. Do not re-investigate.
   gate failure       correct on all 31 deaths; no survivor existed to move to

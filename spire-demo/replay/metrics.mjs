@@ -661,7 +661,13 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
     // `hp` has to be stored, not just used. Omitting it left `prev` undefined on every row, so
     // `dealt` was silently null throughout and the function reported zero decisions while looking
     // like it had run. A measurement that cannot fail is not a measurement.
-    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, arm: ev.deliberation?.abArm ?? null });
+    //
+    // `sha` is stored for the same reason and it cost the headline number. Depth-matching controls
+    // for how deep into a fight a decision was; it cannot control for the POLICY having changed,
+    // because the bucket key is depth and depth is not version. 1,302 armed decisions spanning eight
+    // shas were pooled into "-0.004, converged to null" while the per-version figures were -0.546,
+    // +0.227, -1.001, -3.313 and -7.250 — opposing signs across a 13x magnitude range.
+    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, arm: ev.deliberation?.abArm ?? null, sha: ev?.code?.sha ?? null });
   }
   if (open) fights.push(open);
 
@@ -672,12 +678,48 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
     byDepth.get(r.depth)[r.arm].push(r.dealt);
   }
   const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
-  const buckets = [...byDepth.keys()].sort((a, b) => a - b)
-    .filter(d => byDepth.get(d).model.length && byDepth.get(d).scorer.length)
-    .map(d => {
-      const { model, scorer } = byDepth.get(d);
-      return { depth: d, model: mean(model), scorer: mean(scorer), nModel: model.length, nScorer: scorer.length, delta: mean(model) - mean(scorer) };
-    });
+  const bucketsOf = rows => {
+    const d = new Map();
+    for (const r of rows) {
+      if (r.dealt == null || !r.arm) continue;
+      if (!d.has(r.depth)) d.set(r.depth, { model: [], scorer: [] });
+      d.get(r.depth)[r.arm].push(r.dealt);
+    }
+    return [...d.keys()].sort((a, b) => a - b)
+      .filter(x => d.get(x).model.length && d.get(x).scorer.length)
+      .map(x => {
+        const { model, scorer } = d.get(x);
+        return { depth: x, model: mean(model), scorer: mean(scorer), nModel: model.length, nScorer: scorer.length, delta: mean(model) - mean(scorer) };
+      });
+  };
+  const buckets = bucketsOf(fights.flatMap(f => f.rows));
+
+  // Per-version figures. A version with only one arm cannot be compared to anything, so it is
+  // reported and marked rather than pooled: on the real corpus three of eight shas were scorer-only,
+  // and pooling them put their samples opposite a model sample from a different build.
+  const bySha = new Map();
+  for (const f of fights) for (const r of f.rows) {
+    const sha = r.sha ?? 'unknown';
+    if (!bySha.has(sha)) bySha.set(sha, []);
+    bySha.get(sha).push(r);
+  }
+  const byVersion = [...bySha].map(([sha, rows]) => {
+    const vb = bucketsOf(rows);
+    const nModel = rows.filter(r => r.dealt != null && r.arm === 'model').length;
+    const nScorer = rows.filter(r => r.dealt != null && r.arm === 'scorer').length;
+    const comparable = nModel > 0 && nScorer > 0;
+    // `buckets` is a COUNT here, matching `evidence.buckets` and `matched.length`. It was an array
+    // on the first attempt, which is the same name meaning two things in one return value.
+    return { sha, buckets: vb.length, bucketDetail: vb, modelDelta: comparable ? pooled(vb) : null, nModel, nScorer, comparable, samples: nModel + nScorer };
+  }).sort((a, b) => b.samples - a.samples);
+
+  const comparableVersions = byVersion.filter(v => v.comparable && v.modelDelta !== null);
+  const signs = new Set(comparableVersions.map(v => Math.sign(v.modelDelta)));
+  const signsAgree = signs.size <= 1;
+  // Pooling is only a result when the versions agree. Opposing signs averaged together produce a
+  // number that reads like a clean result and means nothing, so the pool is withheld instead.
+  const poolingValid = comparableVersions.length > 0 && signsAgree;
+
   const all = a => fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.arm === a)).map(r => r.dealt);
   const m = all('model'), sc = all('scorer');
   return {
@@ -686,11 +728,12 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
     matched: buckets,
     // Positive means the model's own choice dealt more damage. Sample-weighted for the same reason
     // as overrideImpact's matchedDelta, and null rather than 0 so "no comparison" never renders as
-    // "no difference found".
-    modelDelta: pooled(buckets),
+    // "no difference found". ALSO null when the versions disagree — see poolingValid.
+    modelDelta: poolingValid ? pooled(comparableVersions.flatMap(v => v.bucketDetail)) : null,
     depthsWithBothArms: buckets.length,
+    byVersion, signsAgree, poolingValid,
     // So a reader can see WHY the pooled figure is null without re-deriving it.
-    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: m.length + sc.length, minSamples: MIN_SAMPLES },
+    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: m.length + sc.length, minSamples: MIN_SAMPLES, versions: byVersion.length, versionsComparable: comparableVersions.length },
   };
 }
 
