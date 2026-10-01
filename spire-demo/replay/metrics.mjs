@@ -870,7 +870,13 @@ export function fightOutcomes(events) {
     // codebase cannot answer "how are we doing" without these, because the honest answer is
     // usually "how did the CURRENT code do" and the two differ by 20 points.
     const when = ev?.time ?? null;
+    // BOTH, because a commit with uncommitted edits is not the policy that commit names.
+    // `server.mjs:100` records `dirty` for exactly that reason and says so. Keying the byCode
+    // breakdown on sha alone puts two working trees under one version name - the same mistake
+    // `abImpact` and `overrideImpact` each made and were each fixed for.
     const code = ev?.code?.sha ?? null;
+    const codeDirty = ev?.code?.dirty ?? null;
+    const codeVersion = code === null ? 'unstamped' : `${code} dirty=${codeDirty ?? 'unknown'}`;
 
     if (kind === 'run_end') {
       // A run that ends mid-combat died in it. This is the ONLY loss signal, and it is
@@ -901,6 +907,8 @@ export function fightOutcomes(events) {
           ascension: Number.isFinite(state.run?.ascension) ? state.run.ascension : null,
           day: typeof when === 'string' ? when.slice(5, 10) : null,
           code,
+          codeDirty,
+          codeVersion,
           decisions: 0,
           endHp: null,
           blockAtEnd: null,
@@ -1004,8 +1012,8 @@ export function summariseFights(fights) {
     // `unknown` ascension is: a record from before the instrument existed is not a record from
     // any version of the code.
     byCode: Object.fromEntries(
-      [...new Set(fights.map(f => f.code === null ? 'unstamped' : f.code))].sort().map(c => [
-        c, { ...group(fights, f => (f.code === null ? 'unstamped' : f.code) === c), days: [...new Set(fights.filter(f => (f.code === null ? 'unstamped' : f.code) === c).map(f => f.day))].sort() },
+      [...new Set(fights.map(f => f.codeVersion))].sort().map(c => [
+        c, { ...group(fights, f => f.codeVersion === c), days: [...new Set(fights.filter(f => f.codeVersion === c).map(f => f.day))].sort() },
       ]),
     ),
     // The pair that answers "is the policy actually getting better": the same fight at the

@@ -155,17 +155,31 @@ test('decisions written before the code stamp are unstamped, not attributed to t
 });
 
 test('byCode groups and names the days each version played, so old and new never blend', () => {
-  const at = (t, sha) => ({ time: t, code: { sha }, ...dec('monster', { hp: 40 }) });
+  const at = (t, sha, dirty = 0) => ({ time: t, code: { sha, dirty }, ...dec('monster', { hp: 40 }) });
   const s = summariseFights(fightOutcomes([
     at('2026-09-24T09:00:00.000Z', 'aaa111'), dec('rewards'),
     at('2026-09-24T09:01:00.000Z', 'aaa111'), dec('rewards'),
     at('2026-09-30T09:00:00.000Z', 'bbb222'), dec('rewards'),
     at('2026-09-30T09:01:00.000Z', 'bbb222'), dec('rewards'),
   ]));
-  assert.equal(s.byCode.aaa111.total, 2);
-  assert.deepEqual(s.byCode.aaa111.days, ['09-24']);
-  assert.equal(s.byCode.bbb222.total, 2);
-  assert.deepEqual(s.byCode.bbb222.days, ['09-30']);
+  assert.equal(s.byCode['aaa111 dirty=0'].total, 2);
+  assert.deepEqual(s.byCode['aaa111 dirty=0'].days, ['09-24']);
+  assert.equal(s.byCode['bbb222 dirty=0'].total, 2);
+  assert.deepEqual(s.byCode['bbb222 dirty=0'].days, ['09-30']);
+});
+
+test('byCode splits one sha at two dirty counts, because a dirty tree is not that commit', () => {
+  // The key here was sha alone while `server.mjs:100` records `dirty` beside every sha precisely so
+  // an unreproducible run is identifiable. Keying on the commit merged two different policies into
+  // one bucket and reported it as one version — the identical mistake fixed in abImpact and
+  // overrideImpact, in the third reader that groups by code.
+  const at = (t, sha, dirty) => ({ time: t, code: { sha, dirty }, ...dec('monster', { hp: 40 }) });
+  const s = summariseFights(fightOutcomes([
+    at('2026-09-30T09:00:00.000Z', 'ccc333', 2), dec('rewards'),
+    at('2026-09-30T09:01:00.000Z', 'ccc333', 5), dec('rewards'),
+  ]));
+  assert.deepEqual(Object.keys(s.byCode), ['ccc333 dirty=2', 'ccc333 dirty=5'],
+    'two working trees, two versions, not one');
 });
 
 test('an absent difficulty reports null rather than a 0% rate', () => {
