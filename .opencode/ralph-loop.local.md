@@ -240,6 +240,32 @@ also differ in ascension, fight type and depth, so it is a description of the lo
 a cause. The next thing to separate is enemy intent TYPE — 14.2 average could be one heavy attacker or
 several cheap ones, and those want opposite responses (block vs race).
 
+## FINDING 4 (this session) — it is ONE heavy hit, not several cheap ones. So the answer is NOT race.
+Ran the separation FINDING 3 named, on the last board of every fight:
+
+                      LOST (35 fights)          WON (279 fights)
+    Attack intents    70.7%  mean 16.4 dmg     60.7%  mean 11.4 dmg
+    DeathBlow         1 occurrence, 33 dmg      3 occurrences, mean 20.3
+    Stun               0                       3
+
+**One heavy attacker.** Attacks carry 44% more damage on the boards the agent dies on (16.4 vs 11.4)
+and make up a LARGER share of what it faces (70.7% vs 60.7%), so this is not "more attacks, each
+lighter" — each one is fatter. And the mean is carried by a tail: DeathBlow at 33 damage is the
+kill-or-die telegraph the unmodelled-mechanics doc listed as **unclassified**, at n=1 it is not a rate,
+but it is the shape of the worst case.
+
+**So the response is block, not race** — which is exactly what the agent cannot do, because the block
+card it would need is one of the 59 `EnergyCostTooHigh` cards from FINDING 2. The three findings
+chain: it ends with 0 energy, its basic defends cost 1-2, and it faces a 16-damage hit. It is not
+misjudging the board. **It cannot pay for the answer.**
+
+**Stun: 0 occurrences in the 35 deaths.** The shipped Stun fix addressed a mechanic that does not
+appear on any board the agent died on. It was still correct to ship (0.85x is a real, if modest,
+effect) but it is not why these runs end, and the doc's own "0.85x, not 0.28x" retraction was right
+to doubt the priority. **Suck and Steam Eruption, the doc's two "measure first" candidates, are still
+unmeasured** — and with Stun at 0 in 35 deaths they are now lower priority than the energy finding,
+not higher.
+
 ## CORRECTION 4 (this session) — THE PREMISE WAS WRONG. A10 was always in the corpus.
 **Everything above item 1 rested on "the agent wins 88% of fights, so this corpus cannot measure
 anything that only shows up when the agent loses."** That was a **run-splitting bug**, not a game fact.
