@@ -1,7 +1,8 @@
 ---
 active: true
-iteration: 131
+iteration: 132
 maxIterations: 100000
+sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 Autonomous operation. Play, measure, improve the agent. Keep the loop and the batch running.
@@ -41,8 +42,7 @@ not move.** Every lever I can reach is already at its correct value.
   2. **Unmodelled mechanics** — see `spire-demo/docs/unmodelled-mechanics.md`. Stun is shipped.
      Ravenous 335, Steam Eruption 207, Ritual 156, Plating 148 are next; the per-power win rate is
      the prioritisation method, and most of those ratios are n<6 noise, so MORE RUNS is the lever.
-  3. **The resource layer going in** — where the deaths actually live, and the one layer with no
-     lens. Candidate: do the floor-4/5 deaths share a shape?
+  3. **The resource layer going in** — ANSWERED at iteration 132, see below.
 
 ## RULES LEARNED THE HARD WAY — these are not negotiable
 - Measure on the wire or in the log, never a proxy or a single sample. **A zero from a lookup is
@@ -55,6 +55,27 @@ not move.** Every lever I can reach is already at its correct value.
   verification step that cannot fail.
 - Record what was NOT done and why. That is most of the value.
 - Measure the effect BEFORE writing the fix. Every one of the four refuted mechanisms looked obvious.
+- Check whether a field is a DURABLE property before counting on it. `can_play` is per-frame; `type`
+  is not. That is the eighth wrong field and the same family as the other seven.
+
+## ITEM 3 ANSWERED: THE FLOOR-4/5 DEATHS ARE NOT A DIFFERENT SHAPE
+  DIED BY FLOOR 6  (n=5)    HP 8   energy 1   hand 4   no playable card 80%   enemy left   5 of 53
+  DIED LATER        (n=27)   HP 7   energy 0   hand 2   no playable card 63%   enemy left  47 of 173
+
+**Same resource position in both populations.** The only difference is the enemy's HP: the early
+deaths happened against enemies at 5 HP out of 53 — the agent got them to 9% and died doing it.
+
+The shape is arithmetic: **median 0-1 energy with a 2-4 card hand.** At 0 energy only a 0-cost
+non-Status card is playable, and at 1 energy only one 1-cost card, so "nothing playable" is the
+common case rather than a decision failure.
+
+**And the 81% I had just reported was wrong — the eighth wrong field.** `can_play: false` appears on
+889 Strike, 519 Bash and 396 Defend readings. It is a THIS-FRAME flag, not a durable "unplayable" one;
+`type` (Status/Curse) is the durable signal. Re-measured with type only: 80% early, **63%** later.
+
+So the item-3 question — do the early deaths share a distinct shape — is answered: **they do not**,
+and what looked like an early-game failure mode is the same resource position the rest of the corpus
+has.
 
 ## LOOP STATE
 Play running on the batch's real budget (90M tokens, 20k decisions). `labelAmbiguity` and
