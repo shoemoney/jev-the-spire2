@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 113
+iteration: 114
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -201,6 +201,34 @@ the hands reflect the deck.
 The card-pick question is measurable for the first time, and the next number is whether the agent's
 picks reproduce that 24% or make it worse.
 
+### ANSWERED: THE AGENT PICKS NEUTRALLY, AND THE DECK IS THIN BECAUSE THE GAME IS
+  card_reward screens: 171
+    OFFERED : 516 cards   blocking 120 (23%)   attacking 229 (44%)
+    PICKED  : 136 cards   blocking  32 (24%)   attacking  64 (47%)
+    block pick-rate / block offer-rate = 1.01x
+
+**The agent picks block cards at 1.01x the rate it is offered them.** No defence bias, no attack
+bias - a neutral picker. And the game itself only offers 23% blocking cards. So the chain closes on
+the game's own numbers:
+  74% of fatal hands hold no block card  ->  because the deck is 24% block
+  the deck is 24% block                  ->  because the agent picks neutrally (1.01x)
+  the agent picks neutrally              ->  because the game offers 23% block
+
+**The deck's thinness on defence is the shipped card distribution, faithfully reproduced.** There is
+no card-pick lever here, because there is no bias to correct. That retires a line of inquiry carried
+since iteration 107, and retires it for a better reason than a refutation: the quantity is explained
+end to end.
+
+Classified from the game's OWN effect data via `byName`, not a regex. The first run of this
+measurement classified all 136 picks as "not in KB" and reported 0% blocking - which would have read
+as "the agent never takes a block card", a dramatic and completely false finding caused by indexing
+`GAME_DATA` (keyed by id) with a display name when `byName` exists for exactly that.
+
+**That is the FOURTH time this session I reached for the wrong index and mistook the result for a
+fact about the world**: the descriptor, the move probabilities, the deck piles, and now this. The
+recurring lesson is not "look harder" - it is that a zero from a lookup is evidence about the LOOKUP.
+
+
 ## M2 EVIDENCE - the binding constraint
 Ascension 10 cannot be set from the bridge: no reachable menu screen exposes a difficulty control,
 confirmed in full (IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT, RANDOM_CHARACTER, confirm, embark,
@@ -245,4 +273,5 @@ M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with lou
 grok read: 5 findings, 2 already fixed by others, 2 shipped, 1 dissolved. reviews 5 of 10
 deckComposition shipped, still awaiting a combat board - the run wedged on a card_select first
 M5 second pass: bounded the auto-resume, verified it now reports a stall instead of absorbing it
-CARD_SELECT DEADLOCK FIXED AND VERIFIED IN PLAY - play resumed, deckComposition verified at 24% block share
+CARD_SELECT DEADLOCK FIXED AND VERIFIED IN PLAY - play resumed
+CARD-PICK QUESTION CLOSED: agent picks block at 1.01x the offered rate; the deck is 24% because the game is
