@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 133
+iteration: 134
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -104,6 +104,21 @@ occasionally unoffered: **5 boards in 1848, 0.27%.** Small, real, and not what t
 **This is the second review whose headline is wrong in a way measurement settles** (the first was the
 partial-survivor one, where the log rather than the gate was at fault). Both were found by running
 the claim instead of reading it.
+
+## DOES THE AGENT PICK CARDS IT CANNOT PLAY? NO — AND THE FIRST ANSWER WAS NINE PHANTOMS
+  distinct cards the agent picked from rewards        61
+  combat boards replayed                             1884
+  picked cards never offered as a candidate           2   (Royal Gamble 1x, Juggling 1x)
+
+Both are a single pick each, so this is noise rather than a finding, and the substantive answer is
+that **59 of 61 picks are playable.** No deck-efficiency defect: the agent is not filling its deck with
+dead weight.
+
+**The first run of this said 33 of 61 were never offered, led by `Shrug It Off` at 13.** That was my
+own regex taking the first capitalised token of a label, so `"Shrug It Off"` became `"Shrug"` and every
+multi-word card read as phantom. **Ninth wrong index this session, and the third in two days that
+produced a dramatic, confident, entirely false number about cards.** The fix is the same as every time:
+read the name from the hand at the candidate's own `card_index` instead of parsing it out of prose.
 
 ## LOOP STATE
 Play running on the batch's real budget (90M tokens, 20k decisions). `labelAmbiguity` and
