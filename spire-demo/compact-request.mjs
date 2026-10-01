@@ -13,7 +13,13 @@ export function compactRequest(payload){
   memory.turnHistory=(memory.turnHistory??[]).slice(-6);
  }
  const descriptors=p.state?.candidate_details;
- const compactValue=value=>{try{const c=JSON.parse(value);if(c.forecast){delete c.forecast.assumption;}return JSON.stringify(c);}catch{return value;}};
+ const compactValue=value=>{try{const c=JSON.parse(value);if(c.forecast){// The SCOPE, not the prose. Only plan[0] executes, so a forecast describing a
+  // multi-step plan is a claim about steps that will not run - and 45% of executed
+  // decisions do exactly that, claiming survival 97% of the time against 88% for a single
+  // step. The model cannot see that gap without this sentence, and it was the only field that
+  // said it. Deleting the 450-byte paragraph saved bytes and cost the one fact the model needed;
+  // a 20-byte scope marker carries the same fact at 4% of the cost.
+  delete c.forecast.assumption;c.forecast.scope='prefix+end_turn';}return JSON.stringify(c);}catch{return value;}};
  if(descriptors)for(const id of Object.keys(descriptors))descriptors[id]=compactValue(descriptors[id]);
  // Final review has one question; keep the same shared descriptor representation.
  if(!descriptors&&p.questions?.move?.criteria){p.state.candidate_details=Object.fromEntries(Object.entries(p.questions.move.criteria).map(([id,v])=>[id,compactValue(v)]));p.questions.move.criteria=Object.fromEntries(Object.keys(p.state.candidate_details).map(id=>[id,null]));}
