@@ -352,3 +352,39 @@ test('an error followed by floor 1 IS a restart, same ascension or not',()=>{
   assert.equal(splitRuns(events).length,2,'two runs');
   assert.equal(splitRuns(events)[0].filter(e=>e.kind==='decision').length,1,'the first keeps only its own decision');
 });
+
+// `blindness()` reported ONE unknown rate for the whole corpus, and no population had it. Measured on
+// the real logs: pooled 0.0529 against A0 0.0289, A10 0.1002 and A3 0.7558 — a 26x spread averaged
+// into one figure the report prints as "how blind is the agent". This is the fourth reader to make
+// the same mistake after three were fixed, and `fightOutcomes` already carries the reasoning in a
+// comment: "pooling A0 and A10 win rates produces a number that moves for reasons that have nothing
+// to do with the policy."
+test('blindness splits its unknown rate by difficulty instead of pooling a 26x spread',()=>{
+  const c=(asc,quality)=>({kind:'decision',outcome:'executed',time:'2026-01-01T00:00:00.000Z',
+    deliberation:{},chosen:{id:'a',label:'x',command:{action:'play_card'},forecast:{quality,warnings:[]}},
+    state:{state_type:'monster',run:{act:1,floor:1,ascension:asc},player:{hp:50,max_hp:80,energy:3,block:0},battle:{enemies:[{entity_id:'a',hp:40,intents:[]}]}}});
+  // A0: 20 clean. A3: 4 of 4 blind. Pooled rate is neither number.
+  const events=[...Array.from({length:20},()=>c(0,'calculated')), ...Array.from({length:4},()=>c(3,'unknown'))];
+  const b=blindness(events);
+  assert.equal(b.combatDecisions,24);
+  assert.equal(b.unknown,4);
+  assert.ok(b.unknownRateByAscension.A0, 'A0 is reported');
+  assert.equal(b.unknownRateByAscension.A0.unknownRate,0,'A0 saw no unknowns');
+  assert.equal(b.unknownRateByAscension.A3.unknownRate,1,'A3 was blind on every decision');
+  assert.equal(b.unknownRatePooled,true,'and the pooled figure is labelled as pooled, not as a rate');
+  assert.notEqual(b.unknownRate,b.unknownRateByAscension.A0.unknownRate,
+    'the pooled number is not any single population"s rate');
+});
+
+// A missing ascension is its own bucket rather than folded into a difficulty the game has — the same
+// rule `byAscension` already follows in summariseFights, where 0 is a difficulty and a missing
+// reading is not one.
+test('a decision with no recorded ascension is its own bucket, not folded into A0',()=>{
+  const c=(asc,quality)=>({kind:'decision',outcome:'executed',time:'2026-01-01T00:00:00.000Z',
+    chosen:{id:'a',label:'x',command:{action:'play_card'},forecast:{quality,warnings:[]}},
+    state:{state_type:'monster',run:{act:1,floor:1,...(asc==null?{}:{ascension:asc})},player:{hp:50,max_hp:80,energy:3,block:0},battle:{enemies:[{entity_id:'a',hp:40,intents:[]}]}}});
+  const b=blindness([c(null,'unknown')]);
+  assert.ok('unstamped' in b.unknownRateByAscension,'present as its own bucket');
+  assert.equal(b.unknownRateByAscension.unstamped.unknownRate,1);
+  assert.equal(b.unknownRateByAscension.A0,undefined,'and NOT merged into A0');
+});

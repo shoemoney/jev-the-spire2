@@ -66,7 +66,17 @@ function runsSection(summary) {
 function blindnessSection(b) {
   console.log('\nBLINDNESS — how often the agent had no usable forecast in combat');
   console.log(`  combat decisions            ${n(b.combatDecisions)}`);
-  console.log(`  unknown forecast            ${n(b.unknown)}  (${pct(b.unknownRate) ?? 'n/a'})`);
+  console.log(`  unknown forecast            ${n(b.unknown)}  (${pct(b.unknownRate) ?? 'n/a'} POOLED — see the split below)`);
+  // The pooled rate is not a rate any single difficulty had. Measured across the corpus it is 5.3%
+  // against A0 2.9%, A10 10.0% and A3 75.6% — a 26x spread averaged into one figure, so it moves
+  // whenever a session's difficulty mix changes and the agent's behaviour has not changed at all.
+  // Printing it alone is how the earlier "19.8% blind" reading got quoted.
+  const asc = Object.entries(b.unknownRateByAscension ?? {});
+  if (asc.length) {
+    console.log('  by difficulty — the pooled figure above is none of these:');
+    for (const [k, v] of asc.sort((a, z) => String(a[0]).localeCompare(String(z[0]))))
+      console.log(`    ${k.padEnd(18)}${n(v.combatDecisions).padStart(8)} combat   ${pct(v.unknownRate) ?? 'n/a'} unknown`);
+  }
   console.log(`  partial forecast            ${n(b.partial)}`);
   console.log(`  calculated forecast         ${n(b.calculated)}`);
   if (b.qualityUnreported) console.log(`  quality not reported        ${n(b.qualityUnreported)}`);

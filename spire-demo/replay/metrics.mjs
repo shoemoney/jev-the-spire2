@@ -239,7 +239,21 @@ export function blindness(events) {
   // forecast that stayed unreadable and therefore keeps the flat ranking penalty.
   const byBound = { exact: 0, bounded: 0, unbounded: 0, unreported: 0 };
   let unknown = 0, unexplained = 0, unmatchedWarnings = 0, unmatchedCauseWarnings = 0;
+  // Per-difficulty tallies, for the same reason `fightOutcomes` splits by ascension and says so
+  // there: "pooling A0 and A10 win rates produces a number that moves for reasons that have nothing
+  // to do with the policy." Measured on the real corpus, the POOLED unknown rate is 0.0529 and NO
+  // population had it — A0 is 0.0289, A10 is 0.1002, A3 is 0.7558. A 26x spread averaged into one
+  // number, and the report prints that number as "how blind is the agent".
+  const byAscension = new Map();
+  const ascKey = d => {
+    const a = d?.state?.run?.ascension;
+    return Number.isFinite(a) ? `A${a}` : 'unstamped';
+  };
   for (const d of combat) {
+    const key = ascKey(d);
+    if (!byAscension.has(key)) byAscension.set(key, { combat: 0, unknown: 0 });
+    const bucket = byAscension.get(key);
+    bucket.combat += 1;
     const f = forecastOf(d);
     const q = f?.quality;
     if (q === 'calculated' || q === 'partial' || q === 'unknown') byQuality[q] += 1;
@@ -259,6 +273,7 @@ export function blindness(events) {
     for (const kind of context) contextOnCombat[kind] += 1;
     if (q !== 'unknown') continue;
     unknown += 1;
+    bucket.unknown += 1;
     const causes = new Set(warnings.map(classifyBlindnessCause).filter(c => c !== 'other'));
     // Inclusive attribution: causes overlap, so the total can exceed `unknown`.
     for (const cause of causes) byCause[cause] += 1;
@@ -276,10 +291,17 @@ export function blindness(events) {
   const constantTrueContext = combat.length
     ? CONTEXT_KINDS.filter(k => k !== 'other' && contextOnCombat[k] === combat.length)
     : [];
+  // The pooled rate is kept because it is the corpus total and is not wrong as a total — but it is
+  // not a RATE any population had, so it is labelled and always accompanied by the split.
+  const unknownRateByAscension = Object.fromEntries([...byAscension].map(([k, v]) =>
+    [k, { combatDecisions: v.combat, unknown: v.unknown, unknownRate: v.combat ? v.unknown / v.combat : null }]));
   return {
     combatDecisions: combat.length,
     unknown,
     unknownRate: combat.length ? unknown / combat.length : null,
+    // Why this is a pooled figure and not a measurement of the agent: see the note at the tally.
+    unknownRatePooled: true,
+    unknownRateByAscension,
     partial: byQuality.partial,
     calculated: byQuality.calculated,
     qualityUnreported: byQuality.unreported,
