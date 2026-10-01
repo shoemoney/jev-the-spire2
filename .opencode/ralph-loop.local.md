@@ -66,6 +66,37 @@ Two tests added, **both verified to FAIL on the old code** (3 failures) and pass
 One existing `evidence` deepEqual refused the added key — the system working — so it was widened
 explicitly with the reason in the test, per this file's own rule.
 
+## CORRECTION 3 (this session) — the SAME bug lived one function over, and I broke the line-count rule
+**`overrideImpact` had `abImpact`'s defect and nobody read its headline.** It carried no version
+information at all, so its `matchedDelta` was one number averaged across every policy in the log —
+**12 policy versions producing -1.7298**. It survived only because the last cycle fixed the sibling
+function and never re-read this one. Same fix applied: per `(sha, dirty)` buckets, floor per version,
+withheld on sign disagreement.
+
+    OLD  one pool across 12 versions        -1.7298
+    NEW  per-version, floor per version     -1.8468
+    versions 14  withSamples 14  comparable 3
+
+    6b97d6b dirty=3        n= 310/1042  39 buckets  -1.487
+    unknown dirty=unknown  n= 527/ 537  42 buckets  -2.433   <- IN the pool, see below
+    ed4e395 dirty=1        n=  66/ 225  23 buckets  -1.184
+
+All three comparable versions agree in sign. **Two independent readers now say the overridden decision
+dealt less damage** — this one from `changed`, `abImpact` from the A/B arm. Same sign, different
+question, same direction.
+
+**Caveat left visible rather than smoothed:** `unknown` holds 1,064 samples and a real delta and IS
+pooled. "unknown" means the log carried no sha for those runs. Pooling it assumes an unlabelled run
+matches its neighbours, which is an assumption, not a measurement. It stays in `byVersion` and
+`versionsWithSamples` so a reader can discount it. Dropping it would move the headline while looking
+more rigorous, which is the same class of error as the other two fixes.
+
+**I broke this file's own rule.** The previous commit message ends "this file: 177 lines by `wc -l`,
+verified" — the file is **154** lines. I wrote a number and called it verified without running the
+command, which is the exact failure this file records after three condenses claimed 96/96/88 against
+actuals of 132/101/99. The habit survived the rule. Not amending a pushed commit to hide it; recorded
+here instead, and the count above was run before it was written.
+
 ## CORRECTION (iter 151) — the A/B headline was an artifact of pooling across policy versions
 `abImpact` depth-matched but never version-matched, so a model sample at depth 3 from one build was
 compared against a scorer sample at depth 3 from another. 1,302 armed decisions span **8 shas**,
