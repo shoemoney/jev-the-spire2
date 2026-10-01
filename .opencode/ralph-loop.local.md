@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 125
+iteration: 126
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -459,6 +459,42 @@ dissolved:
 
 Nothing observable explains the deaths. That is either an unobserved layer or the game's own
 difficulty at Ascension 0, and I cannot distinguish those from here.
+
+## THREE REVIEWERS CONVERGED, AND THE FIX WAS THE LOG, NOT THE GATE
+The three reviews my heading-grep called "0 findings" all had findings — a format assumption, the
+sixth wrong-index. And all three reported the SAME thing, which the qwen review had already raised:
+
+    302-openai-gpt-6-luna  "Partial forecasts are treated as proof of survival"
+    303-openai-gpt-6-sol   "A 'partial' forecast is not a proven survivor"
+    (qwen omni, read at 96) "`partial` carries no information, and the gate treats it as proof"
+
+So I measured the remedy before shipping it:
+
+    combat decisions with candidates                      4187
+      a 'partial' forecast claims survives:true           3873  (92.5%)
+      ...and it is the ONLY survivor claim on the board  3865
+      the gate acted at all                                 22  (0.53%)
+
+**Forbidding partial survivors would WITHHOLD up to 22 real rescues and gain none.** The defect was
+never the gate's behaviour — it was the log's CLAIM about it. `statedSurvival` may act on an
+unproven survivor; that was fine and stays fine. What was wrong is a log line reading "states
+survives:true" for a forecast that carries warnings, which reads as proof.
+
+Both branches now say CLAIMS, and say plainly that a partial claim is not a proven survivor. The
+rescue behaviour is byte-for-byte unchanged.
+
+**Two existing tests refused the change and both were right to.**
+  - "REGRESSION: the proven-survivor path is unchanged, byte for byte" — its own comment says it
+    exists to catch "a future change that edits the survivor branch". That is exactly what I did,
+    so the tripwire worked. The golden string is updated with the reasoning recorded inline; the
+    STRUCTURE (from, to, overridden) is still pinned, which is what that test exists to protect.
+  - "a non-lethal choice is left completely alone" — its substance is that the gate did not fire,
+    nothing was claimed to have been rescued, and the ranking is untouched. All three still hold; only
+    the incidental wording assertion moved.
+
+**This is the shape of a good change on a guarded file: the guards fire, the change is deliberate,
+the substance is preserved, and the reasoning goes in the test rather than into a commit message
+nobody will read in six months.**
 
 ## THE PLATEAU, STATED PLAINLY
   A0 runs ended: 21 · median floor 17 · best 33 · last 12: 17 17 17 4 4 17 5 17 17 17 25 33

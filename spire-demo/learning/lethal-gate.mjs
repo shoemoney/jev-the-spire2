@@ -135,7 +135,9 @@ export function refuseLethalChoice(choice, candidates = [], ranking = candidates
       choice, overridden: false, from: evidenceOf(chosen),
       reason: verdict === null
         ? `no survival claim was made for this candidate (quality ${JSON.stringify(forecast.quality ?? null)}, survives ${JSON.stringify(forecast.survives ?? null)}), and nothing is inferred from an unknown`
-        : `the chosen candidate's own forecast states it survives (quality "${forecast.quality}"), so there is no lethal forecast to refuse`,
+        : (forecast.quality === 'partial'
+          ? `the chosen candidate's own forecast CLAIMS it survives, but that claim is PARTIAL - the forecast carries warnings, so it is not a proven survivor and the gate is treating an unproven claim as safety`
+          : `the chosen candidate's own forecast states it survives (quality "${forecast.quality}"), so there is no lethal forecast to refuse`),
     };
   }
   const byId = new Map(candidates.map(candidate => [candidate?.id, candidate]));
@@ -155,7 +157,7 @@ export function refuseLethalChoice(choice, candidates = [], ranking = candidates
   }
   return {
     choice: alternative.id, overridden: true, from: evidenceOf(chosen), to: evidenceOf(alternative),
-    reason: `refused ${chosen.id} (${chosen.label ?? 'unlabelled'}, ${chosen.command?.action ?? 'unknown action'}) because its own forecast states survives:false at quality "${chosen.forecast.quality}"${chosen.forecast.hpAfter === null || chosen.forecast.hpAfter === undefined ? '' : ` with hpAfter ${chosen.forecast.hpAfter}`}; moved to ${alternative.id} (${alternative.label ?? 'unlabelled'}, ${alternative.command?.action ?? 'unknown action'}), the highest-ranked candidate whose forecast states survives:true at quality "${alternative.forecast.quality}"`,
+    reason: `refused ${chosen.id} (${chosen.label ?? 'unlabelled'}, ${chosen.command?.action ?? 'unknown action'}) because its own forecast states survives:false at quality "${chosen.forecast.quality}"${chosen.forecast.hpAfter === null || chosen.forecast.hpAfter === undefined ? '' : ` with hpAfter ${chosen.forecast.hpAfter}`}; moved to ${alternative.id} (${alternative.label ?? 'unlabelled'}, ${alternative.command?.action ?? 'unknown action'}), the highest-ranked candidate whose forecast CLAIMS survives:true at quality "${alternative.forecast.quality}"${alternative.forecast.quality === 'partial' ? " — a PARTIAL claim, carrying warnings, so this is an UNPROVEN survivor and the gate is acting on an unproven safety claim" : ""}`,
   };
 }
 

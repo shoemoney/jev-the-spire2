@@ -111,7 +111,12 @@ test('a non-lethal choice is left completely alone', async () => {
   // The broad question prefers the second option outright, so the ranking is unambiguous.
   const result = await recallingDeliberate({state, candidates: safe, ask: async () => ({model: 'jev-stub', answers: factorAnswers('other', safe)}), memory: storeWith()});
   assert.equal(result.deliberation.safetyGate, null);
-  assert.match(result.deliberation.safetyGateReason, /states it survives/);
+  // The wording changed deliberately: a `partial` forecast is a CLAIM, not a proof, and three
+  // reviewers reported that "states it survives" reads as proven. The substance of this test is
+  // unchanged - the gate did not fire, nothing is claimed to have been rescued, the ranking is
+  // untouched - and the assertion now matches the honest sentence rather than the overclaiming one.
+  assert.match(result.deliberation.safetyGateReason, /CLAIMS it survives/);
+  assert.match(result.deliberation.safetyGateReason, /not a proven survivor/);
   assert.doesNotMatch(result.deliberation.memoryEffect, /the safety gate then overrode/);
   // And the ranking is untouched by a gate that did not fire.
   assert.equal(result.deliberation.ranking[0].id, result.answers.move.choice);

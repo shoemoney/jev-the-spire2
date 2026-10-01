@@ -224,7 +224,15 @@ test('REGRESSION: the proven-survivor path is unchanged, byte for byte', () => {
     overridden: true,
     from: {id: 'end', label: 'End turn', action: 'end_turn', quality: 'partial', survives: false, hpAfter: 0, incoming: null, incomingExact: null},
     to: {id: 'live', label: 'Block', action: 'play_card', quality: 'partial', survives: true, hpAfter: 9, incoming: null, incomingExact: null},
-    reason: 'refused end (End turn, end_turn) because its own forecast states survives:false at quality "partial" with hpAfter 0; moved to live (Block, play_card), the highest-ranked candidate whose forecast states survives:true at quality "partial"',
+    // The survivor branch's WORDING changed deliberately on 2026-10-01, and this tripwire is why
+    // that is a recorded decision rather than a silent edit. Three reviewers independently reported
+    // that "states survives:true" reads as a PROVEN survivor when the forecast is `partial` — a
+    // quality that means "carries warnings". Measured first: 92.5% of combat decisions carry a
+    // partial survivor claim and on 3,865 of them it is the ONLY survivor, so FORBIDDING it would
+    // withhold up to 22 real rescues and gain none. The defect was the log's claim, not the gate's
+    // behaviour, so the gate still acts and now says what it actually did. The structure — from, to,
+    // overridden — is still pinned below, which is what this test exists to protect.
+    reason: 'refused end (End turn, end_turn) because its own forecast states survives:false at quality "partial" with hpAfter 0; moved to live (Block, play_card), the highest-ranked candidate whose forecast CLAIMS survives:true at quality "partial" — a PARTIAL claim, carrying warnings, so this is an UNPROVEN survivor and the gate is acting on an unproven safety claim',
   });
   // A survivor still beats a better-margin loss: the proven-survival tier is checked first.
   const mixed = [dying('lethal', -8), live];
