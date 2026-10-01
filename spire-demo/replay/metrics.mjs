@@ -584,7 +584,14 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     open ??= { type: state.state_type, rows: [] };
     const hp = sane.reduce((n, e) => n + e.hp, 0);
     const prev = open.rows.at(-1)?.hp;
-    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, changed: ev.deliberation?.changed === true });
+    // `sha` AND `dirty` are both carried, and neither is optional. `abImpact` was fixed to key versions
+    // on the pair because a commit with uncommitted edits is not the policy that commit names —
+    // `server.mjs:100` records `dirty` for exactly that reason. This function had NEITHER, so its one
+    // pooled figure was an average across every policy in the log: measured on the real corpus,
+    // `matchedDelta: -1.7298` is a single number built from **12 different policy versions**. It is
+    // depth-matched and not version-matched, which is the identical defect `abImpact` just had, and
+    // it survived here only because nobody read this function's headline.
+    open.rows.push({ depth: open.rows.length, hp, dealt: prev == null ? null : prev - hp, changed: ev.deliberation?.changed === true, sha: ev?.code?.sha ?? null, dirty: ev?.code?.dirty ?? null });
   }
   if (open) fights.push(open);
 
@@ -595,12 +602,51 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     byDepth.get(r.depth)[r.changed ? 'changed' : 'agreed'].push(r.dealt);
   }
   const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
-  const buckets = [...byDepth.keys()].sort((a, b) => a - b)
-    .filter(d => byDepth.get(d).changed.length && byDepth.get(d).agreed.length)
-    .map(d => {
-      const { changed, agreed } = byDepth.get(d);
-      return { depth: d, changed: mean(changed), agreed: mean(agreed), nChanged: changed.length, nAgreed: agreed.length, delta: mean(changed) - mean(agreed) };
-    });
+  // Per-version buckets, same helper shape as `abImpact`. Depth controls for how deep into a fight a
+  // decision was; it cannot control for the policy having changed underneath it. A version with one
+  // arm cannot be compared to anything, so it is reported and marked rather than pooled.
+  const bucketsByVersion = rows => {
+    const d = new Map();
+    for (const r of rows) {
+      if (r.dealt == null) continue;
+      if (!d.has(r.depth)) d.set(r.depth, { changed: [], agreed: [] });
+      d.get(r.depth)[r.changed ? 'changed' : 'agreed'].push(r.dealt);
+    }
+    return [...d.keys()].sort((a, b) => a - b)
+      .filter(x => d.get(x).changed.length && d.get(x).agreed.length)
+      .map(x => {
+        const { changed, agreed } = d.get(x);
+        return { depth: x, changed: mean(changed), agreed: mean(agreed), nChanged: changed.length, nAgreed: agreed.length, delta: mean(changed) - mean(agreed) };
+      });
+  };
+  const groupVersions = rows => {
+    const bySha = new Map();
+    for (const r of rows) {
+      if (!bySha.has(r.sha ?? 'unknown')) bySha.set(r.sha ?? 'unknown', new Map());
+      const byDirty = bySha.get(r.sha ?? 'unknown');
+      if (!byDirty.has(r.dirty ?? 'unknown')) byDirty.set(r.dirty ?? 'unknown', []);
+      byDirty.get(r.dirty ?? 'unknown').push(r);
+    }
+    const out = [];
+    for (const [sha, byDirty] of bySha) for (const [dirty, group] of byDirty) out.push({ sha, dirty, rows: group });
+    return out;
+  };
+  const allRows = fights.flatMap(f => f.rows).filter(r => r.dealt != null);
+  const byVersion = groupVersions(allRows).map(({ sha, dirty, rows }) => {
+    const vb = bucketsByVersion(rows);
+    const nChanged = rows.filter(r => r.changed).length;
+    const nAgreed = rows.filter(r => !r.changed).length;
+    const comparable = nChanged > 0 && nAgreed > 0;
+    return { sha, dirty, version: `${sha} dirty=${dirty}`, buckets: vb.length, bucketDetail: vb, changedDelta: comparable ? pooled(vb) : null, nChanged, nAgreed, comparable, samples: nChanged + nAgreed };
+  }).sort((a, b) => b.samples - a.samples);
+  const comparableVersions = byVersion.filter(v => v.comparable && v.changedDelta !== null);
+  const signs = new Set(comparableVersions.map(v => Math.sign(v.changedDelta)));
+  const signsAgree = signs.size <= 1;
+  // Same rule as `abImpact`: a pool whose versions disagree in sign is not a result. Without this the
+  // single pooled figure mixes policies that point opposite ways and averages them into a number
+  // that reads like a finding.
+  const poolingValid = comparableVersions.length > 0 && signsAgree;
+  const buckets = bucketsByVersion(allRows);
   const allChanged = fights.flatMap(f => f.rows.filter(r => r.dealt != null && r.changed)).map(r => r.dealt);
   const allAgreed = fights.flatMap(f => f.rows.filter(r => r.dealt != null && !r.changed)).map(r => r.dealt);
   return {
@@ -614,7 +660,12 @@ export function overrideImpact(events, { types = COMBAT_STATES } = {}) {
     // same vote as a 100-sample one, so the first armed decision to share a depth with an unarmed one
     // produced a confident `modelDelta: -7.000` out of a SINGLE bucket. Weighting by n is the
     // difference between a pooled estimate and an average of anecdotes.
-    matchedDelta: pooled(buckets),
+    //
+    // Negative means the OVERRIDDEN decision dealt less. Depth-matched AND version-matched, and
+    // withheld (null, not 0) when the comparable versions disagree in sign or the evidence is thin.
+    matchedDelta: poolingValid ? pooled(comparableVersions.flatMap(v => v.bucketDetail)) : null,
+    byVersion, signsAgree, poolingValid,
+    evidence: { buckets: buckets.length, minBuckets: MIN_BUCKETS, samples: allRows.length, minSamples: MIN_SAMPLES, versions: byVersion.length, versionsWithSamples: byVersion.filter(v => v.samples > 0).length, versionsComparable: comparableVersions.length, versionsInPooledFigure: poolingValid ? comparableVersions.length : 0 },
   };
 }
 

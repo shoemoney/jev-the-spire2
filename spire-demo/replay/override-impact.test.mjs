@@ -296,3 +296,31 @@ test('versions that produced no armed samples are counted apart from versions th
   assert.equal(r.evidence.versionsWithSamples, 1, 'only one of them produced a single armed decision');
   assert.equal(r.evidence.versionsComparable, 1, 'and only one can back the pooled figure');
 });
+
+// `overrideImpact` had the defect `abImpact` was fixed for, and survived because nobody read its
+// headline. It carried NO version information at all, so `matchedDelta` was one number averaged
+// across every policy in the log: measured on the real corpus, -1.7298 built from 12 policy versions.
+// Depth-matching controls for how deep into a fight a decision was. It cannot control for the policy
+// having changed underneath that decision, and here nothing even tried.
+test('overrideImpact pools per policy version, not across all of them', () => {
+  const vA = buildVersion('1111111', 10, 20, 1, 8);   // scorer/override much better here
+  const vB = buildVersion('2222222', 10, 20, 8, 1);   // override much worse here — OPPOSITE sign
+  const r = overrideImpact([...vA, ...vB]);
+  assert.equal(r.byVersion.length, 2, 'both policies are reported separately');
+  assert.ok(r.evidence.versionsInPooledFigure < 2, 'and they are NOT both in one pooled figure');
+});
+
+test('overrideImpact withholds its headline when versions disagree in sign', () => {
+  const r = overrideImpact([
+    ...buildVersion('1111111', 10, 20, 1, 8),
+    ...buildVersion('2222222', 10, 20, 8, 1),
+  ]);
+  assert.equal(r.signsAgree, false, 'the disagreement is reported, not hidden');
+  assert.equal(r.matchedDelta, null, 'a null that means "do not read this", not "no difference"');
+});
+
+test('overrideImpact keys a version on dirty as well as sha', () => {
+  const r = overrideImpact([...buildVersion('3333333', 10, 20, 1, 8), ...buildVersion('3333333', 10, 20, 8, 1, 5)]);
+  assert.equal(r.byVersion.filter(v => v.sha === '3333333').length, 2,
+    'one sha at two dirty counts is two policies, because a dirty tree is not that commit');
+});
