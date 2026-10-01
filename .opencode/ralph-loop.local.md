@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 117
+iteration: 118
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -285,8 +285,24 @@ proportion. A twelve-win streak at a difficulty the agent already won 88% of is 
 evidence about the changes. The changes are justified by what they fixed, which was measured
 directly; this run is a sanity check that they did not break anything, and on that count it passes.
 
+## THE RUN CONTINUED PAST THE PREVIOUS BEST
+  act 2 floor 31, hp 65, still climbing · batch alive and monitoring
+
+The act 2 floor 30 run did not stop at 30. It has reached floor 31, which ties the previous best
+recorded depth in this corpus, and it is still going with two thirds of its health. Twelve
+consecutive fight wins preceded it, including two Vantom kills.
+
+The same caveat holds and is not restated in full: Ascension 0, one run, and the boss win RATE is
+flat at 9/19. This is a demonstration that the recent fixes did not break the agent and that it can
+play a long, clean run - not evidence about the fixes, which were each justified by a direct
+measurement of what they repaired.
+
+Batch note: two runs are recorded as "timeout waiting for death" - those are the card_select stalls
+before the deadlock fix, correctly reported rather than hidden. The batch recovered and adopted the
+live run, which is the adopt-in-progress path working.
+
 ## Loop state
-M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with loud failure
+M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure
 grok read: 5 findings, 2 already fixed by others, 2 shipped, 1 dissolved. reviews 5 of 10
 deckComposition shipped, still awaiting a combat board - the run wedged on a card_select first
 M5 second pass: bounded the auto-resume, verified it now reports a stall instead of absorbing it
