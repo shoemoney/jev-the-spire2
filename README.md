@@ -18,7 +18,7 @@
 [![cost per decision](https://img.shields.io/badge/%24%2Fdecision-0.00046-00d084?style=for-the-badge)](#-the-measurements)
 [![calls per decision](https://img.shields.io/badge/calls%2Fdecision-1.00-00d084?style=for-the-badge)](#questions-are-free-round-trips-are-not)
 
-[![tests](https://img.shields.io/badge/tests-516%20passing-brightgreen)](#-reproduce)
+[![tests](https://img.shields.io/badge/tests-601%20passing-brightgreen)](#-reproduce)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![dependencies](https://img.shields.io/badge/dependencies-zero-blue)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -178,6 +178,13 @@ decision were the entire latency problem. 🎯
 |---|---|---|---|
 | upstream `deliberate` | 24/30 (80%) | 758ms | 2.40 |
 | **this fork** | **90/100 (90%)** | **325ms** | **1.00** |
+
+> **What 90/100 actually is, and is not.** These are **10 fixtures repeated 10 times**, not 100
+> independent trials, so the 90-vs-80 gap sits inside the noise of ten distinct boards. It measures
+> a *first-action* choice on ten offline fixtures — **not** win rate, and not the shipped policy's
+> configuration (the sweep runs `waste: 1/3` and a 28-candidate cap; the shipped values are
+> `waste: 1` and 64). Treat it as a regression guard on ten boards, not as a capability claim. The
+> measured win rate is the only number that speaks to winning, and it is 0 wins in 9 recorded runs.
 
 ### 🏁 vs frontier models, byte-identical state, 30 decisions each
 
