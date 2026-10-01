@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 106
+iteration: 107
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -45,6 +45,32 @@ What IS still standing, and is per-encounter rather than per-HP:
   Byrdonis 0/2 · Phantasmal Gardener 0/1 · Terror Eel 0/1 · Skulking Colony 3/1 · Bygone Effigy 4/1
 Byrdonis at 0/2 is the one worth watching, and n=2 is not a finding.
 
+## M4 - GROK FINDING 1: THE GATE IS SILENT ON FATAL TURNS, AND IT IS CORRECT TO BE
+The claim checks out and then dissolves, in the useful direction.
+
+  combat deaths 31
+    the final decision's forecast STATED survives:false : 27
+    the safety gate recorded an action on that board   :  0
+    a candidate that SURVIVED was available             :  0
+    fatal boards offering ONE or ZERO candidates        : 18  (58%)
+    energy on the fatal board                           : median 0
+    hand size on the fatal board                        : median 2  (previous board: 3)
+
+**The gate is silent because there is nothing to move to, on all 31.** It is not failing; it is
+correct. But the reason it has nothing to move to is the finding:
+
+**58% of fatal boards offered one or zero candidates, at median ZERO energy.** The agent is not
+failing a decision on the board that kills it - it arrives there having already spent the turn, and
+`survives:false` is the forecast correctly reporting a position that was lost upstream. The review
+is right that the gate is silent and wrong that this is a gate problem.
+
+The lever, if there is one, is in the turns that SPENT the energy, and I have no measurement for
+that yet. Recorded as the open question rather than guessed at, because a plausible story about
+energy discipline is exactly the kind of thing this session has been refuting all project.
+
+Note this is the same shape as the elite entry-state lead: a real observation (0 energy at death),
+a real correlation, and a mechanism that is one step earlier than the finding suggests.
+
 ## M2 EVIDENCE - the binding constraint
 Ascension 10 cannot be set from the bridge: no reachable menu screen exposes a difficulty control,
 confirmed in full (IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT, RANDOM_CHARACTER, confirm, embark,
@@ -86,4 +112,5 @@ when the association looked strong enough to act on.
 
 ## Loop state
 M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with loud failure
-elite entry-state lead REFUTED - reviews 4 of 10, grok next
+grok read: 5 findings, 2 already fixed by other reviewers, 2 shipped (Vulnerable direction, forecast
+scope), 1 dissolved into an upstream question. reviews 5 of 10
