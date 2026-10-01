@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 120
+iteration: 121
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -347,6 +347,28 @@ flat at 9/19.
 The honest summary of where 120 iterations have actually landed: the agent can now reach and hurt
 the Act 2 boss, and cannot yet kill anything past Act 1. Everything I would change next is either
 blocked on an A10 run, or waiting on the experiment I am deliberately not disturbing.
+
+## DID ANY OF IT HELP? THE HONEST ANSWER HAS A CONFOUND IN IT
+  non-boss fights, split by recency (the corpus spans ~100 code versions):
+    older half    n=103   won 103   lost 13    89%
+    recent half   n=103   won 103   lost  4    96%
+    the last 60   n= 60   won  60   lost  1    98%
+  bosses: 10/21 (48%) against 5/11 (45%) earlier in the session
+
+**The fight rate has gone up, and the confound is the run itself.** 13 losses in the older half
+against 4 in the recent one is a difference that would usually clear a significance test at these
+sample sizes. But a DEEP run contributes many more fights than a shallow one, and the recent half is
+enriched for exactly the kind of run that produces them - the act 2 floor 33 run alone contributed
+dozens of wins. So "recent fights are won more often" and "recent runs last longer" are the same
+observation seen from two angles, and this split cannot separate them.
+
+The comparison that would separate them is per-run, or a fixed count of fights per run, and neither
+is available in enough stamped runs yet. **So this is suggestive and not conclusive, and the number
+I would quote if asked "did the fixes help" is not 89% -> 98% but "the fight rate rose across the
+session and the comparison is confounded by run length; the boss rate is flat at 48%."**
+
+What is NOT confounded: bosses. 10/21 against 5/11 is the same rate with twice the sample, and boss
+fights are one per run, so run length does not flatter them.
 
 ## Loop state
 M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure
