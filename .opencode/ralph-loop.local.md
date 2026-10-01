@@ -212,6 +212,34 @@ spending that still ends at 0. The next measurement is the FORECAST at each of t
 if it claimed `survives: true` at 0 energy with 0.31 playable cards, the planner is over-claiming and
 that is a code bug. That is checkable, and it is not answered here.
 
+## FINDING 3 (this session) — the planner is HONEST and the agent is CORRECT. It loses anyway.
+I ran the check I named above, expecting to find an over-claiming bug. There isn't one:
+
+    fatal boards            39
+    claimed survives=true    0     <- none
+    claimed survives=false  34
+    claimed survives=null    5  (quality unknown)
+    of the 27 fatal boards at 0 energy, claiming survival: 0
+
+So the agent **knows** it is dying, every time. And on the fatal board it ends the turn **35 of 35**
+with 0.31 playable cards — it is not misplaying the end, it is correctly passing a turn it cannot
+afford to act in.
+
+**The rate it is not the problem either.** End-turn rate in fights it WON: **0.522**. In fights it
+lost: **0.489**. If the agent were quitting early it would end turns markedly more often when behind;
+it does not. It plays the same game either way and the difference is entirely in what it faces.
+
+**Which is the number that moved:** incoming damage per board, lost vs won — **14.2 vs 9.5**, a 49%
+difference. The state file's "elite entry HP — no monotonic relationship, low HP is NOT worse" and
+"early-death shape — same resource position as later deaths" both read the agent's side of the board
+and never the enemy's. These deaths are the agent meeting a bigger board with a hand it cannot pay
+for, not the agent mis-handling a board it could afford.
+
+**Honest limit on this:** 14.2 vs 9.5 is a mean over 1,038 vs 4,650 boards from the same fights that
+also differ in ascension, fight type and depth, so it is a description of the losing population, not
+a cause. The next thing to separate is enemy intent TYPE — 14.2 average could be one heavy attacker or
+several cheap ones, and those want opposite responses (block vs race).
+
 ## CORRECTION 4 (this session) — THE PREMISE WAS WRONG. A10 was always in the corpus.
 **Everything above item 1 rested on "the agent wins 88% of fights, so this corpus cannot measure
 anything that only shows up when the agent loses."** That was a **run-splitting bug**, not a game fact.
