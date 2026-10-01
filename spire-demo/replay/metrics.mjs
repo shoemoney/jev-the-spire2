@@ -694,6 +694,50 @@ export function abImpact(events, { types = COMBAT_STATES } = {}) {
   };
 }
 
+// WHY THE AGENT DIES — the resource lens, and the boundary it found.
+//
+// Three candidate mechanisms for combat deaths were measured and dissolved in sequence: the lethal
+// gate failing to act (it is silent because no survivor exists, on all 31), a bad decision on the
+// fatal board (58% of those boards offer <=1 candidate at 0 energy), and energy squandering
+// (energyBefore is 1 in every sample, and the forecast never once claimed survival).
+//
+// What is left is the position going IN. At the last decision before each death:
+//
+//   hand had NO block card at all : 16 of 31
+//   hand HAD a block card          : 15  (10 affordable)  — and a block was chosen in 9
+//
+// So half the deaths are a hand that cannot block, while the agent blocks when it can. That is a
+// deck question, not a decision question, and it is the first thing in this project pointing at
+// something the decision layer cannot fix by choosing differently.
+//
+// Built here rather than in a script because eleven ad-hoc scripts have been written against this
+// same log this session and every one contained at least one bug.
+const BLOCKING = /defend|bash|shrug|barricade|feed|body slam|ghostly|ward|impulse|panic button/i;
+export function fatalPosition(events) {
+  const out = { deaths: 0, emptyHand: 0, noBlockCard: 0, hadBlockCard: 0, blockAffordable: 0, choseBlock: 0, energyHistogram: {} };
+  for (let i = 0; i < events.length; i++) {
+    if (events[i]?.kind !== 'run_end') continue;
+    const combat = t => t?.kind === 'decision' && COMBAT_STATES.has(t.state?.state_type);
+    // The FATAL board itself, not the one before it. The first draft walked one further back,
+    // because that is the board you need to ask "did it squander the energy" - a different
+    // question, and a test that mixed the two caught the confusion immediately.
+    const j = i - 1;
+    if (j < 0 || !combat(events[j])) continue;
+    out.deaths++;
+    const p = events[j].state?.player ?? {};
+    const hand = Array.isArray(p.hand) ? p.hand : [];
+    const energy = Number(p.energy) || 0;
+    out.energyHistogram[energy] = (out.energyHistogram[energy] ?? 0) + 1;
+    const blocks = hand.filter(c => BLOCKING.test(c?.name ?? ''));
+    const affordable = blocks.filter(c => c?.cost === 0 || c?.cost === '0' || Number(c?.cost) <= energy);
+    if (!hand.length) out.emptyHand++;
+    else if (!blocks.length) out.noBlockCard++;
+    else { out.hadBlockCard++; if (affordable.length) out.blockAffordable++; }
+    if (BLOCKING.test(events[j].chosen?.label ?? '')) out.choseBlock++;
+  }
+  return out;
+}
+
 export function fightOutcomes(events) {
   const fights = [];
   let open = null;

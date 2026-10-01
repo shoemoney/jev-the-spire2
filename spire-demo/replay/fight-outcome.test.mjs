@@ -229,3 +229,42 @@ test('an empty intent list is distinguishable from an unparsed one', () => {
   assert.deepEqual(f.intentLabels, []);
   assert.equal(f.multiHitIntents, 0, 'no intent is not an unreadable intent');
 });
+
+// The resource lens. Half the combat deaths happen with a hand that cannot block, while the agent
+// blocks when it can — the first thing this project has measured that the decision layer cannot fix
+// by choosing differently.
+import { fatalPosition } from './metrics.mjs';
+
+const c = (type, { hp = 20, energy = 1, hand = [], label = 'Strike' } = {}) => ({
+  kind: 'decision', outcome: 'executed', chosen: { label },
+  state: { state_type: type, battle: { enemies: [{ name: 'X', hp: 50 }] }, player: { hp, energy, hand } },
+});
+const end = () => ({ kind: 'run_end', state: { run: { act: 1, floor: 3 } } });
+
+test('a hand with no block card is counted, and a hand with one is counted separately', () => {
+  // The FATAL board is what is measured. Two deaths, so both shapes appear.
+  const r = fatalPosition([
+    c('elite', { hand: [{ name: 'Strike', cost: 1 }, { name: 'Strike', cost: 1 }] }),
+    end(),
+    c('elite', { hand: [{ name: 'Defend', cost: 1 }], label: 'Defend' }),
+    end(),
+  ]);
+  assert.equal(r.deaths, 2);
+  assert.equal(r.noBlockCard, 1, 'one death with a hand that cannot block');
+  assert.equal(r.hadBlockCard, 1);
+  assert.equal(r.blockAffordable, 1);
+  assert.equal(r.choseBlock, 1, 'and a block was played when one was reachable');
+});
+
+test('an unaffordable block card does not count as a way to survive', () => {
+  // Bash is a 2-cost attack. At 1 energy it is not a block the agent can reach, and counting it
+  // would have hidden the real half of these deaths behind a regex.
+  const r = fatalPosition([c('boss', { energy: 1, hand: [{ name: 'Bash', cost: 2 }] }), end()]);
+  assert.equal(r.noBlockCard, 0, 'a block card was in hand');
+  assert.equal(r.blockAffordable, 0, 'but not one the agent could pay for');
+  assert.equal(r.hadBlockCard, 1);
+});
+
+test('a run_end with no combat board before it is not counted', () => {
+  assert.equal(fatalPosition([c('map'), end()]).deaths, 0);
+});
