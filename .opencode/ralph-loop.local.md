@@ -1,7 +1,8 @@
 ---
 active: true
-iteration: 103
+iteration: 105
 maxIterations: 100000
+sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
 
 Autonomous operation. Play, measure, and improve the agent. Keep the loop and the batch running.
@@ -50,9 +51,31 @@ confirmed in full (IRONCLAD, SILENT, REGENT, NECROBINDER, DEFECT, RANDOM_CHARACT
 back). The primary metric is therefore unmeasurable from here and everything else is downstream of
 that. A run is the only input that moves anything, so the batch stays alive.
 
-## M3 DECISION - A/B accumulating, read with abImpact
-Randomised scorer-vs-model override, interleaved within a run, arm effect verified on real play.
-`abImpact` pools by sample and refuses to report below 8 depths AND 200 samples. At 25/200.
+## M3 DECISION - ANSWERED, AND IT REVERSES THE OBSERVATIONAL RESULT
+The randomised scorer-vs-model A/B cleared both evidence floors: 230 armed decisions across 34
+depths with both arms, arms balanced 107 model / 123 scorer.
+
+  POOLED, sample-weighted:  modelDelta = -0.294 damage per decision
+
+Negative means the SCORER dealt more. On the same boards, in the same fights, sharing deck, relics,
+HP and the telegraph, the scorer dealt 0.29 more damage per decision.
+
+  observational, iteration 85 : 3,319 decisions, confounded by turn depth  ->  scorer -1.501
+  randomised, iteration 105   :   230 decisions, depth-matched, both arms ->  scorer +0.294
+
+**The experiment reverses the conclusion I was one step from acting on.** The confound I identified
+at iteration 86 and could not remove is exactly what randomisation removes.
+
+The honest read is narrower than "the scorer is better". Per-depth deltas swing from -14.00 to
++12.17 and it is 10-vs-8 across the first 18 depths, so the pooled effect is SMALL with wide bucket
+variance. What is defensible:
+  - the override is NOT harmful; the iteration-85 hypothesis is refuted
+  - the scorer is mildly better, or at worst neutral
+  - DO NOT disable the override
+
+**230 decisions answered in one call what 3,319 observational decisions answered backwards.** Volume
+does not remove a confound; only randomisation does. That is the argument for having built the A/B
+when the association looked strong enough to act on.
 
 ## Standing rules
 - Measure on the wire or in the log, never a proxy or a single sample
@@ -62,4 +85,5 @@ Randomised scorer-vs-model override, interleaved within a run, arm effect verifi
 - Record what was NOT done and why
 
 ## Loop state
-590 tests green - batch running with loud failure - elite entry-state lead REFUTED - reviews 4 of 10
+M3 ANSWERED (scorer +0.29, do not disable the override) - batch running with loud failure
+elite entry-state lead REFUTED - reviews 4 of 10, grok next
