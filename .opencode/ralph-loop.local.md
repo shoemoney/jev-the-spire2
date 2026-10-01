@@ -1,6 +1,6 @@
 ---
 active: true
-iteration: 122
+iteration: 123
 maxIterations: 100000
 sessionId: ses_f14aeb718ffedJJQ75aBotmgwX
 ---
@@ -391,6 +391,42 @@ The last twelve runs to end, which is the shape of it:
 Recent runs are BIMODAL - several die on floors 4 and 5, and two go past floor 25. Whatever changed
 in the last twenty iterations widened the spread rather than lifting the floor. That is a different
 claim from "it got better", and it is the one the data supports.
+
+## THE FIFTH WRONG FIELD, AND IT ALMOST BECAME A HEADLINE BUG REPORT
+The bimodal runs die at floor 4-5 as well as 25+, so I looked at the low end. Two of them:
+
+  a1f4 asc0: hp 20, energy 1, hand Infection(0) x4  ->  candidates offered: ONE ("End turn")
+  a1f5 asc0: hp 8,  energy 1, hand Strike(1) x4     ->  26 candidates, all surv=false, End turn fine
+
+The a1f4 board read like a candidate-generation failure: 20 HP, four zero-cost cards, 1 energy, and
+the only thing on offer was End turn. I measured how common that is:
+
+    combat decisions examined                     805
+      only "End turn" offered                    144  (17.9%)
+      ...and a card in hand was AFFORDABLE         43
+
+**"43 decisions, 5.3% of combat, where the agent was told it could only End turn while holding a
+playable card" is a clean, alarming, publishable finding. It is also completely false**, and the
+fifth time this session I filtered on the wrong field. `cost <= energy` ignores two things the
+bridge states explicitly:
+
+    Ascender's Bane  type=Curse   can_play=false  cost=0
+    Infection        type=Status  can_play=false  cost=0
+    Strike           type=Attack  can_play=false  cost=1
+
+With `can_play` and `type` in the filter:
+
+    genuinely PLAYABLE card in hand on those boards : 0  of 144  (0.0%)
+
+**The planner is correct on every one of the 144 cases.** The agent offers End turn because every
+card in hand is a Curse, a Status, or flagged unplayable, and those are the decks it was dealt.
+
+The a1f5 board is separately fine: 26 candidates, every one `survives=false` at hp 8 against 45
+incoming, so ending the turn is choosing among equals rather than a failure.
+
+The pattern across five: descriptor, move probabilities, deck piles, GAME_DATA keys, and now
+`can_play`. Four of the five were a field that existed, said something, and that I read past.
+**A count that looks like a defect is a claim about the filter before it is a claim about the system.**
 
 ## Loop state
 M3 ANSWERED (scorer mildly better, do not disable the override) - batch running with loud failure
