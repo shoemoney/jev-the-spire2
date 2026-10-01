@@ -180,6 +180,38 @@ holds 3.7 cards and about 1 of them blocks, so a bad draw is common by construct
 death is caused by the deck, the draw, or the choice is not answered by this table, and the next
 thing worth measuring is the *drawn hand's* block share on fatal boards against non-fatal ones.
 
+## FINDING 2 (this session) — the mechanism behind all 35 deaths: the hand runs out of money
+Followed the block-card lead to its cause. Fatal boards carry **2.63 cards of which 2.31 are
+`can_play=false`** — the hand is not small, it is *unpayable*. Every unplayable card carries an
+`unplayable_reason` field, which is what makes this decidable rather than a guess:
+
+    unplayable cards on fatal boards   90 of 107 hand entries (0.841)
+      EnergyCostTooHigh      59
+      HasUnplayableKeyword   17
+      BlockedByHook          14
+      most common names: Strike 28, Infection 10, Bash 7, Wound 5
+
+**59 of 90 are unaffordable at zero energy — and `Strike` and `Bash` are the most common.** The
+agent's basic attacks become unplayable not because of a keyword but because it has no energy left.
+
+The trajectory through every lost fight (boards counted backwards from death) is monotone, which is
+what makes this a mechanism and not a coincidence:
+
+    board-from-end   4        3        2        1 (fatal)
+    mean energy      2.28     1.86     1.29     0.37
+    mean PLAYABLE    3.78     3.37     2.51     0.31
+    mean hand        4.38     4.00     3.49     2.63
+
+**Not a bad opening:** only **5 of 35** lost fights began at zero energy. This is energy spent across
+the fight, and the last two turns are where it runs out. Corpus baseline: 24.6% of all 5,676 combat
+boards sit at zero energy; on the fatal board it is 27 of 35 deaths.
+
+**What this does NOT yet say:** whether spending was avoidable. The trajectory shows the agent ends
+with nothing, not that it spent wrongly — a card costing 1 that defends against lethal is correct
+spending that still ends at 0. The next measurement is the FORECAST at each of those last boards:
+if it claimed `survives: true` at 0 energy with 0.31 playable cards, the planner is over-claiming and
+that is a code bug. That is checkable, and it is not answered here.
+
 ## CORRECTION 4 (this session) — THE PREMISE WAS WRONG. A10 was always in the corpus.
 **Everything above item 1 rested on "the agent wins 88% of fights, so this corpus cannot measure
 anything that only shows up when the agent loses."** That was a **run-splitting bug**, not a game fact.
